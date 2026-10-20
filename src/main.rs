@@ -38,7 +38,11 @@ fn main() -> anyhow::Result<()> {
 	let bank = SoundFontBank::load(sf2_path)?;
 	tracing::info!(name = bank.name(), presets = bank.presets().len(), "SoundFont loaded");
 
-	let device = audio::default_output_device()?;
+	let selected = audio::select_output_device(settings.audio_out.as_ref())?;
+	if selected.requested_missing {
+		println!("Audio output {:?} not found, using the default device.", settings.audio_out);
+	}
+	let device = selected.device;
 	let shared = Arc::new(AudioShared::default());
 	let params = StreamParams {
 		buffer_frames: settings.buffer_frames,
@@ -49,7 +53,11 @@ fn main() -> anyhow::Result<()> {
 
 	let dropped_events = Arc::new(AtomicU32::new(0));
 	let dropped_counter = Arc::clone(&dropped_events);
-	let midi_handle = match pick_midi_port(settings.midi_in.as_ref())? {
+	let (midi_index, midi_missing) = pick_midi_port(settings.midi_in.as_ref())?;
+	if midi_missing {
+		println!("MIDI input {:?} not found, using the first available port.", settings.midi_in);
+	}
+	let midi_handle = match midi_index {
 		Some(index) => Some(midi::connect_input(index, move |event| {
 			if events.try_push(event).is_err() {
 				dropped_counter.fetch_add(1, Ordering::Relaxed);
@@ -89,16 +97,20 @@ fn resolve_config_path(cli: &Cli) -> anyhow::Result<PathBuf> {
 	}
 }
 
-/// Resolves the MIDI selector; without it, the first available port is used; with no ports at all, MIDI is skipped.
-fn pick_midi_port(selector: Option<&DeviceSelector>) -> anyhow::Result<Option<usize>> {
+/// Resolves the MIDI selector to a port index plus a flag telling that the request matched nothing.
+/// Without a match the first available port is used; with no ports at all, MIDI is skipped.
+fn pick_midi_port(selector: Option<&DeviceSelector>) -> anyhow::Result<(Option<usize>, bool)> {
 	let ports = midi::list_input_ports()?;
-	let names = ports.iter().map(|port| port.name.as_str());
-	match selector {
-		Some(selector) => selector
-			.find(names)
-			.map(Some)
-			.with_context(|| format!("MIDI input {selector:?} not found; see --list-devices")),
-		None => Ok(ports.first().map(|port| port.index)),
+	let first = ports.first().map(|port| port.index);
+	let Some(selector) = selector else {
+		return Ok((first, false));
+	};
+	match selector.find(ports.iter().map(|port| port.name.as_str())) {
+		Some(index) => Ok((Some(index), false)),
+		None => {
+			tracing::warn!(?selector, "MIDI input not found, using the first available port");
+			Ok((first, true))
+		}
 	}
 }
 

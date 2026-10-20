@@ -6,7 +6,7 @@ mod render;
 mod shared;
 mod stream;
 
-pub use device::{AudioDeviceInfo, default_output_device, list_output_devices};
+pub use device::{AudioDeviceInfo, SelectedDevice, default_output_device, list_output_devices, select_output_device};
 pub use render::BlockRenderer;
 pub use shared::AudioShared;
 pub use stream::{AudioStream, StreamParams, open_output_stream};

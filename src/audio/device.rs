@@ -1,9 +1,10 @@
-//! Output device enumeration (spec F-03) and the default device.
+//! Output device enumeration and selection (spec F-03): by index or name substring, falling back to the default.
 
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{Device, SupportedBufferSize};
 
 use super::AudioError;
+use crate::cli::DeviceSelector;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioDeviceInfo {
@@ -44,6 +45,38 @@ pub fn list_output_devices() -> Result<Vec<AudioDeviceInfo>, AudioError> {
 
 pub fn default_output_device() -> Result<Device, AudioError> {
 	cpal::default_host().default_output_device().ok_or(AudioError::NoOutputDevice)
+}
+
+/// Result of resolving the user's device choice.
+pub struct SelectedDevice {
+	pub device: Device,
+	/// The selector was given but matched nothing, so the default device is used instead (logged as a warning).
+	pub requested_missing: bool,
+}
+
+/// Picks the output device for `selector`; with no selector or no match, the system default is used (F-04 fallback).
+pub fn select_output_device(selector: Option<&DeviceSelector>) -> Result<SelectedDevice, AudioError> {
+	let Some(selector) = selector else {
+		return Ok(SelectedDevice {
+			device: default_output_device()?,
+			requested_missing: false,
+		});
+	};
+	let mut devices: Vec<Device> = cpal::default_host().output_devices().map_err(AudioError::Devices)?.collect();
+	let names: Vec<String> = devices.iter().map(|device| device_name(device).unwrap_or_default()).collect();
+	match selector.find(names.iter().map(String::as_str)) {
+		Some(index) => Ok(SelectedDevice {
+			device: devices.swap_remove(index),
+			requested_missing: false,
+		}),
+		None => {
+			tracing::warn!(?selector, "audio output not found, using the default device");
+			Ok(SelectedDevice {
+				device: default_output_device()?,
+				requested_missing: true,
+			})
+		}
+	}
 }
 
 pub fn device_name(device: &Device) -> Option<String> {
