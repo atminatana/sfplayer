@@ -60,6 +60,23 @@ pub enum DeviceSelector {
 #[error("device selector must be a non-empty name or an index")]
 pub struct EmptyDeviceSelector;
 
+impl DeviceSelector {
+	/// Resolves the selector against an enumeration: an index must exist; a name matches the first
+	/// entry containing it, case-insensitively.
+	pub fn find<'a>(&self, mut names: impl Iterator<Item = &'a str>) -> Option<usize> {
+		match self {
+			Self::Index(index) => names
+				.enumerate()
+				.find(|(position, _)| position == index)
+				.map(|(position, _)| position),
+			Self::Name(needle) => {
+				let needle = needle.to_lowercase();
+				names.position(|name| name.to_lowercase().contains(&needle))
+			}
+		}
+	}
+}
+
 impl FromStr for DeviceSelector {
 	type Err = EmptyDeviceSelector;
 
@@ -157,5 +174,26 @@ mod tests {
 	fn selector_blank_is_error() {
 		assert_eq!("".parse::<DeviceSelector>(), Err(EmptyDeviceSelector));
 		assert_eq!("   ".parse::<DeviceSelector>(), Err(EmptyDeviceSelector));
+	}
+
+	#[test]
+	fn find_by_index_requires_existing_position() {
+		let names = ["Arturia KeyStep", "loopMIDI Port"];
+		assert_eq!(DeviceSelector::Index(1).find(names.iter().copied()), Some(1));
+		assert_eq!(DeviceSelector::Index(2).find(names.iter().copied()), None);
+	}
+
+	#[test]
+	fn find_by_name_is_case_insensitive_substring() {
+		let names = ["Arturia KeyStep", "loopMIDI Port"];
+		assert_eq!(DeviceSelector::Name("keystep".into()).find(names.iter().copied()), Some(0));
+		assert_eq!(DeviceSelector::Name("LOOP".into()).find(names.iter().copied()), Some(1));
+		assert_eq!(DeviceSelector::Name("Roland".into()).find(names.iter().copied()), None);
+	}
+
+	#[test]
+	fn find_on_empty_list_is_none() {
+		assert_eq!(DeviceSelector::Index(0).find(std::iter::empty()), None);
+		assert_eq!(DeviceSelector::Name("x".into()).find(std::iter::empty()), None);
 	}
 }
