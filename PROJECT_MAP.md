@@ -7,13 +7,13 @@
 | Путь | Назначение | Статус |
 |------|-----------|--------|
 | `src/lib.rs` | Корень библиотеки: объявляет модули для бинарника и тестов | шаг 1.2 |
-| `src/main.rs` | CLI, логирование, `--list-devices`, банк, аудиопоток, MIDI-вход → кольцо (временно до Enter); далее — TUI | шаг 1.1–1.5 |
+| `src/main.rs` | CLI + конфиг → `Settings`, логирование, `--list-devices`, банк, аудиопоток, MIDI-вход → кольцо (временно до Enter); далее — TUI | шаг 1.1–2.1 |
 | `src/cli.rs` | Аргументы командной строки (ТЗ §5), `DeviceSelector` имя/индекс + `find` | шаг 1.1, 1.5 |
 | `src/logging.rs` | `tracing` в файл в локальном каталоге данных ОС (N-07) | шаг 1.1 |
 | `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` (rusty.rs) (ADR 0001) | шаг 1.2 |
 | `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs); hot-plug — план 2.3 | шаг 1.3–1.5 |
 | `src/audio/` | `AudioShared` атомики (shared.rs), `BlockRenderer` ядро коллбэка (render.rs), устройства (device.rs), `open_output_stream` (stream.rs) (ADR 0002); микшер, измеритель — план 4.2, 4.3 | шаг 1.4 |
-| `src/config.rs` | TOML-конфиг, каталоги ОС (ADR 0007) | план 2.1 |
+| `src/config.rs` | `Config` (все секции, ADR 0007), load/save, `Settings::resolve` CLI > конфиг > умолчания, `project_dirs` | шаг 2.1 |
 | `src/ui/` | ratatui: состояние, виджеты, диалоги, клавиши (ADR 0004, 0008, 0009) | план этап 3–4 |
 | `src/record/` | Запись FLAC / Ogg Vorbis в отдельном потоке (ADR 0005) | план 5.3 |
 | `locales/` | Словари ru/en для rust-i18n | план 3.1 |
@@ -26,10 +26,11 @@
 - Этап 1, шаг 1.3: `MidiEvent` и парсер байтов со всеми типами F-07.
 - Этап 1, шаг 1.4: аудиовыход cpal — перечисление, поток stereo f32 с fallback буфера, lock-free ядро коллбэка.
 - Этап 1, шаг 1.5: MIDI-порты midir, подключение, цепочка MIDI → кольцо → синтез → аудио собрана в main. Этап 1 завершён; приёмка «звук с клавиатуры» ждёт MIDI-устройства.
+- Этап 2, шаг 2.1: TOML-конфиг со всеми секциями, приоритет CLI > конфиг > умолчания.
 
 ## Дальше
 
-- Шаг 2.1: `config.rs` — TOML-конфиг, каталоги ОС, приоритет CLI > конфиг > умолчания.
+- Шаг 2.2: выбор аудиоустройства по имени/индексу с fallback на умолчание; единое поведение для MIDI.
 - Остальные шаги — по плану `docs/plans/2026-10-20-sf2-player-v1.md`, раздел 4.
 
 ## Проверка

@@ -28,9 +28,9 @@ pub struct Cli {
 	#[arg(long, value_name = "NAME|INDEX")]
 	pub audio_out: Option<DeviceSelector>,
 
-	/// Audio buffer size in frames
-	#[arg(long, value_name = "FRAMES", default_value_t = DEFAULT_BUFFER_FRAMES, value_parser = clap::value_parser!(u32).range(1..))]
-	pub buffer: u32,
+	/// Audio buffer size in frames (default: config value or 256)
+	#[arg(long, value_name = "FRAMES", value_parser = clap::value_parser!(u32).range(1..))]
+	pub buffer: Option<u32>,
 
 	/// Sample rate in Hz (default: the device's own rate)
 	#[arg(long, value_name = "HZ", value_parser = clap::value_parser!(u32).range(1..))]
@@ -108,7 +108,7 @@ mod tests {
 	#[test]
 	fn defaults_match_spec() {
 		let cli = Cli::parse_from([BIN]);
-		assert_eq!(cli.buffer, DEFAULT_BUFFER_FRAMES);
+		assert!(cli.buffer.is_none());
 		assert!(cli.sample_rate.is_none());
 		assert!(cli.sf2.is_none());
 		assert!(cli.midi_in.is_none());
@@ -141,7 +141,7 @@ mod tests {
 		assert_eq!(cli.sf2.as_deref(), Some(std::path::Path::new("bank.sf2")));
 		assert_eq!(cli.midi_in, Some(DeviceSelector::Name("Arturia".into())));
 		assert_eq!(cli.audio_out, Some(DeviceSelector::Index(2)));
-		assert_eq!(cli.buffer, 512);
+		assert_eq!(cli.buffer, Some(512));
 		assert_eq!(cli.sample_rate, Some(44_100));
 		assert!(cli.list_devices);
 		assert_eq!(cli.config.as_deref(), Some(std::path::Path::new("my.toml")));

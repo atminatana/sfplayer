@@ -3,11 +3,11 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
-use directories::ProjectDirs;
 use tracing::level_filters::LevelFilter;
 use tracing_appender::non_blocking::WorkerGuard;
 
-const APP_NAME: &str = "sf2_player";
+use crate::config::project_dirs;
+
 const LOG_FILE_NAME: &str = "sf2_player.log";
 
 /// Keeps the background log writer alive; dropping it flushes pending lines to the file.
@@ -28,6 +28,6 @@ pub fn init(level: LevelFilter) -> anyhow::Result<LogGuard> {
 }
 
 fn log_dir() -> anyhow::Result<PathBuf> {
-	let dirs = ProjectDirs::from("", "", APP_NAME).context("cannot determine the OS application directories")?;
+	let dirs = project_dirs().context("cannot determine the OS application directories")?;
 	Ok(dirs.data_local_dir().to_path_buf())
 }

@@ -1,4 +1,5 @@
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -8,6 +9,7 @@ use cpal::BufferSize;
 use ringbuf::traits::Producer;
 use sf2_player::audio::{self, AudioShared, StreamParams};
 use sf2_player::cli::{Cli, DeviceSelector};
+use sf2_player::config::{self, Config, Settings};
 use sf2_player::logging;
 use sf2_player::midi::{self, MidiInputHandle};
 use sf2_player::synth::{RustySynthEngine, SoundFontBank, SynthEngine};
@@ -21,22 +23,33 @@ fn main() -> anyhow::Result<()> {
 	if cli.list_devices {
 		return print_devices();
 	}
-	let sf2_path = cli.sf2.as_deref().context("no SoundFont given: pass --sf2 PATH")?;
+	let config_path = resolve_config_path(&cli)?;
+	let config = match &cli.config {
+		Some(_) => Config::load(&config_path)?,
+		None => Config::load_or_default(&config_path)?,
+	};
+	tracing::info!(path = %config_path.display(), "config loaded");
+	let settings = Settings::resolve(&cli, &config)?;
+
+	let sf2_path = settings
+		.sf2
+		.as_deref()
+		.context("no SoundFont given: pass --sf2 PATH or set synth.sf2 in the config")?;
 	let bank = SoundFontBank::load(sf2_path)?;
 	tracing::info!(name = bank.name(), presets = bank.presets().len(), "SoundFont loaded");
 
 	let device = audio::default_output_device()?;
 	let shared = Arc::new(AudioShared::default());
 	let params = StreamParams {
-		buffer_frames: cli.buffer,
-		sample_rate: cli.sample_rate,
+		buffer_frames: settings.buffer_frames,
+		sample_rate: settings.sample_rate,
 	};
 	let make_engine = |sample_rate: u32| -> Result<Box<dyn SynthEngine>, _> { Ok(Box::new(RustySynthEngine::new(&bank, sample_rate)?)) };
 	let (stream, mut events) = audio::open_output_stream(&device, params, &make_engine, &shared)?;
 
 	let dropped_events = Arc::new(AtomicU32::new(0));
 	let dropped_counter = Arc::clone(&dropped_events);
-	let midi_handle = match pick_midi_port(cli.midi_in.as_ref())? {
+	let midi_handle = match pick_midi_port(settings.midi_in.as_ref())? {
 		Some(index) => Some(midi::connect_input(index, move |event| {
 			if events.try_push(event).is_err() {
 				dropped_counter.fetch_add(1, Ordering::Relaxed);
@@ -69,7 +82,14 @@ fn main() -> anyhow::Result<()> {
 	Ok(())
 }
 
-/// Resolves `--midi-in`; without it, the first available port is used; with no ports at all, MIDI is skipped.
+fn resolve_config_path(cli: &Cli) -> anyhow::Result<PathBuf> {
+	match &cli.config {
+		Some(path) => Ok(path.clone()),
+		None => config::default_config_path().context("cannot determine the OS config directory"),
+	}
+}
+
+/// Resolves the MIDI selector; without it, the first available port is used; with no ports at all, MIDI is skipped.
 fn pick_midi_port(selector: Option<&DeviceSelector>) -> anyhow::Result<Option<usize>> {
 	let ports = midi::list_input_ports()?;
 	let names = ports.iter().map(|port| port.name.as_str());
