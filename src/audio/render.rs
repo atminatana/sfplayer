@@ -31,10 +31,14 @@ pub struct BlockRenderer {
 	events: HeapCons<MidiEvent>,
 	commands: HeapCons<Command>,
 	retired: HeapProd<Box<dyn SynthEngine>>,
+	/// audio → recorder thread: interleaved stereo f32 while `shared.is_recording()`.
+	recording: HeapProd<f32>,
 	shared: Arc<AudioShared>,
 	sample_rate: u32,
 	left: Vec<f32>,
 	right: Vec<f32>,
+	/// Interleaved copy of a chunk for the recording ring.
+	record_scratch: Vec<f32>,
 	/// Bit per key, per channel: which notes are held (F-12 "voices").
 	held: [u128; 16],
 	held_count: u32,
@@ -49,6 +53,7 @@ impl BlockRenderer {
 		events: HeapCons<MidiEvent>,
 		commands: HeapCons<Command>,
 		retired: HeapProd<Box<dyn SynthEngine>>,
+		recording: HeapProd<f32>,
 		shared: Arc<AudioShared>,
 		sample_rate: u32,
 	) -> Self {
@@ -57,10 +62,12 @@ impl BlockRenderer {
 			events,
 			commands,
 			retired,
+			recording,
 			shared,
 			sample_rate,
 			left: vec![0.0; MAX_CHUNK_FRAMES],
 			right: vec![0.0; MAX_CHUNK_FRAMES],
+			record_scratch: vec![0.0; MAX_CHUNK_FRAMES * 2],
 			held: [0; 16],
 			held_count: 0,
 			sounding: [[0; 128]; 16],
@@ -120,6 +127,12 @@ impl BlockRenderer {
 					let (levels, clipped) = measure(&self.left[..frames], &self.right[..frames], gain);
 					self.shared.publish_levels(levels, clipped);
 					interleave(&self.left[..frames], &self.right[..frames], gain, chunk, channels);
+					if self.shared.is_recording() {
+						let scratch = &mut self.record_scratch[..frames * 2];
+						interleave(&self.left[..frames], &self.right[..frames], gain, scratch, 2);
+						let pushed = self.recording.push_slice(scratch);
+						self.shared.add_record_dropped((scratch.len() - pushed) as u32);
+					}
 				}
 			}
 		}

@@ -327,3 +327,21 @@ fn alt_r_and_alt_c_toggle_effects() {
 		Some(Request::Effects(EffectsAction::ToggleChorus))
 	);
 }
+
+#[test]
+fn f7_toggles_recording_and_quit_asks_for_confirmation_while_recording() {
+	let mut app = App::new("en");
+	assert_eq!(app.handle_key(plain(KeyCode::F(7))), Some(Request::ToggleRecord));
+	app.recording = Some(Duration::from_secs(12));
+	assert_eq!(app.handle_key(plain(KeyCode::F(10))), None);
+	assert_eq!(app.modal, Some(Modal::ConfirmQuit));
+	assert!(!app.should_quit);
+	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None, "Esc keeps recording");
+	assert!(app.modal.is_none() && !app.should_quit);
+	app.handle_key(press(KeyCode::Char('c'), KeyModifiers::CONTROL));
+	assert_eq!(app.handle_key(plain(KeyCode::Enter)), Some(Request::StopRecordingAndQuit));
+	assert!(app.should_quit);
+	let mut idle = App::new("en");
+	idle.handle_key(plain(KeyCode::F(10)));
+	assert!(idle.should_quit, "no confirmation when not recording");
+}

@@ -1,6 +1,6 @@
 //! State shared between the audio callback and other threads through atomics only (spec N-03).
 
-use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 
 use super::meter::Levels;
 
@@ -22,6 +22,10 @@ pub struct AudioShared {
 	transpose: AtomicI32,
 	/// Channel (0-based) all hardware MIDI is redirected to; −1 = off (F-15 omni).
 	omni_channel: AtomicI32,
+	/// While set, the callback copies its output into the recording ring (F-20).
+	recording: AtomicBool,
+	/// Samples the callback could not fit into the recording ring.
+	record_dropped: AtomicU32,
 }
 
 impl AudioShared {
@@ -36,6 +40,8 @@ impl AudioShared {
 			max_voices: AtomicU32::new(0),
 			transpose: AtomicI32::new(0),
 			omni_channel: AtomicI32::new(-1),
+			recording: AtomicBool::new(false),
+			record_dropped: AtomicU32::new(0),
 		}
 	}
 
@@ -120,6 +126,24 @@ impl AudioShared {
 
 	pub fn omni_channel(&self) -> Option<u8> {
 		u8::try_from(self.omni_channel.load(Ordering::Relaxed)).ok()
+	}
+
+	pub fn set_recording(&self, on: bool) {
+		self.recording.store(on, Ordering::Relaxed);
+	}
+
+	pub fn is_recording(&self) -> bool {
+		self.recording.load(Ordering::Relaxed)
+	}
+
+	pub fn record_dropped(&self) -> u32 {
+		self.record_dropped.load(Ordering::Relaxed)
+	}
+
+	pub fn add_record_dropped(&self, samples: u32) {
+		if samples > 0 {
+			self.record_dropped.fetch_add(samples, Ordering::Relaxed);
+		}
 	}
 }
 

@@ -52,6 +52,9 @@ pub enum Request {
 	LoadBank(PathBuf),
 	Rescan,
 	Panic,
+	ToggleRecord,
+	/// Quit confirmed while recording: stop the take, then quit.
+	StopRecordingAndQuit,
 	/// Text keyboard output: goes to the engine and to the monitor.
 	Notes(Vec<MidiEvent>),
 	/// Semitone delta for `[` / `]`.
@@ -66,6 +69,8 @@ pub enum Modal {
 	Sf2Path(PathInput),
 	/// F1: scroll offset in rows.
 	Help(usize),
+	/// F10 / Ctrl+C while recording (spec §6): Enter stops and quits, Esc stays.
+	ConfirmQuit,
 }
 
 pub struct App {
@@ -75,6 +80,8 @@ pub struct App {
 	pub modal: Option<Modal>,
 	pub monitor: Monitor,
 	pub keyboard: TextKeyboard,
+	/// Elapsed time of the running recording, refreshed every frame; `None` when not recording.
+	pub recording: Option<Duration>,
 	/// MIDI channel the text keyboard plays on (0-based); follows the mixer's current channel.
 	pub keyboard_channel: u8,
 	clip_hold: ClipHold,
@@ -99,6 +106,7 @@ impl App {
 			modal: None,
 			monitor: Monitor::default(),
 			keyboard,
+			recording: None,
 			keyboard_channel: 0,
 			clip_hold: ClipHold::new(0),
 			clipping: false,
@@ -115,8 +123,12 @@ impl App {
 	/// Handles one key press. Quit works everywhere; with a modal open every other key belongs to it.
 	pub fn handle_key(&mut self, key: KeyEvent) -> Option<Request> {
 		if action_for(&key) == Some(Action::Quit) {
-			self.should_quit = true;
 			self.dirty = true;
+			if self.recording.is_some() && !matches!(self.modal, Some(Modal::ConfirmQuit)) {
+				self.modal = Some(Modal::ConfirmQuit);
+				return None;
+			}
+			self.should_quit = true;
 			return None;
 		}
 		if self.modal.is_some() {
@@ -143,6 +155,7 @@ impl App {
 			Action::PresetDialog => Some(Request::OpenDialog(DialogKind::Preset)),
 			Action::RecordFormatDialog => Some(Request::OpenDialog(DialogKind::RecordFormat)),
 			Action::Rescan => Some(Request::Rescan),
+			Action::Record => Some(Request::ToggleRecord),
 			Action::Panic => {
 				self.keyboard.clear();
 				Some(Request::Panic)
@@ -265,6 +278,18 @@ impl App {
 					choice.map(Request::Apply)
 				}
 			},
+			Modal::ConfirmQuit => match key.code {
+				KeyCode::Enter => {
+					self.modal = None;
+					self.should_quit = true;
+					Some(Request::StopRecordingAndQuit)
+				}
+				KeyCode::Esc => {
+					self.modal = None;
+					None
+				}
+				_ => None,
+			},
 			Modal::Help(scroll) => {
 				match key.code {
 					KeyCode::Esc | KeyCode::F(1) | KeyCode::Enter => self.modal = None,
@@ -381,6 +406,8 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 			}
 		},
 		Request::Rescan => session.rescan(),
+		Request::ToggleRecord => session.toggle_recording(),
+		Request::StopRecordingAndQuit => session.stop_recording(),
 		Request::Panic => session.panic(),
 		Request::Transpose(delta) => session.adjust_transpose(delta),
 		Request::Effects(action) => session.apply_effects(action),
@@ -403,6 +430,7 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 		}
 		let now = Instant::now();
 		app.keyboard_channel = session.current_channel;
+		app.recording = session.recording_elapsed();
 		if let Some(request) = app.tick_keyboard(now) {
 			fulfil(request, app, session);
 		}

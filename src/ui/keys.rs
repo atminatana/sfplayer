@@ -16,6 +16,7 @@ pub enum Action {
 	PresetDialog,
 	RecordFormatDialog,
 	Rescan,
+	Record,
 	Panic,
 	OctaveUp,
 	OctaveDown,
@@ -67,6 +68,7 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::Sf2Dialog, KeyCode::F(4), KeyModifiers::NONE),
 	bind(Action::PresetDialog, KeyCode::F(5), KeyModifiers::NONE),
 	bind(Action::RecordFormatDialog, KeyCode::F(6), KeyModifiers::NONE),
+	bind(Action::Record, KeyCode::F(7), KeyModifiers::NONE),
 	bind(Action::Rescan, KeyCode::F(8), KeyModifiers::NONE),
 	bind(Action::Panic, KeyCode::F(9), KeyModifiers::NONE),
 	bind(Action::Panic, KeyCode::Char(' '), KeyModifiers::NONE),
@@ -135,6 +137,7 @@ impl Action {
 			Self::PresetDialog => "help.action.preset_dialog",
 			Self::RecordFormatDialog => "help.action.record_format_dialog",
 			Self::Rescan => "help.action.rescan",
+			Self::Record => "help.action.record",
 			Self::Panic => "help.action.panic",
 			Self::OctaveUp => "help.action.octave_up",
 			Self::OctaveDown => "help.action.octave_down",
@@ -261,6 +264,7 @@ mod tests {
 			Some(Action::RecordFormatDialog)
 		);
 		assert_eq!(action_for(&press(KeyCode::F(8), KeyModifiers::NONE)), Some(Action::Rescan));
+		assert_eq!(action_for(&press(KeyCode::F(7), KeyModifiers::NONE)), Some(Action::Record));
 		assert_eq!(action_for(&press(KeyCode::F(9), KeyModifiers::NONE)), Some(Action::Panic));
 		assert_eq!(action_for(&press(KeyCode::Up, KeyModifiers::CONTROL)), Some(Action::OctaveUp));
 		assert_eq!(action_for(&press(KeyCode::Left, KeyModifiers::CONTROL)), Some(Action::VelocityDown));

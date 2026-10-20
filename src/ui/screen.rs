@@ -37,6 +37,7 @@ pub struct View {
 	pub dropped: u32,
 	pub transpose: i8,
 	pub omni_channel: Option<u8>,
+	pub record_dropped: u32,
 	pub held_notes: u32,
 	pub max_voices: u32,
 	pub load_percent: u32,
@@ -84,6 +85,7 @@ impl View {
 			dropped: session.midi_dropped.load(std::sync::atomic::Ordering::Relaxed),
 			transpose: session.transpose,
 			omni_channel: session.omni_channel(),
+			record_dropped: session.shared.record_dropped(),
 			held_notes: session.shared.held_notes(),
 			max_voices: session.shared.max_voices(),
 			load_percent: session.shared.load_percent(),
@@ -123,6 +125,7 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, locale, view.channel),
 		Some(Modal::Sf2Path(input)) => modals::render_path_dialog(frame, area, input, locale),
 		Some(Modal::Help(scroll)) => modals::render_help(frame, area, *scroll, locale),
+		Some(Modal::ConfirmQuit) => modals::render_confirm_quit(frame, area, locale),
 		None => {}
 	}
 }
@@ -317,6 +320,19 @@ fn render_status(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &
 	let inner = block.inner(area);
 	frame.render_widget(block, area);
 
+	let rec = app.recording.map(|elapsed| {
+		Span::styled(
+			format!(
+				"{} ",
+				t!(
+					"status.rec",
+					locale = locale,
+					time = format!("{:02}:{:02}", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+				)
+			),
+			Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+		)
+	});
 	let first = match &view.notice {
 		Some(notice) => Line::from(Span::styled(notice_text(notice, locale), Style::default().fg(Color::Yellow))),
 		None => {
@@ -335,7 +351,15 @@ fn render_status(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &
 			if view.dropped > 0 {
 				counters.push(t!("status.dropped", locale = locale, count = view.dropped).into_owned());
 			}
-			Line::from(counters.join(" "))
+			if view.record_dropped > 0 {
+				counters.push(t!("status.rec_dropped", locale = locale, count = view.record_dropped).into_owned());
+			}
+			let mut spans = Vec::new();
+			if let Some(rec) = rec {
+				spans.push(rec);
+			}
+			spans.push(Span::raw(counters.join(" ")));
+			Line::from(spans)
 		}
 	};
 	let hints = ["hint.help", "hint.midi", "hint.audio", "hint.sf2", "hint.record", "hint.quit"]
@@ -382,6 +406,8 @@ fn notice_text(notice: &Notice, locale: &str) -> String {
 		Notice::MidiError(error) => t!("notice.midi_error", locale = locale, error = error).into_owned(),
 		Notice::Sf2Error(error) => t!("notice.sf2_error", locale = locale, error = error).into_owned(),
 		Notice::ConfigError(error) => t!("notice.config_error", locale = locale, error = error).into_owned(),
+		Notice::RecordSaved(name) => t!("notice.record_saved", locale = locale, name = name).into_owned(),
+		Notice::RecordError(error) => t!("notice.record_error", locale = locale, error = error).into_owned(),
 	}
 }
 

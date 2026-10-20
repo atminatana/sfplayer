@@ -348,3 +348,28 @@ help.action.toggle_chorus:
 notice.config_error:
   en: "Config not saved: %{error}"
   ru: "Конфиг не сохранён: %{error}"
+
+status.rec:
+  en: "● REC %{time}"
+  ru: "● ЗАП %{time}"
+status.rec_dropped:
+  en: "rec lost %{count}"
+  ru: "зап. потеряно %{count}"
+notice.record_saved:
+  en: "Recording saved: %{name}"
+  ru: "Запись сохранена: %{name}"
+notice.record_error:
+  en: "Recording: %{error}"
+  ru: "Запись: %{error}"
+confirm.quit_title:
+  en: "Recording in progress"
+  ru: "Идёт запись"
+confirm.quit_text:
+  en: "Stop the recording and quit?"
+  ru: "Остановить запись и выйти?"
+confirm.quit_hint:
+  en: "Enter — stop and quit · Esc — keep recording"
+  ru: "Enter — остановить и выйти · Esc — продолжить запись"
+help.action.record:
+  en: "Start / stop recording (format: F6)"
+  ru: "Начать / остановить запись (формат: F6)"

@@ -25,6 +25,7 @@ fn view() -> View {
 		dropped: 0,
 		transpose: 0,
 		omni_channel: None,
+		record_dropped: 0,
 		held_notes: 0,
 		max_voices: 0,
 		load_percent: 0,
@@ -381,4 +382,20 @@ fn mixer_panel_shows_effect_sends() {
 	both.reverb = None;
 	let lines = draw("ru", &both, 80, 24);
 	assert!(contains(&lines, "FX рев выкл хор 20"));
+}
+
+#[test]
+fn recording_indicator_and_quit_confirmation() {
+	let mut app = App::new("en");
+	app.recording = Some(std::time::Duration::from_secs(72));
+	let lines = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&lines, "● REC 01:12 voices -/-"), "{lines:#?}");
+	app.open_modal(Modal::ConfirmQuit);
+	let lines = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&lines, " Recording in progress "));
+	assert!(contains(&lines, "Enter"));
+	let mut view_with_notice = view();
+	view_with_notice.notice = Some(Notice::RecordSaved("2026-10-20_12-03-41.flac".into()));
+	let lines = draw("ru", &view_with_notice, 80, 24);
+	assert!(contains(&lines, "Запись сохранена: 2026-10-20_12-03-41.flac"));
 }

@@ -7,6 +7,7 @@ pub mod cli;
 pub mod config;
 pub mod logging;
 pub mod midi;
+pub mod record;
 pub mod session;
 pub mod synth;
 pub mod ui;

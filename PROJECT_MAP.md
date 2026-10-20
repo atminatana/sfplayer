@@ -16,7 +16,7 @@
 | `src/audio/` | `AudioShared` атомики: гейн, xrun, уровни, клипы (shared.rs), `measure` peak/RMS/клипы (meter.rs), `Mixer` мастер/каналы/mute/solo (mixer.rs), `BlockRenderer` + `Command` ядро коллбэка с учётом нот, нагрузки, транспонирования и omni (render.rs, тесты в render/tests.rs), устройства и `select_output_device` с fallback (device.rs), `open_output_stream` (stream.rs) (ADR 0002); | шаг 4.3 |
 | `src/config.rs` | `Config` (все секции, ADR 0007), load/save, `Settings::resolve` CLI > конфиг > умолчания, `project_dirs` | шаг 2.1 |
 | `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil` (тесты в `app/tests.rs`), `screen.rs` `View` + экран (тесты в `screen/tests.rs`), `monitor.rs` буфер монитора, `meter.rs` CLIP-удержание и полосы, `text_keyboard.rs` ноты с клавиатуры (release/gate), `modals.rs` отрисовка модальных окон, `selector.rs` модальный список, `dialog.rs` диалоги F2/F3/F5/F6, `path_input.rs` поле пути F4, `keys.rs` привязки + справка из них, `i18n.rs` локаль (ADR 0004, 0008, 0009) | шаг 3.5 |
-| `src/record/` | Запись FLAC / Ogg Vorbis в отдельном потоке (ADR 0005) | план 5.3 |
+| `src/record/` | `Recorder` поток + кольцо, `flac.rs` потоковый FLAC 24 бит, `vorbis.rs` Ogg Vorbis (ADR 0005) | шаг 5.3 |
 | `locales/app.yml` | Словарь rust-i18n v2, en и ru рядом для каждого ключа | шаг 3.1 |
 | `assets/sin_wave.sf2` | Минимальный банк для оффлайн-тестов | есть |
 
@@ -43,10 +43,11 @@
 - Этап 4, шаг 4.6: транспонирование [ ] ±12 с памятью звучащей ноты, omni-канал из конфига. Этап 4 завершён.
 - Этап 5, шаг 5.1: реверб/хорус — вкл/выкл Alt+R/Alt+C с пересозданием движка, уровни CC 91/93 из конфига, строка FX в микшере.
 - Этап 5, шаг 5.2: сохранение конфига при выходе и после действий диалогов; `session/control.rs` выделен.
+- Этап 5, шаг 5.3: запись F7 в FLAC/Ogg Vorbis через поток-кодировщик, индикатор REC, подтверждение выхода при записи.
 
 ## Дальше
 
-- Шаг 5.3: запись F7 — кольцо сэмплов → поток кодирования FLAC / Ogg Vorbis, индикатор REC, подтверждение выхода.
+- Шаг 5.4: переопределение клавиш `[keys]` и раскладки `[keyboard]` из конфига, альтернативы Ctrl+стрелок, `--ascii`.
 - Остальные шаги — по плану `docs/plans/2026-10-20-sf2-player-v1.md`, раздел 4.
 
 ## Проверка

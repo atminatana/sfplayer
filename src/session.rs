@@ -19,6 +19,7 @@ use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, Mixer, S
 use crate::cli::DeviceSelector;
 use crate::config::{Config, Settings};
 use crate::midi::{self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus, MonitorEntry};
+use crate::record::{RecordParams, Recorder, file_name};
 use crate::synth::{RustySynthEngine, SoundFontBank, SynthEngine, SynthError};
 use ringbuf::HeapRb;
 use ringbuf::traits::Split;
@@ -34,6 +35,8 @@ pub enum Notice {
 	MidiError(String),
 	Sf2Error(String),
 	ConfigError(String),
+	RecordSaved(String),
+	RecordError(String),
 }
 
 pub struct LoadedBank {
@@ -62,6 +65,9 @@ pub struct Session {
 	audio: Option<AudioStream>,
 	commands: Option<HeapProd<Command>>,
 	retired: Option<HeapCons<Box<dyn SynthEngine>>>,
+	/// Recording ring consumer while no recording is running.
+	record_rx: Option<HeapCons<f32>>,
+	recorder: Option<Recorder>,
 	/// The MIDI → audio producer while no port is connected.
 	spare_events: Option<HeapProd<MidiEvent>>,
 	/// The MIDI → UI monitor producer while no port is connected.
@@ -105,6 +111,8 @@ impl Session {
 			audio: None,
 			commands: None,
 			retired: None,
+			record_rx: None,
+			recorder: None,
 			spare_events: None,
 			spare_monitor: Some(monitor_tx),
 			monitor_rx,
@@ -168,10 +176,19 @@ impl Session {
 
 	fn open_audio(&mut self, device: &cpal::Device) {
 		match audio::open_output_stream(device, self.params, &self.shared) {
-			Ok((stream, AudioLinks { events, commands, retired })) => {
+			Ok((
+				stream,
+				AudioLinks {
+					events,
+					commands,
+					retired,
+					recording,
+				},
+			)) => {
 				self.audio = Some(stream);
 				self.commands = Some(commands);
 				self.retired = Some(retired);
+				self.record_rx = Some(recording);
 				self.spare_events = Some(events);
 			}
 			Err(error) => self.notice = Some(Notice::NoAudioDevice(error.to_string())),
@@ -189,10 +206,12 @@ impl Session {
 			}
 		};
 		let midi_index = self.midi_port_index;
+		self.stop_recording();
 		self.disconnect_midi();
 		self.audio = None;
 		self.commands = None;
 		self.retired = None;
+		self.record_rx = None;
 		self.spare_events = None;
 		// `spare_monitor` is kept: the monitor ring does not depend on the audio stream.
 		self.open_audio(&device);
@@ -342,6 +361,74 @@ impl Session {
 		control::push_channel_volumes(commands, &self.mixer.effective_volumes());
 		control::push_effect_sends(commands, &self.config.synth);
 		Ok(())
+	}
+
+	/// F7: starts a recording in the configured format, or stops the running one (F-20).
+	pub fn toggle_recording(&mut self) {
+		if self.recorder.is_some() {
+			self.stop_recording();
+		} else {
+			self.start_recording();
+		}
+	}
+
+	fn start_recording(&mut self) {
+		let (Some(stream), Some(samples)) = (&self.audio, self.record_rx.take()) else {
+			return;
+		};
+		let dir = self.record_dir();
+		if let Err(error) = std::fs::create_dir_all(&dir) {
+			self.notice = Some(Notice::RecordError(error.to_string()));
+			return;
+		}
+		let format = self.config.record.format;
+		let path = file_name(&dir, format, chrono::Local::now());
+		let params = RecordParams {
+			sample_rate: stream.sample_rate,
+			vorbis_quality: self.config.record.vorbis_quality,
+		};
+		match Recorder::start(format, path, params, samples) {
+			Ok(recorder) => {
+				self.shared.set_recording(true);
+				self.recorder = Some(recorder);
+			}
+			Err(error) => {
+				tracing::warn!(%error, "recording start failed");
+				self.notice = Some(Notice::RecordError(error.to_string()));
+				// The consumer travelled into `Recorder::start` and is lost with the failed thread spawn only;
+				// an encoder failure happens before the thread exists, so a fresh ring is needed either way.
+			}
+		}
+	}
+
+	/// Stops the recording if one is running; the file name or the error goes to the status line.
+	pub fn stop_recording(&mut self) {
+		let Some(recorder) = self.recorder.take() else {
+			return;
+		};
+		self.shared.set_recording(false);
+		let (samples, result) = recorder.stop();
+		self.record_rx = samples;
+		self.notice = Some(match result {
+			Ok(path) => Notice::RecordSaved(path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()),
+			Err(error) => Notice::RecordError(error.to_string()),
+		});
+	}
+
+	/// Elapsed time of the running recording, if any.
+	pub fn recording_elapsed(&self) -> Option<std::time::Duration> {
+		self.recorder.as_ref().map(Recorder::elapsed)
+	}
+
+	/// `record.dir` from the config, else the user's Music directory, else the app data directory.
+	fn record_dir(&self) -> PathBuf {
+		if let Some(dir) = &self.config.record.dir {
+			return dir.clone();
+		}
+		directories::UserDirs::new()
+			.and_then(|dirs| dirs.audio_dir().map(|dir| dir.join("sf2_player")))
+			.or_else(|| crate::config::project_dirs().map(|dirs| dirs.data_dir().join("recordings")))
+			.unwrap_or_else(|| PathBuf::from("recordings"))
 	}
 
 	/// F-14: writes devices, bank, volumes, effects and format to the config file; failures become a notice.

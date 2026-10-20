@@ -23,6 +23,7 @@ struct Harness {
 	events: HeapProd<MidiEvent>,
 	commands: HeapProd<Command>,
 	retired: HeapCons<Box<dyn SynthEngine>>,
+	recording: HeapCons<f32>,
 	shared: Arc<AudioShared>,
 }
 
@@ -43,12 +44,14 @@ fn empty_harness() -> Harness {
 	let (events, events_rx) = HeapRb::<MidiEvent>::new(RING_CAPACITY).split();
 	let (commands, commands_rx) = HeapRb::<Command>::new(RING_CAPACITY).split();
 	let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(RING_CAPACITY).split();
-	let renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, Arc::clone(&shared), SAMPLE_RATE);
+	let (recording_tx, recording) = HeapRb::<f32>::new(FRAMES * 2 + 16).split();
+	let renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, recording_tx, Arc::clone(&shared), SAMPLE_RATE);
 	Harness {
 		renderer,
 		events,
 		commands,
 		retired,
+		recording,
 		shared,
 	}
 }
@@ -300,4 +303,22 @@ fn note_off_event_is_applied() {
 	h.renderer.fill(&mut tail, 2);
 	h.renderer.fill(&mut output, 2);
 	assert!(rms(&output) < 0.001, "after note off {}", rms(&output));
+}
+
+#[test]
+fn recording_ring_gets_the_output_only_while_recording_and_counts_overflow() {
+	let mut h = harness();
+	h.events.try_push(NOTE_ON).unwrap();
+	let mut output = vec![0.0; FRAMES * 2];
+	h.renderer.fill(&mut output, 2);
+	assert_eq!(h.recording.try_pop(), None, "nothing recorded while off");
+	h.shared.set_recording(true);
+	h.renderer.fill(&mut output, 2);
+	let mut recorded = vec![0.0; FRAMES * 2];
+	assert_eq!(h.recording.pop_slice(&mut recorded), FRAMES * 2);
+	assert_eq!(recorded, output, "the recording is exactly what went to the device");
+	assert_eq!(h.shared.record_dropped(), 0);
+	h.renderer.fill(&mut output, 2);
+	h.renderer.fill(&mut output, 2);
+	assert!(h.shared.record_dropped() > 0, "a full ring is counted, not blocked on");
 }

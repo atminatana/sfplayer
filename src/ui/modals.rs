@@ -137,6 +137,34 @@ pub(super) fn render_path_dialog(frame: &mut Frame, screen: Rect, input: &PathIn
 	frame.set_cursor_position((cursor_x.min(inner.x + inner.width.saturating_sub(1)), inner.y));
 }
 
+/// Spec §6: quitting while a recording runs asks first. Enter stops the take and quits, Esc stays.
+pub(super) fn render_confirm_quit(frame: &mut Frame, screen: Rect, locale: &str) {
+	let width = screen.width.saturating_sub(8).clamp(40, 60);
+	let height = 5.min(screen.height);
+	let area = Rect {
+		x: screen.x + (screen.width - width) / 2,
+		y: screen.y + (screen.height - height) / 2,
+		width,
+		height,
+	};
+	frame.render_widget(Clear, area);
+	let block = Block::default()
+		.borders(Borders::ALL)
+		.border_style(Style::default().fg(Color::Red))
+		.title(padded(&t!("confirm.quit_title", locale = locale)));
+	let inner = block.inner(area);
+	frame.render_widget(block, area);
+	let lines = vec![
+		Line::from(t!("confirm.quit_text", locale = locale).into_owned()),
+		Line::from(""),
+		Line::from(Span::styled(
+			t!("confirm.quit_hint", locale = locale).into_owned(),
+			Style::default().fg(Color::DarkGray),
+		)),
+	];
+	frame.render_widget(Paragraph::new(lines), inner);
+}
+
 /// F1: the hotkey table, generated from `keys::BINDINGS` so it can never disagree with the handler (ADR 0004).
 pub(super) fn render_help(frame: &mut Frame, screen: Rect, scroll: usize, locale: &str) {
 	let width = screen.width.saturating_sub(8).clamp(40, 72);

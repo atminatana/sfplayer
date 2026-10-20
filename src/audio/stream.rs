@@ -17,6 +17,8 @@ const OUTPUT_CHANNELS: u16 = 2;
 /// Capacity of the MIDI → audio event ring (ADR 0002: sized with headroom, overflow is counted by the producer).
 pub const EVENT_RING_CAPACITY: usize = 1024;
 pub const COMMAND_RING_CAPACITY: usize = 256;
+/// Seconds of stereo audio the recording ring can hold while the recorder thread catches up.
+const RECORD_RING_SECONDS: u32 = 4;
 const RETIRED_RING_CAPACITY: usize = 4;
 
 #[derive(Debug, Clone, Copy)]
@@ -42,6 +44,8 @@ pub struct AudioLinks {
 	pub commands: HeapProd<Command>,
 	/// audio → UI: engines replaced via `Command::ReplaceEngine`, to be dropped off the audio thread.
 	pub retired: HeapCons<Box<dyn SynthEngine>>,
+	/// audio → recorder: interleaved stereo f32 while recording (F-20).
+	pub recording: HeapCons<f32>,
 }
 
 /// Opens and starts a silent stream (no engine yet); install one with `Command::ReplaceEngine`.
@@ -64,7 +68,8 @@ pub fn open_output_stream(
 		let (events, events_rx) = HeapRb::<MidiEvent>::new(EVENT_RING_CAPACITY).split();
 		let (commands, commands_rx) = HeapRb::<Command>::new(COMMAND_RING_CAPACITY).split();
 		let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(RETIRED_RING_CAPACITY).split();
-		let mut renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, Arc::clone(shared), sample_rate);
+		let (recording_tx, recording) = HeapRb::<f32>::new((sample_rate * 2 * RECORD_RING_SECONDS) as usize).split();
+		let mut renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, recording_tx, Arc::clone(shared), sample_rate);
 		let data_callback = move |output: &mut [f32], _: &cpal::OutputCallbackInfo| renderer.fill(output, OUTPUT_CHANNELS as usize);
 		let xrun_counter = Arc::clone(shared);
 		let error_callback = move |error: cpal::Error| {
@@ -85,7 +90,15 @@ pub fn open_output_stream(
 				device: device_name.clone(),
 				source,
 			})?;
-		Ok((stream, AudioLinks { events, commands, retired }))
+		Ok((
+			stream,
+			AudioLinks {
+				events,
+				commands,
+				retired,
+				recording,
+			},
+		))
 	};
 
 	let requested = BufferSize::Fixed(params.buffer_frames);
