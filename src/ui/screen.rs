@@ -42,6 +42,9 @@ pub struct View {
 	pub load_percent: u32,
 	pub levels: Levels,
 	pub mixer: Mixer,
+	/// Reverb / chorus send levels; `None` = off (F-13).
+	pub reverb: Option<u8>,
+	pub chorus: Option<u8>,
 	pub notice: Option<Notice>,
 }
 
@@ -86,6 +89,8 @@ impl View {
 			load_percent: session.shared.load_percent(),
 			levels: session.shared.levels(),
 			mixer: session.mixer.clone(),
+			reverb: session.reverb_level(),
+			chorus: session.chorus_level(),
 			notice: session.notice.clone(),
 		}
 	}
@@ -207,6 +212,7 @@ fn render_mixer(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &V
 		meter_line("R", view.levels.peak_right, view.levels.rms_right),
 	];
 	lines.push(master_line(view, locale));
+	lines.push(effects_line(view, locale));
 	lines.extend(channel_lines(view, locale));
 	frame.render_widget(Paragraph::new(lines), inner);
 }
@@ -225,6 +231,22 @@ fn master_line(view: &View, locale: &str) -> Line<'static> {
 		));
 	}
 	Line::from(spans)
+}
+
+/// "FX rev 40 cho off" — reverb and chorus send levels or "off" (F-13).
+fn effects_line(view: &View, locale: &str) -> Line<'static> {
+	let off = t!("mixer.off", locale = locale);
+	let level = |value: Option<u8>| value.map_or_else(|| off.to_string(), |level| level.to_string());
+	Line::from(vec![
+		label(t!("mixer.fx", locale = locale).into_owned()),
+		Span::raw(format!(
+			" {} {} {} {}",
+			t!("mixer.reverb", locale = locale),
+			level(view.reverb),
+			t!("mixer.chorus", locale = locale),
+			level(view.chorus)
+		)),
+	])
 }
 
 /// Two channel strips per line: "ch01 ████░░ 100  ch02 ───── mute"; the current channel is highlighted.

@@ -30,6 +30,8 @@ fn view() -> View {
 		load_percent: 0,
 		levels: Levels::default(),
 		mixer: Mixer::new(80),
+		reverb: Some(40),
+		chorus: None,
 		notice: None,
 	}
 }
@@ -62,6 +64,7 @@ fn full_frame_matches_the_layout_mockup() {
 		"││                                        ││L ▐░░░░░░░░░░░░▌   -inf dBFS      ││",
 		"││                                        ││R ▐░░░░░░░░░░░░▌   -inf dBFS      ││",
 		"││                                        ││MASTER ████████░░  80%            ││",
+		"││                                        ││FX rev 40 cho off                 ││",
 		"││                                        ││ch01 █████░ 100 ch02 █████░ 100   ││",
 		"││                                        ││ch03 █████░ 100 ch04 █████░ 100   ││",
 		"││                                        ││ch05 █████░ 100 ch06 █████░ 100   ││",
@@ -70,7 +73,6 @@ fn full_frame_matches_the_layout_mockup() {
 		"││                                        ││ch11 █████░ 100 ch12 █████░ 100   ││",
 		"││                                        ││ch13 █████░ 100 ch14 █████░ 100   ││",
 		"││                                        ││ch15 █████░ 100 ch16 █████░ 100   ││",
-		"││                                        ││                                  ││",
 		"││                                        ││                                  ││",
 		"││                                        ││                                  ││",
 		"│└────────────────────────────────────────┘└──────────────────────────────────┘│",
@@ -368,4 +370,15 @@ fn status_shows_transpose_and_omni_only_when_active() {
 	shifted.omni_channel = Some(9);
 	let lines = draw("en", &shifted, 80, 24);
 	assert!(contains(&lines, "tr -3 omni ch10"));
+}
+
+#[test]
+fn mixer_panel_shows_effect_sends() {
+	let lines = draw("en", &view(), 80, 24);
+	assert!(contains(&lines, "FX rev 40 cho off"));
+	let mut both = view();
+	both.chorus = Some(20);
+	both.reverb = None;
+	let lines = draw("ru", &both, 80, 24);
+	assert!(contains(&lines, "FX рев выкл хор 20"));
 }

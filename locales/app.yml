@@ -325,3 +325,22 @@ help.action.transpose_up:
 help.action.transpose_down:
   en: "Transpose −1 semitone (down to −12)"
   ru: "Транспонирование −1 полутон (до −12)"
+
+mixer.fx:
+  en: "FX"
+  ru: "FX"
+mixer.reverb:
+  en: "rev"
+  ru: "рев"
+mixer.chorus:
+  en: "cho"
+  ru: "хор"
+mixer.off:
+  en: "off"
+  ru: "выкл"
+help.action.toggle_reverb:
+  en: "Reverb on / off (level: config synth.reverb_level)"
+  ru: "Реверб вкл / выкл (уровень: конфиг synth.reverb_level)"
+help.action.toggle_chorus:
+  en: "Chorus on / off (level: config synth.chorus_level)"
+  ru: "Хорус вкл / выкл (уровень: конфиг synth.chorus_level)"

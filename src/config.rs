@@ -87,7 +87,7 @@ impl Default for AudioConfig {
 	}
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SynthConfig {
 	pub sf2: Option<PathBuf>,
@@ -95,6 +95,22 @@ pub struct SynthConfig {
 	pub recent_banks: Vec<PathBuf>,
 	pub reverb: bool,
 	pub chorus: bool,
+	/// Send levels (CC 91 / CC 93), 0..=127, applied to every channel while the effect is on (F-13).
+	pub reverb_level: u8,
+	pub chorus_level: u8,
+}
+
+impl Default for SynthConfig {
+	fn default() -> Self {
+		Self {
+			sf2: None,
+			recent_banks: Vec::new(),
+			reverb: true,
+			chorus: false,
+			reverb_level: 40,
+			chorus_level: 20,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -12,6 +12,8 @@ pub mod controller {
 	pub const PAN: u8 = 10;
 	pub const EXPRESSION: u8 = 11;
 	pub const SUSTAIN: u8 = 64;
+	pub const REVERB_SEND: u8 = 91;
+	pub const CHORUS_SEND: u8 = 93;
 	pub const ALL_SOUND_OFF: u8 = 120;
 	pub const RESET_ALL_CONTROLLERS: u8 = 121;
 	pub const ALL_NOTES_OFF: u8 = 123;

@@ -313,3 +313,17 @@ fn brackets_request_transposition() {
 	assert_eq!(app.handle_key(plain(KeyCode::Char(']'))), Some(Request::Transpose(1)));
 	assert_eq!(app.handle_key(plain(KeyCode::Char('['))), Some(Request::Transpose(-1)));
 }
+
+#[test]
+fn alt_r_and_alt_c_toggle_effects() {
+	use crate::session::EffectsAction;
+	let mut app = App::new("en");
+	assert_eq!(
+		app.handle_key(press(KeyCode::Char('r'), KeyModifiers::ALT)),
+		Some(Request::Effects(EffectsAction::ToggleReverb))
+	);
+	assert_eq!(
+		app.handle_key(press(KeyCode::Char('c'), KeyModifiers::ALT)),
+		Some(Request::Effects(EffectsAction::ToggleChorus))
+	);
+}

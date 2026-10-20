@@ -20,7 +20,7 @@ use super::text_keyboard::{NoteOffMode, TextKeyboard};
 use crate::audio;
 use crate::config::KeyboardConfig;
 use crate::midi::{MidiEvent, MonitorEntry};
-use crate::session::{MixerAction, Notice, Session};
+use crate::session::{EffectsAction, MixerAction, Notice, Session};
 
 /// Spec §6: redraw at most 30 frames per second.
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(33);
@@ -56,6 +56,7 @@ pub enum Request {
 	Notes(Vec<MidiEvent>),
 	/// Semitone delta for `[` / `]`.
 	Transpose(i8),
+	Effects(EffectsAction),
 }
 
 /// The modal window on top of the main screen, if any.
@@ -162,6 +163,8 @@ impl App {
 				self.keyboard.velocity_down();
 				None
 			}
+			Action::ToggleReverb => Some(Request::Effects(EffectsAction::ToggleReverb)),
+			Action::ToggleChorus => Some(Request::Effects(EffectsAction::ToggleChorus)),
 			Action::TransposeUp => Some(Request::Transpose(1)),
 			Action::TransposeDown => Some(Request::Transpose(-1)),
 			Action::NotesOff => {
@@ -368,6 +371,7 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 		Request::Rescan => session.rescan(),
 		Request::Panic => session.panic(),
 		Request::Transpose(delta) => session.adjust_transpose(delta),
+		Request::Effects(action) => session.apply_effects(action),
 		Request::Notes(events) => {
 			session.send_notes(&events);
 			app.monitor.extend(events.into_iter().map(MonitorEntry::now));

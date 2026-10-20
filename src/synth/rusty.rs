@@ -13,8 +13,10 @@ pub struct RustySynthEngine {
 
 impl RustySynthEngine {
 	/// Allocates all voice and block buffers up front; `sample_rate` must be within 16 000..=192 000 Hz.
-	pub fn new(bank: &SoundFontBank, sample_rate: u32) -> Result<Self, SynthError> {
-		let settings = SynthesizerSettings::new(i32::try_from(sample_rate).unwrap_or(i32::MAX));
+	/// `effects` enables rustysynth's reverb and chorus units (their send levels are CC 91 / CC 93).
+	pub fn new(bank: &SoundFontBank, sample_rate: u32, effects: bool) -> Result<Self, SynthError> {
+		let mut settings = SynthesizerSettings::new(i32::try_from(sample_rate).unwrap_or(i32::MAX));
+		settings.enable_reverb_and_chorus = effects;
 		let synthesizer = Synthesizer::new(bank.font(), &settings)?;
 		Ok(Self { synthesizer })
 	}
@@ -72,7 +74,7 @@ mod tests {
 
 	fn engine() -> RustySynthEngine {
 		let bank = SoundFontBank::load(Path::new(TEST_BANK_PATH)).expect("test bank loads");
-		RustySynthEngine::new(&bank, SAMPLE_RATE).expect("engine created")
+		RustySynthEngine::new(&bank, SAMPLE_RATE, true).expect("engine created")
 	}
 
 	fn render_rms(engine: &mut RustySynthEngine, frames: usize) -> (f32, f32) {
@@ -142,6 +144,17 @@ mod tests {
 	#[test]
 	fn unsupported_sample_rate_is_error() {
 		let bank = SoundFontBank::load(Path::new(TEST_BANK_PATH)).expect("test bank loads");
-		assert!(matches!(RustySynthEngine::new(&bank, 1_000), Err(SynthError::Synthesizer(_))));
+		assert!(matches!(RustySynthEngine::new(&bank, 1_000, true), Err(SynthError::Synthesizer(_))));
+	}
+
+	#[test]
+	fn engine_without_effects_still_renders_and_accepts_send_levels() {
+		let bank = SoundFontBank::load(Path::new(TEST_BANK_PATH)).expect("test bank loads");
+		let mut dry = RustySynthEngine::new(&bank, SAMPLE_RATE, false).expect("engine created");
+		dry.control_change(0, 91, 127);
+		dry.control_change(0, 93, 127);
+		dry.note_on(0, MIDDLE_C, VELOCITY);
+		let (left, _) = render_rms(&mut dry, FRAMES_100MS);
+		assert!(left > 0.01, "dry engine rms {left}");
 	}
 }

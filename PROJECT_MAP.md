@@ -8,12 +8,12 @@
 |------|-----------|--------|
 | `src/lib.rs` | Корень библиотеки: объявляет модули для бинарника и тестов | шаг 1.2 |
 | `src/main.rs` | Запуск: CLI → конфиг → `Settings` → локаль → `Session` → TUI; `--list-devices` | шаг 3.1 |
-| `src/session.rs` | `Session`: аудиопоток и его смена, кольца, MIDI, hot-plug, банк, пресеты каналов, микшер → гейн/CC7, конфиг, `Notice` | шаг 4.3 |
+| `src/session.rs` | `Session`: аудиопоток и его смена, кольца, MIDI, hot-plug, банк, пресеты каналов, микшер → гейн/CC7, реверб/хорус → пересоздание движка/CC91/93, транспонирование, конфиг, `Notice` | шаг 5.1 |
 | `src/cli.rs` | Аргументы командной строки (ТЗ §5), `DeviceSelector` имя/индекс + `find` | шаг 1.1, 1.5 |
 | `src/logging.rs` | `tracing` в файл в локальном каталоге данных ОС (N-07) | шаг 1.1 |
-| `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` (rusty.rs) (ADR 0001) | шаг 1.2 |
+| `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` с флагом эффектов (rusty.rs) (ADR 0001) | шаг 5.1 |
 | `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs), `HotplugWatcher` + `MidiStatus` (hotplug.rs), `MonitorEntry` + имена нот (monitor.rs) | шаг 1.3–4.1 |
-| `src/audio/` | `AudioShared` атомики: гейн, xrun, уровни, клипы (shared.rs), `measure` peak/RMS/клипы (meter.rs), `Mixer` мастер/каналы/mute/solo (mixer.rs), `BlockRenderer` + `Command` ядро коллбэка с учётом нот, нагрузки, транспонирования и omni (render.rs), устройства и `select_output_device` с fallback (device.rs), `open_output_stream` (stream.rs) (ADR 0002); | шаг 4.3 |
+| `src/audio/` | `AudioShared` атомики: гейн, xrun, уровни, клипы (shared.rs), `measure` peak/RMS/клипы (meter.rs), `Mixer` мастер/каналы/mute/solo (mixer.rs), `BlockRenderer` + `Command` ядро коллбэка с учётом нот, нагрузки, транспонирования и omni (render.rs, тесты в render/tests.rs), устройства и `select_output_device` с fallback (device.rs), `open_output_stream` (stream.rs) (ADR 0002); | шаг 4.3 |
 | `src/config.rs` | `Config` (все секции, ADR 0007), load/save, `Settings::resolve` CLI > конфиг > умолчания, `project_dirs` | шаг 2.1 |
 | `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil` (тесты в `app/tests.rs`), `screen.rs` `View` + экран (тесты в `screen/tests.rs`), `monitor.rs` буфер монитора, `meter.rs` CLIP-удержание и полосы, `text_keyboard.rs` ноты с клавиатуры (release/gate), `modals.rs` отрисовка модальных окон, `selector.rs` модальный список, `dialog.rs` диалоги F2/F3/F5/F6, `path_input.rs` поле пути F4, `keys.rs` привязки + справка из них, `i18n.rs` локаль (ADR 0004, 0008, 0009) | шаг 3.5 |
 | `src/record/` | Запись FLAC / Ogg Vorbis в отдельном потоке (ADR 0005) | план 5.3 |
@@ -41,10 +41,11 @@
 - Этап 4, шаг 4.4: panic F9/Space, счётчики удерживаемых нот / полифонии и нагрузки коллбэка в статусе.
 - Этап 4, шаг 4.5: текстовая клавиатура — раскладка, октава, velocity, режимы release/gate, Esc.
 - Этап 4, шаг 4.6: транспонирование [ ] ±12 с памятью звучащей ноты, omni-канал из конфига. Этап 4 завершён.
+- Этап 5, шаг 5.1: реверб/хорус — вкл/выкл Alt+R/Alt+C с пересозданием движка, уровни CC 91/93 из конфига, строка FX в микшере.
 
 ## Дальше
 
-- Шаг 5.1: реверб/хорус (пересоздание движка вне аудио-потока), omni-канал, транспонирование.
+- Шаг 5.2: сохранение состояния — запись конфига при выходе и после изменений (устройства, банк, громкость, язык, формат).
 - Остальные шаги — по плану `docs/plans/2026-10-20-sf2-player-v1.md`, раздел 4.
 
 ## Проверка

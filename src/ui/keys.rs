@@ -25,6 +25,8 @@ pub enum Action {
 	NotesOff,
 	TransposeUp,
 	TransposeDown,
+	ToggleReverb,
+	ToggleChorus,
 	MonitorClear,
 	MonitorPause,
 	MasterUp,
@@ -86,6 +88,8 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::NotesOff, KeyCode::Esc, KeyModifiers::NONE),
 	bind(Action::TransposeDown, KeyCode::Char('['), KeyModifiers::NONE),
 	bind(Action::TransposeUp, KeyCode::Char(']'), KeyModifiers::NONE),
+	bind(Action::ToggleReverb, KeyCode::Char('r'), KeyModifiers::ALT),
+	bind(Action::ToggleChorus, KeyCode::Char('c'), KeyModifiers::ALT),
 	bind(Action::MonitorClear, KeyCode::Char('l'), KeyModifiers::CONTROL),
 	bind(Action::MonitorPause, KeyCode::Char('f'), KeyModifiers::CONTROL),
 	bind(Action::MasterUp, KeyCode::Char('+'), KeyModifiers::NONE),
@@ -139,6 +143,8 @@ impl Action {
 			Self::NotesOff => "help.action.notes_off",
 			Self::TransposeUp => "help.action.transpose_up",
 			Self::TransposeDown => "help.action.transpose_down",
+			Self::ToggleReverb => "help.action.toggle_reverb",
+			Self::ToggleChorus => "help.action.toggle_chorus",
 			Self::MonitorClear => "help.action.monitor_clear",
 			Self::MonitorPause => "help.action.monitor_pause",
 			Self::MasterUp => "help.action.master_up",
@@ -268,6 +274,14 @@ mod tests {
 			Some(Action::TransposeDown)
 		);
 		assert_eq!(action_for(&press(KeyCode::Char(' '), KeyModifiers::NONE)), Some(Action::Panic));
+		assert_eq!(
+			action_for(&press(KeyCode::Char('r'), KeyModifiers::ALT)),
+			Some(Action::ToggleReverb)
+		);
+		assert_eq!(
+			action_for(&press(KeyCode::Char('c'), KeyModifiers::ALT)),
+			Some(Action::ToggleChorus)
+		);
 		assert_eq!(action_for(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
 		assert_eq!(action_for(&press(KeyCode::Tab, KeyModifiers::NONE)), Some(Action::FocusNext));
 		assert_eq!(

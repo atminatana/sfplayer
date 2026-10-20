@@ -51,6 +51,13 @@ pub const MONITOR_RING_CAPACITY: usize = 1024;
 
 pub const MIDI_CHANNELS: usize = 16;
 
+/// Reverb / chorus switches (F-13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectsAction {
+	ToggleReverb,
+	ToggleChorus,
+}
+
 /// What the mixer keys do (spec F-10, §6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MixerAction {
@@ -341,7 +348,8 @@ impl Session {
 		let (Some(stream), Some(commands), Some(loaded)) = (&self.audio, self.commands.as_mut(), &self.bank) else {
 			return Ok(());
 		};
-		let engine = RustySynthEngine::new(&loaded.bank, stream.sample_rate)?;
+		let effects = self.config.synth.reverb || self.config.synth.chorus;
+		let engine = RustySynthEngine::new(&loaded.bank, stream.sample_rate, effects)?;
 		if commands.try_push(Command::ReplaceEngine(Some(Box::new(engine)))).is_err() {
 			tracing::error!("command ring full, engine not installed");
 			return Ok(());
@@ -352,7 +360,35 @@ impl Session {
 			}
 		}
 		push_channel_volumes(commands, &self.mixer.effective_volumes());
+		push_effect_sends(commands, &self.config.synth);
 		Ok(())
+	}
+
+	/// Toggles an effect (F-13). Turning the last effect off or the first one on rebuilds the engine,
+	/// because rustysynth decides at construction whether the effect units exist; otherwise only the sends change.
+	pub fn apply_effects(&mut self, action: EffectsAction) {
+		let had_effects = self.config.synth.reverb || self.config.synth.chorus;
+		match action {
+			EffectsAction::ToggleReverb => self.config.synth.reverb = !self.config.synth.reverb,
+			EffectsAction::ToggleChorus => self.config.synth.chorus = !self.config.synth.chorus,
+		}
+		let has_effects = self.config.synth.reverb || self.config.synth.chorus;
+		if has_effects != had_effects {
+			if let Err(error) = self.install_engine() {
+				self.notice = Some(Notice::Sf2Error(error.to_string()));
+			}
+		} else if let Some(commands) = self.commands.as_mut() {
+			push_effect_sends(commands, &self.config.synth);
+		}
+	}
+
+	/// Current send levels for the UI: `None` when the effect is off.
+	pub fn reverb_level(&self) -> Option<u8> {
+		self.config.synth.reverb.then_some(self.config.synth.reverb_level.min(127))
+	}
+
+	pub fn chorus_level(&self) -> Option<u8> {
+		self.config.synth.chorus.then_some(self.config.synth.chorus_level.min(127))
 	}
 
 	/// Applies a mixer key (F-10): master through the gain atomic, channels through CC 7 on the command ring.
@@ -471,6 +507,24 @@ impl Session {
 				drop(engine);
 			}
 		}
+	}
+}
+
+/// CC 91 / CC 93 for all channels: the configured level while the effect is on, 0 when off (F-13).
+fn push_effect_sends(commands: &mut HeapProd<Command>, synth: &crate::config::SynthConfig) {
+	let reverb = if synth.reverb { synth.reverb_level.min(127) } else { 0 };
+	let chorus = if synth.chorus { synth.chorus_level.min(127) } else { 0 };
+	for channel in 0..MIDI_CHANNELS as u8 {
+		let _ = commands.try_push(Command::Midi(MidiEvent::ControlChange {
+			channel,
+			controller: controller::REVERB_SEND,
+			value: reverb,
+		}));
+		let _ = commands.try_push(Command::Midi(MidiEvent::ControlChange {
+			channel,
+			controller: controller::CHORUS_SEND,
+			value: chorus,
+		}));
 	}
 }
 
