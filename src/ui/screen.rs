@@ -313,7 +313,7 @@ fn render_status(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &
 			if view.dropped > 0 {
 				counters.push(t!("status.dropped", locale = locale, count = view.dropped).into_owned());
 			}
-			Line::from(counters.join("  "))
+			Line::from(counters.join(" "))
 		}
 	};
 	let hints = ["hint.help", "hint.midi", "hint.audio", "hint.sf2", "hint.record", "hint.quit"]
@@ -331,7 +331,7 @@ fn keyboard_text(app: &App, locale: &str) -> String {
 		NoteOffMode::Gate(gate) => t!("status.kbd_gate", locale = locale, ms = gate.as_millis()).into_owned(),
 	};
 	format!(
-		"{mode}  {}",
+		"{mode} {}",
 		t!(
 			"status.octave",
 			locale = locale,

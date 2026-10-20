@@ -75,7 +75,7 @@ fn full_frame_matches_the_layout_mockup() {
 		"││                                        ││                                  ││",
 		"│└────────────────────────────────────────┘└──────────────────────────────────┘│",
 		"│┌ Status ────────────────────────────────────────────────────────────────────┐│",
-		"││voices -/-  cpu 0%  xruns 0  kbd: gate 300ms  oct 4 vel 100                 ││",
+		"││voices -/- cpu 0% xruns 0 kbd: gate 300ms oct 4 vel 100                     ││",
 		"││F1 help F2 MIDI F3 audio F4 sf2 F7 rec F10 quit                             ││",
 		"│└────────────────────────────────────────────────────────────────────────────┘│",
 		"└──────────────────────────────────────────────────────────────────────────────┘",
@@ -335,7 +335,7 @@ fn mixer_panel_shows_master_and_channel_strips() {
 fn status_counters_show_held_notes_polyphony_and_load() {
 	let lines = draw("en", &view(), 80, 24);
 	assert!(
-		contains(&lines, "voices -/-  cpu 0%  xruns 0  kbd: gate 300ms  oct 4 vel 100"),
+		contains(&lines, "voices -/- cpu 0% xruns 0 kbd: gate 300ms oct 4 vel 100"),
 		"no engine installed"
 	);
 	let mut playing = view();
@@ -344,7 +344,7 @@ fn status_counters_show_held_notes_polyphony_and_load() {
 	playing.load_percent = 3;
 	playing.xruns = 2;
 	let lines = draw("ru", &playing, 80, 24);
-	assert!(contains(&lines, "голоса 7/64  cpu 3%  xrun 2"));
+	assert!(contains(&lines, "голоса 7/64 cpu 3% xrun 2"));
 }
 
 #[test]
@@ -355,7 +355,7 @@ fn status_shows_release_mode_in_russian() {
 		TextKeyboard::new(&crate::config::KeyboardConfig::default(), NoteOffMode::Release),
 	);
 	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, "клав: отпускание  окт 4 vel 100"));
+	assert!(contains(&lines, "клав: отпускание окт 4 vel 100"));
 }
 
 #[test]
@@ -367,5 +367,5 @@ fn status_shows_transpose_and_omni_only_when_active() {
 	shifted.transpose = -3;
 	shifted.omni_channel = Some(9);
 	let lines = draw("en", &shifted, 80, 24);
-	assert!(contains(&lines, "tr -3  omni ch10"));
+	assert!(contains(&lines, "tr -3 omni ch10"));
 }
