@@ -24,6 +24,7 @@ fn view() -> View {
 		xruns: 0,
 		dropped: 0,
 		levels: Levels::default(),
+		mixer: Mixer::new(80),
 		notice: None,
 	}
 }
@@ -55,15 +56,15 @@ fn full_frame_matches_the_layout_mockup() {
 		"│┌ MIDI monitor ──────────────────────────┐┌ Mixer ───────────────────────────┐│",
 		"││                                        ││L ▐░░░░░░░░░░░░▌   -inf dBFS      ││",
 		"││                                        ││R ▐░░░░░░░░░░░░▌   -inf dBFS      ││",
-		"││                                        ││                                  ││",
-		"││                                        ││                                  ││",
-		"││                                        ││                                  ││",
-		"││                                        ││                                  ││",
-		"││                                        ││                                  ││",
-		"││                                        ││                                  ││",
-		"││                                        ││                                  ││",
-		"││                                        ││                                  ││",
-		"││                                        ││                                  ││",
+		"││                                        ││MASTER ████████░░  80%            ││",
+		"││                                        ││ch01 █████░ 100 ch02 █████░ 100   ││",
+		"││                                        ││ch03 █████░ 100 ch04 █████░ 100   ││",
+		"││                                        ││ch05 █████░ 100 ch06 █████░ 100   ││",
+		"││                                        ││ch07 █████░ 100 ch08 █████░ 100   ││",
+		"││                                        ││ch09 █████░ 100 ch10 █████░ 100   ││",
+		"││                                        ││ch11 █████░ 100 ch12 █████░ 100   ││",
+		"││                                        ││ch13 █████░ 100 ch14 █████░ 100   ││",
+		"││                                        ││ch15 █████░ 100 ch16 █████░ 100   ││",
 		"││                                        ││                                  ││",
 		"││                                        ││                                  ││",
 		"││                                        ││                                  ││",
@@ -304,4 +305,23 @@ fn mixer_panel_shows_level_meters_and_clip_mark() {
 	assert!(contains(&lines, "CLIP"));
 	let silent = draw("ru", &view(), 80, 24);
 	assert!(contains(&silent, "−∞ dBFS"), "silence symbol from the dictionary");
+}
+
+#[test]
+fn mixer_panel_shows_master_and_channel_strips() {
+	let mut mixed = view();
+	mixed.mixer.toggle_master_mute();
+	mixed.mixer.toggle_mute(2);
+	mixed.mixer.toggle_solo(0);
+	mixed.mixer.adjust_channel(1, -60);
+	mixed.channel = 2;
+	let lines = draw("en", &mixed, 80, 24);
+	assert!(contains(&lines, "MASTER ████████░░  80%  mute"), "{lines:#?}");
+	assert!(contains(&lines, "ch01 █████░ solo"));
+	assert!(contains(&lines, "ch02 ██░░░░  40"));
+	assert!(contains(&lines, "ch03 ────── mute"));
+	assert!(contains(&lines, "ch16 █████░ 100"));
+	let ru = draw("ru", &mixed, 80, 24);
+	assert!(contains(&ru, "МАСТЕР"));
+	assert!(contains(&ru, "тихо"));
 }

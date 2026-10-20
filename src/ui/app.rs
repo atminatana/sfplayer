@@ -17,7 +17,7 @@ use super::path_input::{self, PathInput, PathOutcome};
 use super::screen;
 use super::selector::SelectorOutcome;
 use crate::audio;
-use crate::session::{Notice, Session};
+use crate::session::{MixerAction, Notice, Session};
 
 /// Spec §6: redraw at most 30 frames per second.
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(33);
@@ -42,6 +42,7 @@ impl Panel {
 /// What the UI wants the session to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
+	Mixer(MixerAction),
 	OpenDialog(DialogKind),
 	OpenSf2Dialog,
 	Apply(Choice),
@@ -119,36 +120,46 @@ impl App {
 			Action::PresetDialog => Some(Request::OpenDialog(DialogKind::Preset)),
 			Action::RecordFormatDialog => Some(Request::OpenDialog(DialogKind::RecordFormat)),
 			Action::Rescan => Some(Request::Rescan),
-			Action::MonitorClear
+			Action::MasterUp => Some(Request::Mixer(MixerAction::MasterUp)),
+			Action::MasterDown => Some(Request::Mixer(MixerAction::MasterDown)),
+			Action::MasterUpFast => Some(Request::Mixer(MixerAction::MasterUpFast)),
+			Action::MasterDownFast => Some(Request::Mixer(MixerAction::MasterDownFast)),
+			Action::MasterMute => Some(Request::Mixer(MixerAction::MasterMute)),
+			Action::SelectChannel(_)
+			| Action::ChannelUp
+			| Action::ChannelDown
+			| Action::ChannelMute
+			| Action::ChannelSolo
+			| Action::MonitorClear
 			| Action::MonitorPause
 			| Action::ScrollUp
 			| Action::ScrollDown
 			| Action::PageUp
 			| Action::PageDown
 			| Action::ScrollHome
-			| Action::ScrollEnd => {
-				self.handle_panel_action(action);
-				None
-			}
+			| Action::ScrollEnd => self.handle_panel_action(action),
 		}
 	}
 
 	/// Keys whose meaning depends on the focused panel (spec §6 "контекст").
-	fn handle_panel_action(&mut self, action: Action) {
-		if self.focus != Panel::Monitor {
-			return;
-		}
-		match action {
-			Action::MonitorClear => self.monitor.clear(),
-			Action::MonitorPause => self.monitor.toggle_pause(),
-			Action::ScrollUp => self.monitor.scroll_up(1),
-			Action::ScrollDown => self.monitor.scroll_down(1),
-			Action::PageUp => self.monitor.scroll_up(MONITOR_PAGE),
-			Action::PageDown => self.monitor.scroll_down(MONITOR_PAGE),
-			Action::ScrollHome => self.monitor.scroll_to_top(),
-			Action::ScrollEnd => self.monitor.scroll_to_bottom(),
+	fn handle_panel_action(&mut self, action: Action) -> Option<Request> {
+		match (self.focus, action) {
+			(Panel::Monitor, Action::MonitorClear) => self.monitor.clear(),
+			(Panel::Monitor, Action::MonitorPause) => self.monitor.toggle_pause(),
+			(Panel::Monitor, Action::ScrollUp) => self.monitor.scroll_up(1),
+			(Panel::Monitor, Action::ScrollDown) => self.monitor.scroll_down(1),
+			(Panel::Monitor, Action::PageUp) => self.monitor.scroll_up(MONITOR_PAGE),
+			(Panel::Monitor, Action::PageDown) => self.monitor.scroll_down(MONITOR_PAGE),
+			(Panel::Monitor, Action::ScrollHome) => self.monitor.scroll_to_top(),
+			(Panel::Monitor, Action::ScrollEnd) => self.monitor.scroll_to_bottom(),
+			(Panel::Mixer, Action::SelectChannel(channel)) => return Some(Request::Mixer(MixerAction::SelectChannel(channel))),
+			(Panel::Mixer, Action::ChannelUp) => return Some(Request::Mixer(MixerAction::ChannelUp)),
+			(Panel::Mixer, Action::ChannelDown) => return Some(Request::Mixer(MixerAction::ChannelDown)),
+			(Panel::Mixer, Action::ChannelMute) => return Some(Request::Mixer(MixerAction::ChannelMute)),
+			(Panel::Mixer, Action::ChannelSolo) => return Some(Request::Mixer(MixerAction::ChannelSolo)),
 			_ => {}
 		}
+		None
 	}
 
 	fn handle_modal_key(&mut self, key: KeyEvent) -> Option<Request> {
@@ -220,6 +231,7 @@ impl App {
 /// Applies a UI request to the session and the app (dialog contents come from the session).
 pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 	match request {
+		Request::Mixer(action) => session.apply_mixer(action),
 		Request::OpenDialog(DialogKind::MidiInput) => {
 			session.rescan();
 			app.open_dialog(Dialog::midi(&session.midi_ports, session.connected_midi_port()));
@@ -457,6 +469,49 @@ mod tests {
 		app.handle_key(plain(KeyCode::Tab));
 		app.handle_key(press(KeyCode::Char('l'), KeyModifiers::CONTROL));
 		assert!(app.monitor.is_empty());
+	}
+
+	#[test]
+	fn master_keys_work_everywhere_but_channel_keys_need_the_mixer_focus() {
+		let mut app = App::new("en");
+		assert_eq!(
+			app.handle_key(plain(KeyCode::Char('+'))),
+			Some(Request::Mixer(MixerAction::MasterUp))
+		);
+		assert_eq!(
+			app.handle_key(press(KeyCode::Char('u'), KeyModifiers::CONTROL)),
+			Some(Request::Mixer(MixerAction::MasterMute))
+		);
+		assert_eq!(
+			app.handle_key(plain(KeyCode::Char('3'))),
+			None,
+			"monitor focused: digits do nothing"
+		);
+		assert_eq!(app.handle_key(plain(KeyCode::Right)), None);
+		app.handle_key(plain(KeyCode::Tab));
+		assert_eq!(
+			app.handle_key(plain(KeyCode::Char('3'))),
+			Some(Request::Mixer(MixerAction::SelectChannel(2)))
+		);
+		assert_eq!(
+			app.handle_key(press(KeyCode::Char('2'), KeyModifiers::ALT)),
+			Some(Request::Mixer(MixerAction::SelectChannel(11)))
+		);
+		assert_eq!(app.handle_key(plain(KeyCode::Right)), Some(Request::Mixer(MixerAction::ChannelUp)));
+		assert_eq!(app.handle_key(plain(KeyCode::Left)), Some(Request::Mixer(MixerAction::ChannelDown)));
+		assert_eq!(
+			app.handle_key(press(KeyCode::Char('x'), KeyModifiers::CONTROL)),
+			Some(Request::Mixer(MixerAction::ChannelMute))
+		);
+		assert_eq!(
+			app.handle_key(press(KeyCode::Char('o'), KeyModifiers::CONTROL)),
+			Some(Request::Mixer(MixerAction::ChannelSolo))
+		);
+		assert_eq!(
+			app.handle_key(plain(KeyCode::Up)),
+			None,
+			"monitor scrolling is inactive while the mixer is focused"
+		);
 	}
 
 	#[test]

@@ -13,7 +13,8 @@ use super::app::{App, Panel};
 use super::dialog::preset_label;
 use super::meter::{dbfs_text, level_bar};
 use super::modals;
-use crate::audio::Levels;
+use crate::audio::mixer::CHANNELS;
+use crate::audio::{Levels, Mixer};
 use crate::midi::MidiStatus;
 use crate::session::{Notice, Session};
 
@@ -34,6 +35,7 @@ pub struct View {
 	pub xruns: u32,
 	pub dropped: u32,
 	pub levels: Levels,
+	pub mixer: Mixer,
 	pub notice: Option<Notice>,
 }
 
@@ -72,6 +74,7 @@ impl View {
 			xruns: session.shared.xruns(),
 			dropped: session.midi_dropped.load(std::sync::atomic::Ordering::Relaxed),
 			levels: session.shared.levels(),
+			mixer: session.mixer.clone(),
 			notice: session.notice.clone(),
 		}
 	}
@@ -188,11 +191,69 @@ fn render_mixer(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &V
 		}
 		Line::from(spans)
 	};
-	let lines = vec![
+	let mut lines = vec![
 		meter_line("L", view.levels.peak_left, view.levels.rms_left),
 		meter_line("R", view.levels.peak_right, view.levels.rms_right),
 	];
+	lines.push(master_line(view, locale));
+	lines.extend(channel_lines(view, locale));
 	frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// "MASTER ████████░░  80%" plus a mute mark.
+fn master_line(view: &View, locale: &str) -> Line<'static> {
+	let mixer = &view.mixer;
+	let mut spans = vec![
+		label(t!("mixer.master", locale = locale).into_owned()),
+		Span::raw(format!(" {} {:>3}%", percent_bar(mixer.master, 10), mixer.master)),
+	];
+	if mixer.master_muted {
+		spans.push(Span::styled(
+			format!("  {}", t!("mixer.mute", locale = locale)),
+			Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+		));
+	}
+	Line::from(spans)
+}
+
+/// Two channel strips per line: "ch01 ████░░ 100  ch02 ───── mute"; the current channel is highlighted.
+fn channel_lines(view: &View, locale: &str) -> Vec<Line<'static>> {
+	let mixer = &view.mixer;
+	let current = usize::from(view.channel.saturating_sub(1));
+	(0..CHANNELS)
+		.step_by(2)
+		.map(|first| {
+			let mut spans = Vec::new();
+			for channel in [first, first + 1] {
+				let strip = mixer.channels[channel];
+				let text = if strip.muted {
+					format!("ch{:02} ────── {}", channel + 1, t!("mixer.mute", locale = locale))
+				} else {
+					let mark = if strip.solo {
+						t!("mixer.solo", locale = locale).into_owned()
+					} else {
+						format!("{:>3}", strip.volume)
+					};
+					format!("ch{:02} {} {mark}", channel + 1, percent_bar(strip.volume, 6))
+				};
+				let style = if channel == current {
+					Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+				} else {
+					Style::default()
+				};
+				spans.push(Span::styled(format!("{text:<16}"), style));
+			}
+			Line::from(spans)
+		})
+		.collect()
+}
+
+/// Bar for a 0..=max value; the master uses percent (max 100), channels CC 7 (max 127).
+fn percent_bar(value: u8, width: usize) -> String {
+	let max = if width == 10 { 100.0 } else { 127.0 };
+	let filled = ((f32::from(value) / max) * width as f32).round() as usize;
+	let filled = filled.min(width);
+	format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
 }
 
 /// MIDI monitor panel (F-08): newest at the bottom unless scrolled; title shows the pause state.

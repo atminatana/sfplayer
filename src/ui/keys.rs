@@ -18,6 +18,17 @@ pub enum Action {
 	Rescan,
 	MonitorClear,
 	MonitorPause,
+	MasterUp,
+	MasterDown,
+	MasterUpFast,
+	MasterDownFast,
+	MasterMute,
+	/// 0-based channel; shown as one grouped help row.
+	SelectChannel(u8),
+	ChannelUp,
+	ChannelDown,
+	ChannelMute,
+	ChannelSolo,
 	ScrollUp,
 	ScrollDown,
 	PageUp,
@@ -59,6 +70,33 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::ScrollEnd, KeyCode::End, KeyModifiers::NONE),
 	bind(Action::MonitorClear, KeyCode::Char('l'), KeyModifiers::CONTROL),
 	bind(Action::MonitorPause, KeyCode::Char('f'), KeyModifiers::CONTROL),
+	bind(Action::MasterUp, KeyCode::Char('+'), KeyModifiers::NONE),
+	bind(Action::MasterUp, KeyCode::Char('='), KeyModifiers::NONE),
+	bind(Action::MasterDown, KeyCode::Char('-'), KeyModifiers::NONE),
+	bind(Action::MasterUpFast, KeyCode::Char('+'), KeyModifiers::SHIFT),
+	bind(Action::MasterDownFast, KeyCode::Char('_'), KeyModifiers::SHIFT),
+	bind(Action::MasterDownFast, KeyCode::Char('_'), KeyModifiers::NONE),
+	bind(Action::MasterMute, KeyCode::Char('u'), KeyModifiers::CONTROL),
+	bind(Action::SelectChannel(0), KeyCode::Char('1'), KeyModifiers::NONE),
+	bind(Action::SelectChannel(1), KeyCode::Char('2'), KeyModifiers::NONE),
+	bind(Action::SelectChannel(2), KeyCode::Char('3'), KeyModifiers::NONE),
+	bind(Action::SelectChannel(3), KeyCode::Char('4'), KeyModifiers::NONE),
+	bind(Action::SelectChannel(4), KeyCode::Char('5'), KeyModifiers::NONE),
+	bind(Action::SelectChannel(5), KeyCode::Char('6'), KeyModifiers::NONE),
+	bind(Action::SelectChannel(6), KeyCode::Char('7'), KeyModifiers::NONE),
+	bind(Action::SelectChannel(7), KeyCode::Char('8'), KeyModifiers::NONE),
+	bind(Action::SelectChannel(8), KeyCode::Char('9'), KeyModifiers::NONE),
+	bind(Action::SelectChannel(9), KeyCode::Char('0'), KeyModifiers::NONE),
+	bind(Action::SelectChannel(10), KeyCode::Char('1'), KeyModifiers::ALT),
+	bind(Action::SelectChannel(11), KeyCode::Char('2'), KeyModifiers::ALT),
+	bind(Action::SelectChannel(12), KeyCode::Char('3'), KeyModifiers::ALT),
+	bind(Action::SelectChannel(13), KeyCode::Char('4'), KeyModifiers::ALT),
+	bind(Action::SelectChannel(14), KeyCode::Char('5'), KeyModifiers::ALT),
+	bind(Action::SelectChannel(15), KeyCode::Char('6'), KeyModifiers::ALT),
+	bind(Action::ChannelDown, KeyCode::Left, KeyModifiers::NONE),
+	bind(Action::ChannelUp, KeyCode::Right, KeyModifiers::NONE),
+	bind(Action::ChannelMute, KeyCode::Char('x'), KeyModifiers::CONTROL),
+	bind(Action::ChannelSolo, KeyCode::Char('o'), KeyModifiers::CONTROL),
 ];
 
 impl Action {
@@ -77,6 +115,16 @@ impl Action {
 			Self::Rescan => "help.action.rescan",
 			Self::MonitorClear => "help.action.monitor_clear",
 			Self::MonitorPause => "help.action.monitor_pause",
+			Self::MasterUp => "help.action.master_up",
+			Self::MasterDown => "help.action.master_down",
+			Self::MasterUpFast => "help.action.master_up_fast",
+			Self::MasterDownFast => "help.action.master_down_fast",
+			Self::MasterMute => "help.action.master_mute",
+			Self::SelectChannel(_) => "help.action.select_channel",
+			Self::ChannelUp => "help.action.channel_up",
+			Self::ChannelDown => "help.action.channel_down",
+			Self::ChannelMute => "help.action.channel_mute",
+			Self::ChannelSolo => "help.action.channel_solo",
 			Self::ScrollUp => "help.action.scroll_up",
 			Self::ScrollDown => "help.action.scroll_down",
 			Self::PageUp => "help.action.page_up",
@@ -122,17 +170,21 @@ pub fn key_label(binding: &Binding) -> String {
 
 /// One help row per action, in `BINDINGS` order; several chords for one action are joined with " / ".
 pub fn help_rows(locale: &str) -> Vec<(String, String)> {
-	let mut rows: Vec<(Action, Vec<String>)> = Vec::new();
+	let mut rows: Vec<(&'static str, Vec<String>)> = Vec::new();
 	for binding in BINDINGS {
-		let label = key_label(binding);
-		match rows.iter_mut().find(|(action, _)| *action == binding.action) {
+		let key = binding.action.description_key();
+		let label = match binding.action {
+			Action::SelectChannel(_) => t!("help.chord.select_channel", locale = locale).into_owned(),
+			_ => key_label(binding),
+		};
+		match rows.iter_mut().find(|(existing, _)| *existing == key) {
 			Some((_, labels)) if !labels.contains(&label) => labels.push(label),
 			Some(_) => {}
-			None => rows.push((binding.action, vec![label])),
+			None => rows.push((key, vec![label])),
 		}
 	}
 	rows.into_iter()
-		.map(|(action, labels)| (labels.join(" / "), t!(action.description_key(), locale = locale).into_owned()))
+		.map(|(key, labels)| (labels.join(" / "), t!(key, locale = locale).into_owned()))
 		.collect()
 }
 
@@ -184,9 +236,11 @@ mod tests {
 	#[test]
 	fn no_binding_uses_a_bare_letter() {
 		for binding in BINDINGS {
-			if let KeyCode::Char(c) = binding.code {
+			if let KeyCode::Char(c) = binding.code
+				&& c.is_alphabetic()
+			{
 				assert!(
-					c.is_alphabetic() && binding.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT),
+					binding.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT),
 					"{binding:?}"
 				);
 			}
@@ -194,15 +248,59 @@ mod tests {
 	}
 
 	#[test]
+	fn mixer_keys_map_to_actions() {
+		assert_eq!(action_for(&press(KeyCode::Char('+'), KeyModifiers::NONE)), Some(Action::MasterUp));
+		assert_eq!(action_for(&press(KeyCode::Char('='), KeyModifiers::NONE)), Some(Action::MasterUp));
+		assert_eq!(
+			action_for(&press(KeyCode::Char('+'), KeyModifiers::SHIFT)),
+			Some(Action::MasterUpFast)
+		);
+		assert_eq!(action_for(&press(KeyCode::Char('-'), KeyModifiers::NONE)), Some(Action::MasterDown));
+		assert_eq!(
+			action_for(&press(KeyCode::Char('_'), KeyModifiers::SHIFT)),
+			Some(Action::MasterDownFast)
+		);
+		assert_eq!(
+			action_for(&press(KeyCode::Char('u'), KeyModifiers::CONTROL)),
+			Some(Action::MasterMute)
+		);
+		assert_eq!(
+			action_for(&press(KeyCode::Char('0'), KeyModifiers::NONE)),
+			Some(Action::SelectChannel(9))
+		);
+		assert_eq!(
+			action_for(&press(KeyCode::Char('6'), KeyModifiers::ALT)),
+			Some(Action::SelectChannel(15))
+		);
+		assert_eq!(action_for(&press(KeyCode::Right, KeyModifiers::NONE)), Some(Action::ChannelUp));
+		assert_eq!(
+			action_for(&press(KeyCode::Char('x'), KeyModifiers::CONTROL)),
+			Some(Action::ChannelMute)
+		);
+		assert_eq!(
+			action_for(&press(KeyCode::Char('o'), KeyModifiers::CONTROL)),
+			Some(Action::ChannelSolo)
+		);
+	}
+
+	#[test]
 	fn help_lists_every_bound_action_with_its_chords() {
 		let rows = help_rows("en");
 		for binding in BINDINGS {
+			if matches!(binding.action, Action::SelectChannel(_)) {
+				continue;
+			}
 			let label = key_label(binding);
 			assert!(
 				rows.iter().any(|(keys, _)| keys.split(" / ").any(|chord| chord == label)),
 				"{label} missing from help"
 			);
 		}
+		assert!(
+			rows.iter()
+				.any(|(keys, description)| keys.contains("Alt+1") && description.contains("channel")),
+			"grouped channel row"
+		);
 		let quit = rows.iter().find(|(keys, _)| keys.contains("F10")).expect("quit row");
 		assert_eq!(quit.0, "F10 / Ctrl+C");
 		assert!(

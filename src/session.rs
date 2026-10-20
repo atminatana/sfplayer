@@ -10,7 +10,8 @@ use std::sync::mpsc::{self, Receiver};
 use ringbuf::traits::{Consumer, Producer};
 use ringbuf::{HeapCons, HeapProd};
 
-use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, StreamParams};
+use crate::audio::mixer::{CHANNEL_STEP, MASTER_STEP, MASTER_STEP_FAST};
+use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, Mixer, StreamParams};
 use crate::cli::DeviceSelector;
 use crate::config::{Config, RecordFormat, Settings};
 use crate::midi::{
@@ -50,6 +51,22 @@ pub const MONITOR_RING_CAPACITY: usize = 1024;
 
 pub const MIDI_CHANNELS: usize = 16;
 
+/// What the mixer keys do (spec F-10, §6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixerAction {
+	MasterUp,
+	MasterDown,
+	MasterUpFast,
+	MasterDownFast,
+	MasterMute,
+	/// 0-based channel.
+	SelectChannel(u8),
+	ChannelUp,
+	ChannelDown,
+	ChannelMute,
+	ChannelSolo,
+}
+
 pub struct Session {
 	pub config: Config,
 	pub config_path: PathBuf,
@@ -76,6 +93,7 @@ pub struct Session {
 	channel_presets: [Option<(u16, u8)>; MIDI_CHANNELS],
 	/// Channel the mixer and the preset dialog act on (0-based).
 	pub current_channel: u8,
+	pub mixer: Mixer,
 	pub notice: Option<Notice>,
 }
 
@@ -83,7 +101,8 @@ impl Session {
 	/// Opens audio (silent until a bank is loaded), connects MIDI, loads the bank from settings, starts hot-plug polling.
 	/// Device problems become notices, not errors: the UI must come up so the user can fix the choice.
 	pub fn start(settings: &Settings, config: Config, config_path: PathBuf) -> Self {
-		let shared = Arc::new(AudioShared::new(f32::from(config.mixer.master) / 100.0));
+		let master_percent = config.mixer.master.min(100);
+		let shared = Arc::new(AudioShared::new(f32::from(master_percent) / 100.0));
 		let (hotplug_tx, hotplug_rx) = mpsc::channel();
 		let (monitor_tx, monitor_rx) = HeapRb::<MonitorEntry>::new(MONITOR_RING_CAPACITY).split();
 		let mut session = Self {
@@ -111,6 +130,7 @@ impl Session {
 			bank: None,
 			channel_presets: [None; MIDI_CHANNELS],
 			current_channel: 0,
+			mixer: Mixer::new(master_percent),
 			notice: None,
 		};
 
@@ -320,7 +340,35 @@ impl Session {
 				push_preset(commands, channel as u8, bank, program);
 			}
 		}
+		push_channel_volumes(commands, &self.mixer.effective_volumes());
 		Ok(())
+	}
+
+	/// Applies a mixer key (F-10): master through the gain atomic, channels through CC 7 on the command ring.
+	pub fn apply_mixer(&mut self, action: MixerAction) {
+		let channel = usize::from(self.current_channel);
+		match action {
+			MixerAction::MasterUp => self.mixer.adjust_master(MASTER_STEP),
+			MixerAction::MasterDown => self.mixer.adjust_master(-MASTER_STEP),
+			MixerAction::MasterUpFast => self.mixer.adjust_master(MASTER_STEP_FAST),
+			MixerAction::MasterDownFast => self.mixer.adjust_master(-MASTER_STEP_FAST),
+			MixerAction::MasterMute => self.mixer.toggle_master_mute(),
+			MixerAction::SelectChannel(index) => {
+				if usize::from(index) < MIDI_CHANNELS {
+					self.current_channel = index;
+				}
+				return;
+			}
+			MixerAction::ChannelUp => self.mixer.adjust_channel(channel, CHANNEL_STEP),
+			MixerAction::ChannelDown => self.mixer.adjust_channel(channel, -CHANNEL_STEP),
+			MixerAction::ChannelMute => self.mixer.toggle_mute(channel),
+			MixerAction::ChannelSolo => self.mixer.toggle_solo(channel),
+		}
+		self.shared.set_master_gain(self.mixer.master_gain());
+		self.config.mixer.master = self.mixer.master;
+		if let Some(commands) = self.commands.as_mut() {
+			push_channel_volumes(commands, &self.mixer.effective_volumes());
+		}
 	}
 
 	/// Chooses the preset for `channel` (F-06) by sending Bank Select + Program Change down the command ring.
@@ -371,6 +419,17 @@ impl Session {
 				drop(engine);
 			}
 		}
+	}
+}
+
+/// CC 7 for all 16 channels; cheap enough to resend on every mixer change (16 ring pushes).
+fn push_channel_volumes(commands: &mut HeapProd<Command>, volumes: &[u8; MIDI_CHANNELS]) {
+	for (channel, volume) in volumes.iter().enumerate() {
+		let _ = commands.try_push(Command::Midi(MidiEvent::ControlChange {
+			channel: channel as u8,
+			controller: controller::VOLUME,
+			value: *volume,
+		}));
 	}
 }
 

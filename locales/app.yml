@@ -228,3 +228,46 @@ meter.clip:
 meter.silence:
   en: "-inf"
   ru: "−∞"
+
+mixer.master:
+  en: "MASTER"
+  ru: "МАСТЕР"
+mixer.mute:
+  en: "mute"
+  ru: "тихо"
+mixer.solo:
+  en: "solo"
+  ru: "соло"
+help.chord.select_channel:
+  en: "1–9, 0, Alt+1–6"
+  ru: "1–9, 0, Alt+1–6"
+help.action.master_up:
+  en: "Master volume +1 %"
+  ru: "Мастер-громкость +1 %"
+help.action.master_down:
+  en: "Master volume −1 %"
+  ru: "Мастер-громкость −1 %"
+help.action.master_up_fast:
+  en: "Master volume +5 %"
+  ru: "Мастер-громкость +5 %"
+help.action.master_down_fast:
+  en: "Master volume −5 %"
+  ru: "Мастер-громкость −5 %"
+help.action.master_mute:
+  en: "Mute master"
+  ru: "Заглушить мастер"
+help.action.select_channel:
+  en: "Select mixer channel 1–16 (mixer)"
+  ru: "Выбрать канал микшера 1–16 (микшер)"
+help.action.channel_up:
+  en: "Channel volume +5 (mixer)"
+  ru: "Громкость канала +5 (микшер)"
+help.action.channel_down:
+  en: "Channel volume −5 (mixer)"
+  ru: "Громкость канала −5 (микшер)"
+help.action.channel_mute:
+  en: "Mute channel (mixer)"
+  ru: "Заглушить канал (микшер)"
+help.action.channel_solo:
+  en: "Solo channel (mixer)"
+  ru: "Соло канала (микшер)"

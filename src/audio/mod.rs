@@ -3,6 +3,7 @@
 
 mod device;
 pub mod meter;
+pub mod mixer;
 mod render;
 mod shared;
 mod stream;
@@ -11,6 +12,7 @@ pub use device::{
 	AudioDeviceInfo, SelectedDevice, default_output_device, list_output_devices, output_device_by_index, select_output_device,
 };
 pub use meter::Levels;
+pub use mixer::Mixer;
 pub use render::{BlockRenderer, Command};
 pub use shared::AudioShared;
 pub use stream::{AudioLinks, AudioStream, StreamParams, open_output_stream};
