@@ -1,8 +1,13 @@
 //! Command hotkeys (spec §6, ADR 0004): one table drives key handling, the F1 help and the README.
 //! No plain letters here — the two bottom rows belong to the text keyboard (F-16).
+//! Defaults live in `BINDINGS`; `[keys]` and `[keyboard]` in the config override them (ADR 0007).
+
+use std::collections::BTreeMap;
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rust_i18n::t;
+
+use crate::config::KeyboardConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -123,6 +128,265 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::ChannelSolo, KeyCode::Char('o'), KeyModifiers::CONTROL),
 ];
 
+/// Command names accepted in `[keys]` (snake_case of the action; channels are `select_channel_1`..`16`).
+const COMMAND_NAMES: &[(&str, Action)] = &[
+	("help", Action::Help),
+	("quit", Action::Quit),
+	("focus_next", Action::FocusNext),
+	("focus_previous", Action::FocusPrevious),
+	("midi_dialog", Action::MidiDialog),
+	("audio_dialog", Action::AudioDialog),
+	("sf2_dialog", Action::Sf2Dialog),
+	("preset_dialog", Action::PresetDialog),
+	("record_format_dialog", Action::RecordFormatDialog),
+	("rescan", Action::Rescan),
+	("record", Action::Record),
+	("panic", Action::Panic),
+	("octave_up", Action::OctaveUp),
+	("octave_down", Action::OctaveDown),
+	("velocity_up", Action::VelocityUp),
+	("velocity_down", Action::VelocityDown),
+	("notes_off", Action::NotesOff),
+	("transpose_up", Action::TransposeUp),
+	("transpose_down", Action::TransposeDown),
+	("toggle_reverb", Action::ToggleReverb),
+	("toggle_chorus", Action::ToggleChorus),
+	("monitor_clear", Action::MonitorClear),
+	("monitor_pause", Action::MonitorPause),
+	("master_up", Action::MasterUp),
+	("master_down", Action::MasterDown),
+	("master_up_fast", Action::MasterUpFast),
+	("master_down_fast", Action::MasterDownFast),
+	("master_mute", Action::MasterMute),
+	("channel_up", Action::ChannelUp),
+	("channel_down", Action::ChannelDown),
+	("channel_mute", Action::ChannelMute),
+	("channel_solo", Action::ChannelSolo),
+	("scroll_up", Action::ScrollUp),
+	("scroll_down", Action::ScrollDown),
+	("page_up", Action::PageUp),
+	("page_down", Action::PageDown),
+	("scroll_home", Action::ScrollHome),
+	("scroll_end", Action::ScrollEnd),
+];
+
+/// Parses a `[keys]` command name.
+pub fn action_by_name(name: &str) -> Option<Action> {
+	if let Some(number) = name.strip_prefix("select_channel_") {
+		return number
+			.parse::<u8>()
+			.ok()
+			.filter(|n| (1..=16).contains(n))
+			.map(|n| Action::SelectChannel(n - 1));
+	}
+	COMMAND_NAMES.iter().find(|(known, _)| *known == name).map(|(_, action)| *action)
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum BindingError {
+	#[error("[keys] {key}: unknown command (see the F1 help for names)")]
+	UnknownCommand { key: String },
+	#[error("[keys] {key}: cannot parse chord {chord:?}")]
+	BadChord { key: String, chord: String },
+	#[error("[keys] {key}: {chord:?} is a bare letter, which the text keyboard needs for notes")]
+	BareLetter { key: String, chord: String },
+	#[error("[keys] {key}: {chord} is already used by {other}")]
+	Conflict { key: String, chord: String, other: String },
+}
+
+/// Parses "Ctrl+Alt+F5", "Shift+Tab", "Space", "]", "Shift++" into a key code and modifiers. Case-insensitive.
+pub fn parse_chord(chord: &str) -> Option<(KeyCode, KeyModifiers)> {
+	let trimmed = chord.trim();
+	// A trailing '+' is the key itself ("+" or "Shift++"), not a separator.
+	let (modifier_part, key) = match trimmed.strip_suffix('+') {
+		Some(prefix) => (prefix.strip_suffix('+').unwrap_or(prefix), "+"),
+		None => trimmed.rsplit_once('+').unwrap_or(("", trimmed)),
+	};
+	let key = key.trim();
+	if key.is_empty() {
+		return None;
+	}
+	let mut modifiers = KeyModifiers::NONE;
+	for part in modifier_part.split('+').map(str::trim).filter(|part| !part.is_empty()) {
+		match part.to_ascii_lowercase().as_str() {
+			"ctrl" | "control" => modifiers |= KeyModifiers::CONTROL,
+			"alt" => modifiers |= KeyModifiers::ALT,
+			"shift" => modifiers |= KeyModifiers::SHIFT,
+			_ => return None,
+		}
+	}
+	let lower = key.to_ascii_lowercase();
+	let code = match lower.as_str() {
+		"space" => KeyCode::Char(' '),
+		"tab" => {
+			if modifiers.contains(KeyModifiers::SHIFT) {
+				KeyCode::BackTab
+			} else {
+				KeyCode::Tab
+			}
+		}
+		"esc" | "escape" => KeyCode::Esc,
+		"enter" | "return" => KeyCode::Enter,
+		"up" | "↑" => KeyCode::Up,
+		"down" | "↓" => KeyCode::Down,
+		"left" | "←" => KeyCode::Left,
+		"right" | "→" => KeyCode::Right,
+		"home" => KeyCode::Home,
+		"end" => KeyCode::End,
+		"pgup" | "pageup" => KeyCode::PageUp,
+		"pgdn" | "pagedown" => KeyCode::PageDown,
+		"backspace" => KeyCode::Backspace,
+		"delete" | "del" => KeyCode::Delete,
+		"insert" | "ins" => KeyCode::Insert,
+		_ => {
+			if let Some(number) = lower
+				.strip_prefix('f')
+				.and_then(|n| n.parse::<u8>().ok())
+				.filter(|n| (1..=24).contains(n))
+			{
+				KeyCode::F(number)
+			} else {
+				let mut chars = key.chars();
+				let c = chars.next()?;
+				if chars.next().is_some() {
+					return None;
+				}
+				KeyCode::Char(c.to_ascii_lowercase())
+			}
+		}
+	};
+	Some((code, modifiers))
+}
+
+/// The active key table: defaults with `[keys]` / `[keyboard]` overrides applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bindings {
+	bindings: Vec<Binding>,
+}
+
+impl Default for Bindings {
+	fn default() -> Self {
+		Self {
+			bindings: BINDINGS.to_vec(),
+		}
+	}
+}
+
+impl Bindings {
+	/// Applies overrides: every listed command loses its default chords and gets the configured ones
+	/// (several, comma-separated). `[keyboard]` octave / velocity alternatives are added on top of the defaults.
+	pub fn from_config(keys: &BTreeMap<String, String>, keyboard: &KeyboardConfig) -> Result<Self, BindingError> {
+		let mut bindings = Self::default();
+		for (key, chords) in keys {
+			let action = action_by_name(key).ok_or_else(|| BindingError::UnknownCommand { key: key.clone() })?;
+			bindings.bindings.retain(|binding| binding.action != action);
+			for chord in chords.split(',').map(str::trim).filter(|chord| !chord.is_empty()) {
+				bindings.add(key, chord, action)?;
+			}
+		}
+		for (key, chord, action) in [
+			("keyboard.octave_up", &keyboard.octave_up, Action::OctaveUp),
+			("keyboard.octave_down", &keyboard.octave_down, Action::OctaveDown),
+			("keyboard.velocity_up", &keyboard.velocity_up, Action::VelocityUp),
+			("keyboard.velocity_down", &keyboard.velocity_down, Action::VelocityDown),
+		] {
+			if let Some(chord) = chord {
+				bindings.add(key, chord, action)?;
+			}
+		}
+		Ok(bindings)
+	}
+
+	fn add(&mut self, key: &str, chord: &str, action: Action) -> Result<(), BindingError> {
+		let (code, modifiers) = parse_chord(chord).ok_or_else(|| BindingError::BadChord {
+			key: key.to_owned(),
+			chord: chord.to_owned(),
+		})?;
+		if let KeyCode::Char(c) = code
+			&& c.is_alphabetic()
+			&& !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+		{
+			return Err(BindingError::BareLetter {
+				key: key.to_owned(),
+				chord: chord.to_owned(),
+			});
+		}
+		if let Some(other) = self
+			.bindings
+			.iter()
+			.find(|binding| binding.code == code && binding.modifiers == modifiers && binding.action != action)
+		{
+			return Err(BindingError::Conflict {
+				key: key.to_owned(),
+				chord: key_label_of(code, modifiers),
+				other: command_name(other.action),
+			});
+		}
+		if !self
+			.bindings
+			.iter()
+			.any(|binding| binding.code == code && binding.modifiers == modifiers)
+		{
+			self.bindings.push(bind(action, code, modifiers));
+		}
+		Ok(())
+	}
+
+	/// Maps a key press to a command; `None` means the key is free for other handlers (dialogs, text keyboard).
+	pub fn action_for(&self, key: &KeyEvent) -> Option<Action> {
+		self.bindings
+			.iter()
+			.find(|binding| binding.code == key.code && binding.modifiers == key.modifiers)
+			.map(|binding| binding.action)
+	}
+
+	pub fn iter(&self) -> impl Iterator<Item = &Binding> {
+		self.bindings.iter()
+	}
+
+	/// One help row per action, in table order; several chords for one action are joined with " / ".
+	pub fn help_rows(&self, locale: &str) -> Vec<(String, String)> {
+		let mut rows: Vec<(&'static str, Vec<String>)> = Vec::new();
+		for binding in &self.bindings {
+			let key = binding.action.description_key();
+			let label = match binding.action {
+				Action::SelectChannel(_) => t!("help.chord.select_channel", locale = locale).into_owned(),
+				_ => key_label(binding),
+			};
+			match rows.iter_mut().find(|(existing, _)| *existing == key) {
+				Some((_, labels)) if !labels.contains(&label) => labels.push(label),
+				Some(_) => {}
+				None => rows.push((key, vec![label])),
+			}
+		}
+		let mut rows: Vec<(String, String)> = rows
+			.into_iter()
+			.map(|(key, labels)| (labels.join(" / "), t!(key, locale = locale).into_owned()))
+			.collect();
+		// The piano rows are not commands, but they belong in the same table (F-16).
+		rows.push((
+			t!("help.chord.white_keys", locale = locale).into_owned(),
+			t!("help.action.white_keys", locale = locale).into_owned(),
+		));
+		rows.push((
+			t!("help.chord.black_keys", locale = locale).into_owned(),
+			t!("help.action.black_keys", locale = locale).into_owned(),
+		));
+		rows
+	}
+}
+
+/// `[keys]` name of an action (for messages and the README).
+pub fn command_name(action: Action) -> String {
+	if let Action::SelectChannel(channel) = action {
+		return format!("select_channel_{}", channel + 1);
+	}
+	COMMAND_NAMES
+		.iter()
+		.find(|(_, known)| *known == action)
+		.map_or_else(|| format!("{action:?}"), |(name, _)| (*name).to_owned())
+}
+
 impl Action {
 	/// Dictionary key of the one-line description shown in the F1 help.
 	pub fn description_key(self) -> &'static str {
@@ -172,17 +436,21 @@ impl Action {
 
 /// Human-readable chord ("Ctrl+C", "Shift+Tab", "F10") for help and README.
 pub fn key_label(binding: &Binding) -> String {
+	key_label_of(binding.code, binding.modifiers)
+}
+
+fn key_label_of(code: KeyCode, modifiers: KeyModifiers) -> String {
 	let mut parts: Vec<String> = Vec::new();
-	if binding.modifiers.contains(KeyModifiers::CONTROL) {
+	if modifiers.contains(KeyModifiers::CONTROL) {
 		parts.push("Ctrl".to_owned());
 	}
-	if binding.modifiers.contains(KeyModifiers::ALT) {
+	if modifiers.contains(KeyModifiers::ALT) {
 		parts.push("Alt".to_owned());
 	}
-	if binding.modifiers.contains(KeyModifiers::SHIFT) && !matches!(binding.code, KeyCode::BackTab) {
+	if modifiers.contains(KeyModifiers::SHIFT) && !matches!(code, KeyCode::BackTab) {
 		parts.push("Shift".to_owned());
 	}
-	let key = match binding.code {
+	let key = match code {
 		KeyCode::F(n) => format!("F{n}"),
 		KeyCode::Char(' ') => "Space".to_owned(),
 		KeyCode::Char(c) => c.to_uppercase().to_string(),
@@ -204,191 +472,5 @@ pub fn key_label(binding: &Binding) -> String {
 	parts.join("+")
 }
 
-/// One help row per action, in `BINDINGS` order; several chords for one action are joined with " / ".
-pub fn help_rows(locale: &str) -> Vec<(String, String)> {
-	let mut rows: Vec<(&'static str, Vec<String>)> = Vec::new();
-	for binding in BINDINGS {
-		let key = binding.action.description_key();
-		let label = match binding.action {
-			Action::SelectChannel(_) => t!("help.chord.select_channel", locale = locale).into_owned(),
-			_ => key_label(binding),
-		};
-		match rows.iter_mut().find(|(existing, _)| *existing == key) {
-			Some((_, labels)) if !labels.contains(&label) => labels.push(label),
-			Some(_) => {}
-			None => rows.push((key, vec![label])),
-		}
-	}
-	let mut rows: Vec<(String, String)> = rows
-		.into_iter()
-		.map(|(key, labels)| (labels.join(" / "), t!(key, locale = locale).into_owned()))
-		.collect();
-	// The piano rows are not commands, but they belong in the same table (F-16).
-	rows.push((
-		t!("help.chord.white_keys", locale = locale).into_owned(),
-		t!("help.action.white_keys", locale = locale).into_owned(),
-	));
-	rows.push((
-		t!("help.chord.black_keys", locale = locale).into_owned(),
-		t!("help.action.black_keys", locale = locale).into_owned(),
-	));
-	rows
-}
-
-/// Maps a key press to a command; `None` means the key is free for other handlers (dialogs, text keyboard).
-pub fn action_for(key: &KeyEvent) -> Option<Action> {
-	BINDINGS
-		.iter()
-		.find(|binding| binding.code == key.code && binding.modifiers == key.modifiers)
-		.map(|binding| binding.action)
-}
-
 #[cfg(test)]
-mod tests {
-	use super::*;
-
-	fn press(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
-		KeyEvent::new(code, modifiers)
-	}
-
-	#[test]
-	fn function_keys_and_ctrl_c_map_to_actions() {
-		assert_eq!(action_for(&press(KeyCode::F(1), KeyModifiers::NONE)), Some(Action::Help));
-		assert_eq!(action_for(&press(KeyCode::F(10), KeyModifiers::NONE)), Some(Action::Quit));
-		assert_eq!(action_for(&press(KeyCode::F(2), KeyModifiers::NONE)), Some(Action::MidiDialog));
-		assert_eq!(action_for(&press(KeyCode::F(3), KeyModifiers::NONE)), Some(Action::AudioDialog));
-		assert_eq!(action_for(&press(KeyCode::F(4), KeyModifiers::NONE)), Some(Action::Sf2Dialog));
-		assert_eq!(action_for(&press(KeyCode::F(5), KeyModifiers::NONE)), Some(Action::PresetDialog));
-		assert_eq!(
-			action_for(&press(KeyCode::F(6), KeyModifiers::NONE)),
-			Some(Action::RecordFormatDialog)
-		);
-		assert_eq!(action_for(&press(KeyCode::F(8), KeyModifiers::NONE)), Some(Action::Rescan));
-		assert_eq!(action_for(&press(KeyCode::F(7), KeyModifiers::NONE)), Some(Action::Record));
-		assert_eq!(action_for(&press(KeyCode::F(9), KeyModifiers::NONE)), Some(Action::Panic));
-		assert_eq!(action_for(&press(KeyCode::Up, KeyModifiers::CONTROL)), Some(Action::OctaveUp));
-		assert_eq!(action_for(&press(KeyCode::Left, KeyModifiers::CONTROL)), Some(Action::VelocityDown));
-		assert_eq!(action_for(&press(KeyCode::Esc, KeyModifiers::NONE)), Some(Action::NotesOff));
-		assert_eq!(
-			action_for(&press(KeyCode::Char(']'), KeyModifiers::NONE)),
-			Some(Action::TransposeUp)
-		);
-		assert_eq!(
-			action_for(&press(KeyCode::Char('['), KeyModifiers::NONE)),
-			Some(Action::TransposeDown)
-		);
-		assert_eq!(action_for(&press(KeyCode::Char(' '), KeyModifiers::NONE)), Some(Action::Panic));
-		assert_eq!(
-			action_for(&press(KeyCode::Char('r'), KeyModifiers::ALT)),
-			Some(Action::ToggleReverb)
-		);
-		assert_eq!(
-			action_for(&press(KeyCode::Char('c'), KeyModifiers::ALT)),
-			Some(Action::ToggleChorus)
-		);
-		assert_eq!(action_for(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
-		assert_eq!(action_for(&press(KeyCode::Tab, KeyModifiers::NONE)), Some(Action::FocusNext));
-		assert_eq!(
-			action_for(&press(KeyCode::BackTab, KeyModifiers::SHIFT)),
-			Some(Action::FocusPrevious)
-		);
-	}
-
-	#[test]
-	fn plain_letters_are_never_commands() {
-		for letter in "zxcvbnm,./sdghjl;".chars() {
-			assert_eq!(action_for(&press(KeyCode::Char(letter), KeyModifiers::NONE)), None, "{letter}");
-			assert_eq!(action_for(&press(KeyCode::Char(letter), KeyModifiers::SHIFT)), None, "{letter}");
-		}
-	}
-
-	#[test]
-	fn no_binding_uses_a_bare_letter() {
-		for binding in BINDINGS {
-			if let KeyCode::Char(c) = binding.code
-				&& c.is_alphabetic()
-			{
-				assert!(
-					binding.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT),
-					"{binding:?}"
-				);
-			}
-		}
-	}
-
-	#[test]
-	fn mixer_keys_map_to_actions() {
-		assert_eq!(action_for(&press(KeyCode::Char('+'), KeyModifiers::NONE)), Some(Action::MasterUp));
-		assert_eq!(action_for(&press(KeyCode::Char('='), KeyModifiers::NONE)), Some(Action::MasterUp));
-		assert_eq!(
-			action_for(&press(KeyCode::Char('+'), KeyModifiers::SHIFT)),
-			Some(Action::MasterUpFast)
-		);
-		assert_eq!(action_for(&press(KeyCode::Char('-'), KeyModifiers::NONE)), Some(Action::MasterDown));
-		assert_eq!(
-			action_for(&press(KeyCode::Char('_'), KeyModifiers::SHIFT)),
-			Some(Action::MasterDownFast)
-		);
-		assert_eq!(
-			action_for(&press(KeyCode::Char('u'), KeyModifiers::CONTROL)),
-			Some(Action::MasterMute)
-		);
-		assert_eq!(
-			action_for(&press(KeyCode::Char('0'), KeyModifiers::NONE)),
-			Some(Action::SelectChannel(9))
-		);
-		assert_eq!(
-			action_for(&press(KeyCode::Char('6'), KeyModifiers::ALT)),
-			Some(Action::SelectChannel(15))
-		);
-		assert_eq!(action_for(&press(KeyCode::Right, KeyModifiers::NONE)), Some(Action::ChannelUp));
-		assert_eq!(
-			action_for(&press(KeyCode::Char('x'), KeyModifiers::CONTROL)),
-			Some(Action::ChannelMute)
-		);
-		assert_eq!(
-			action_for(&press(KeyCode::Char('o'), KeyModifiers::CONTROL)),
-			Some(Action::ChannelSolo)
-		);
-	}
-
-	#[test]
-	fn help_lists_every_bound_action_with_its_chords() {
-		let rows = help_rows("en");
-		for binding in BINDINGS {
-			if matches!(binding.action, Action::SelectChannel(_)) {
-				continue;
-			}
-			let label = key_label(binding);
-			assert!(
-				rows.iter().any(|(keys, _)| keys.split(" / ").any(|chord| chord == label)),
-				"{label} missing from help"
-			);
-		}
-		assert!(
-			rows.iter()
-				.any(|(keys, description)| keys.contains("Alt+1") && description.contains("channel")),
-			"grouped channel row"
-		);
-		let quit = rows.iter().find(|(keys, _)| keys.contains("F10")).expect("quit row");
-		assert_eq!(quit.0, "F10 / Ctrl+C");
-		assert!(
-			!quit.1.is_empty() && !quit.1.starts_with("help."),
-			"description must be translated: {}",
-			quit.1
-		);
-		let distinct: std::collections::HashSet<&String> = rows.iter().map(|(_, description)| description).collect();
-		assert_eq!(distinct.len(), rows.len(), "every action has its own description");
-	}
-
-	#[test]
-	fn key_labels_are_readable() {
-		assert_eq!(key_label(&bind(Action::Quit, KeyCode::Char('c'), KeyModifiers::CONTROL)), "Ctrl+C");
-		assert_eq!(
-			key_label(&bind(Action::FocusPrevious, KeyCode::BackTab, KeyModifiers::SHIFT)),
-			"Shift+Tab"
-		);
-		assert_eq!(key_label(&bind(Action::Help, KeyCode::F(1), KeyModifiers::NONE)), "F1");
-		assert_eq!(key_label(&bind(Action::Help, KeyCode::Up, KeyModifiers::CONTROL)), "Ctrl+\u{2191}");
-	}
-}
+mod tests;

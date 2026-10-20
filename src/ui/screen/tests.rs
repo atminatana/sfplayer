@@ -399,3 +399,22 @@ fn recording_indicator_and_quit_confirmation() {
 	let lines = draw("ru", &view_with_notice, 80, 24);
 	assert!(contains(&lines, "Запись сохранена: 2026-10-20_12-03-41.flac"));
 }
+
+#[test]
+fn ascii_mode_replaces_block_glyphs() {
+	let mut app = App::new("en");
+	app.glyphs = crate::ui::glyphs::Glyphs::ASCII;
+	app.recording = Some(std::time::Duration::from_secs(5));
+	let lines = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&lines, "MIDI: Arturia KeyStep *"));
+	assert!(contains(&lines, "L [------------]"));
+	assert!(contains(&lines, "MASTER ########--  80%"));
+	assert!(contains(&lines, "ch01 #####- 100"));
+	assert!(contains(&lines, "* REC 00:05"));
+	for line in &lines {
+		assert!(
+			!line.contains('█') && !line.contains('░') && !line.contains('●') && !line.contains('▐'),
+			"{line}"
+		);
+	}
+}

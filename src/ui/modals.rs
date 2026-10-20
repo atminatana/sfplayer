@@ -8,7 +8,8 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use rust_i18n::t;
 
 use super::dialog::{Dialog, DialogKind};
-use super::keys::help_rows;
+use super::glyphs::Glyphs;
+use super::keys::Bindings;
 use super::path_input::PathInput;
 use super::screen::{label, padded};
 
@@ -16,7 +17,7 @@ use super::screen::{label, padded};
 const DIALOG_LIST_ROWS: u16 = 10;
 
 /// Modal selector centred over the screen (spec §6 dialog type 1).
-pub(super) fn render_dialog(frame: &mut Frame, screen: Rect, dialog: &Dialog, locale: &str, channel: u8) {
+pub(super) fn render_dialog(frame: &mut Frame, screen: Rect, dialog: &Dialog, glyphs: &Glyphs, locale: &str, channel: u8) {
 	let width = screen.width.saturating_sub(8).clamp(40, 70);
 	let height = (DIALOG_LIST_ROWS + 6).min(screen.height.saturating_sub(2));
 	let area = Rect {
@@ -58,7 +59,11 @@ pub(super) fn render_dialog(frame: &mut Frame, screen: Rect, dialog: &Dialog, lo
 	}
 	for (row, index) in visible.iter().enumerate().skip(first).take(list_rows) {
 		let item = selector.item(*index);
-		let marker = if selector.current() == Some(*index) { "● " } else { "  " };
+		let marker = if selector.current() == Some(*index) {
+			format!("{} ", glyphs.dot)
+		} else {
+			"  ".to_owned()
+		};
 		let style = if row == selector.cursor() {
 			Style::default().add_modifier(Modifier::REVERSED)
 		} else {
@@ -166,7 +171,7 @@ pub(super) fn render_confirm_quit(frame: &mut Frame, screen: Rect, locale: &str)
 }
 
 /// F1: the hotkey table, generated from `keys::BINDINGS` so it can never disagree with the handler (ADR 0004).
-pub(super) fn render_help(frame: &mut Frame, screen: Rect, scroll: usize, locale: &str) {
+pub(super) fn render_help(frame: &mut Frame, screen: Rect, bindings: &Bindings, scroll: usize, locale: &str) {
 	let width = screen.width.saturating_sub(8).clamp(40, 72);
 	let height = screen.height.saturating_sub(4).max(8);
 	let area = Rect {
@@ -183,7 +188,7 @@ pub(super) fn render_help(frame: &mut Frame, screen: Rect, scroll: usize, locale
 	let inner = block.inner(area);
 	frame.render_widget(block, area);
 
-	let rows = help_rows(locale);
+	let rows = bindings.help_rows(locale);
 	let key_width = rows.iter().map(|(keys, _)| keys.chars().count()).max().unwrap_or(0);
 	let body_rows = usize::from(inner.height.saturating_sub(1));
 	let max_scroll = rows.len().saturating_sub(body_rows);

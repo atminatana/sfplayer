@@ -2,6 +2,7 @@
 
 use std::time::{Duration, Instant};
 
+use super::glyphs::Glyphs;
 use crate::audio::meter::{DBFS_FLOOR, to_dbfs};
 
 /// Spec F-09: the CLIP mark stays lit this long after the last clipped sample.
@@ -39,11 +40,10 @@ impl ClipHold {
 pub const BAR_FLOOR_DB: f32 = -60.0;
 
 /// Bar of `width` cells filled proportionally between `BAR_FLOOR_DB` and 0 dBFS, like "████████░░".
-pub fn level_bar(level: f32, width: usize) -> String {
+pub fn level_bar(level: f32, width: usize, glyphs: &Glyphs) -> String {
 	let db = to_dbfs(level).unwrap_or(DBFS_FLOOR).clamp(BAR_FLOOR_DB, 0.0);
 	let filled = ((db - BAR_FLOOR_DB) / -BAR_FLOOR_DB * width as f32).round() as usize;
-	let filled = filled.min(width);
-	format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
+	glyphs.bar(filled, width)
 }
 
 /// "-6.2 dBFS" or the silence symbol; width is fixed so columns stay aligned.
@@ -74,12 +74,14 @@ mod tests {
 
 	#[test]
 	fn bar_fills_with_level() {
-		assert_eq!(level_bar(1.0, 10), "██████████");
-		assert_eq!(level_bar(0.0, 10), "░░░░░░░░░░");
-		assert_eq!(level_bar(0.001, 10), "░░░░░░░░░░", "-60 dBFS is the empty end");
-		let half = level_bar(0.5, 10);
+		let g = &Glyphs::UNICODE;
+		assert_eq!(level_bar(1.0, 10, g), "██████████");
+		assert_eq!(level_bar(0.0, 10, g), "░░░░░░░░░░");
+		assert_eq!(level_bar(0.001, 10, g), "░░░░░░░░░░", "-60 dBFS is the empty end");
+		let half = level_bar(0.5, 10, g);
 		assert_eq!(half.chars().filter(|c| *c == '█').count(), 9, "-6 dB of 60 → 90 %");
-		assert_eq!(level_bar(2.0, 4), "████", "clamped at full scale");
+		assert_eq!(level_bar(2.0, 4, g), "████", "clamped at full scale");
+		assert_eq!(level_bar(1.0, 4, &Glyphs::ASCII), "####");
 	}
 
 	#[test]

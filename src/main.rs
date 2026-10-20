@@ -10,6 +10,8 @@ use ratatui::crossterm::terminal::supports_keyboard_enhancement;
 use sf2_player::cli::Cli;
 use sf2_player::config::{self, Config, Settings};
 use sf2_player::session::Session;
+use sf2_player::ui::glyphs::{Glyphs, terminal_prefers_ascii};
+use sf2_player::ui::keys::Bindings;
 use sf2_player::ui::text_keyboard::{NoteOffMode, TextKeyboard};
 use sf2_player::ui::{self, App};
 use sf2_player::{audio, logging, midi};
@@ -44,6 +46,16 @@ fn main() -> anyhow::Result<()> {
 	};
 	tracing::info!(kitty, release_reported, ?mode, "text keyboard mode");
 	let mut app = App::with_keyboard(locale, TextKeyboard::new(&session.config.keyboard, mode));
+	// Key overrides are validated before the terminal is taken over, so a bad [keys] entry is a plain error (ADR 0007).
+	app.bindings = Bindings::from_config(&session.config.keys, &session.config.keyboard).context("invalid key configuration")?;
+	let ascii = cli.ascii
+		|| session
+			.config
+			.ui
+			.ascii
+			.unwrap_or_else(|| terminal_prefers_ascii(|name| std::env::var(name).ok()));
+	app.glyphs = Glyphs::select(ascii);
+	tracing::info!(ascii, "indicator glyphs");
 
 	// Nothing may print to stdout from here until `restore` (spec N-07); ratatui's init installs the panic hook (N-08).
 	let mut terminal = ratatui::init();

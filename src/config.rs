@@ -138,6 +138,11 @@ pub struct KeyboardConfig {
 	pub black: String,
 	/// Use gate mode even when the terminal reports key releases (escape hatch for odd terminals).
 	pub force_gate: bool,
+	/// Extra chords for octave / velocity, for terminals that do not pass Ctrl+arrows (e.g. "F11", "Alt+Up").
+	pub octave_up: Option<String>,
+	pub octave_down: Option<String>,
+	pub velocity_up: Option<String>,
+	pub velocity_down: Option<String>,
 }
 
 impl Default for KeyboardConfig {
@@ -149,6 +154,10 @@ impl Default for KeyboardConfig {
 			white: "zxcvbnm,./".to_owned(),
 			black: "sdghjl;".to_owned(),
 			force_gate: false,
+			octave_up: None,
+			octave_down: None,
+			velocity_up: None,
+			velocity_down: None,
 		}
 	}
 }
@@ -158,6 +167,8 @@ impl Default for KeyboardConfig {
 pub struct UiConfig {
 	/// "ru" or "en"; `None` follows the system locale (spec F-19).
 	pub lang: Option<String>,
+	/// Force ASCII indicators; `None` = auto-detect (spec §9). `--ascii` always wins.
+	pub ascii: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

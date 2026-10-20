@@ -10,7 +10,8 @@ use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::dialog::{Choice, Dialog, DialogKind};
-use super::keys::{Action, action_for};
+use super::glyphs::Glyphs;
+use super::keys::{Action, Bindings};
 use super::meter::ClipHold;
 use super::monitor::Monitor;
 use super::path_input::{self, PathInput, PathOutcome};
@@ -80,6 +81,8 @@ pub struct App {
 	pub modal: Option<Modal>,
 	pub monitor: Monitor,
 	pub keyboard: TextKeyboard,
+	pub bindings: Bindings,
+	pub glyphs: Glyphs,
 	/// Elapsed time of the running recording, refreshed every frame; `None` when not recording.
 	pub recording: Option<Duration>,
 	/// MIDI channel the text keyboard plays on (0-based); follows the mixer's current channel.
@@ -106,6 +109,8 @@ impl App {
 			modal: None,
 			monitor: Monitor::default(),
 			keyboard,
+			bindings: Bindings::default(),
+			glyphs: Glyphs::UNICODE,
 			recording: None,
 			keyboard_channel: 0,
 			clip_hold: ClipHold::new(0),
@@ -122,7 +127,7 @@ impl App {
 
 	/// Handles one key press. Quit works everywhere; with a modal open every other key belongs to it.
 	pub fn handle_key(&mut self, key: KeyEvent) -> Option<Request> {
-		if action_for(&key) == Some(Action::Quit) {
+		if self.bindings.action_for(&key) == Some(Action::Quit) {
 			self.dirty = true;
 			if self.recording.is_some() && !matches!(self.modal, Some(Modal::ConfirmQuit)) {
 				self.modal = Some(Modal::ConfirmQuit);
@@ -135,7 +140,7 @@ impl App {
 			self.dirty = true;
 			return self.handle_modal_key(key);
 		}
-		let Some(action) = action_for(&key) else {
+		let Some(action) = self.bindings.action_for(&key) else {
 			return self.handle_note_key(key);
 		};
 		self.dirty = true;

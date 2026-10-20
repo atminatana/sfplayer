@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod dialog;
+pub mod glyphs;
 pub mod i18n;
 pub mod keys;
 pub mod meter;

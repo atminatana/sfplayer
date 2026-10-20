@@ -47,6 +47,10 @@ pub struct Cli {
 	/// Log level for the log file: trace, debug, info, warn, error, off
 	#[arg(long, value_name = "LEVEL", default_value = "info")]
 	pub log_level: LevelFilter,
+
+	/// Draw meters and markers with ASCII characters (for terminals without Unicode block glyphs)
+	#[arg(long)]
+	pub ascii: bool,
 }
 
 /// How the user refers to a MIDI port or audio device: by list index or by a name substring.
@@ -115,6 +119,7 @@ mod tests {
 		assert!(cli.audio_out.is_none());
 		assert!(cli.config.is_none());
 		assert!(!cli.list_devices);
+		assert!(!cli.ascii);
 		assert_eq!(cli.log_level, LevelFilter::INFO);
 	}
 
@@ -137,7 +142,9 @@ mod tests {
 			"my.toml",
 			"--log-level",
 			"debug",
+			"--ascii",
 		]);
+		assert!(cli.ascii);
 		assert_eq!(cli.sf2.as_deref(), Some(std::path::Path::new("bank.sf2")));
 		assert_eq!(cli.midi_in, Some(DeviceSelector::Name("Arturia".into())));
 		assert_eq!(cli.audio_out, Some(DeviceSelector::Index(2)));

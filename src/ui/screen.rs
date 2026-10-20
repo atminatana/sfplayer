@@ -11,6 +11,7 @@ use rust_i18n::t;
 use super::app::Modal;
 use super::app::{App, Panel};
 use super::dialog::preset_label;
+use super::glyphs::Glyphs;
 use super::meter::{dbfs_text, level_bar};
 use super::modals;
 use super::text_keyboard::NoteOffMode;
@@ -118,22 +119,22 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 		.direction(Direction::Vertical)
 		.constraints([Constraint::Length(2), Constraint::Min(5), Constraint::Length(4)])
 		.split(inner);
-	render_header(frame, rows[0], locale, view);
+	render_header(frame, rows[0], locale, view, &app.glyphs);
 	render_panels(frame, rows[1], app, locale, view);
 	render_status(frame, rows[2], app, locale, view);
 	match &app.modal {
-		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, locale, view.channel),
+		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, &app.glyphs, locale, view.channel),
 		Some(Modal::Sf2Path(input)) => modals::render_path_dialog(frame, area, input, locale),
-		Some(Modal::Help(scroll)) => modals::render_help(frame, area, *scroll, locale),
+		Some(Modal::Help(scroll)) => modals::render_help(frame, area, &app.bindings, *scroll, locale),
 		Some(Modal::ConfirmQuit) => modals::render_confirm_quit(frame, area, locale),
 		None => {}
 	}
 }
 
-fn render_header(frame: &mut Frame, area: Rect, locale: &str, view: &View) {
+fn render_header(frame: &mut Frame, area: Rect, locale: &str, view: &View, glyphs: &Glyphs) {
 	let none = t!("header.none", locale = locale);
 	let midi_text = match &view.midi {
-		MidiStatus::Connected(port) => format!("{port} ●"),
+		MidiStatus::Connected(port) => format!("{port} {}", glyphs.dot),
 		MidiStatus::Disconnected(port) => t!("header.disconnected", locale = locale, port = port).into_owned(),
 		MidiStatus::NoPort => none.to_string(),
 	};
@@ -187,6 +188,7 @@ const METER_BAR_WIDTH: usize = 12;
 
 /// Mixer panel: output meters (F-09) at the top; master and channel strips follow in step 4.3.
 fn render_mixer(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &View) {
+	let glyphs = &app.glyphs;
 	let block = panel_block(t!("panel.mixer", locale = locale).as_ref(), app.focus == Panel::Mixer);
 	let inner = block.inner(area);
 	frame.render_widget(block, area);
@@ -198,9 +200,9 @@ fn render_mixer(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &V
 	};
 	let meter_line = |name: &str, peak: f32, rms: f32| {
 		let mut spans = vec![
-			Span::raw(format!("{name} ▐")),
-			Span::raw(level_bar(rms, METER_BAR_WIDTH)),
-			Span::raw(format!("▌ {}", dbfs_text(peak, &silence))),
+			Span::raw(format!("{name} {}", glyphs.bar_open)),
+			Span::raw(level_bar(rms, METER_BAR_WIDTH, glyphs)),
+			Span::raw(format!("{} {}", glyphs.bar_close, dbfs_text(peak, &silence))),
 		];
 		if !clip.is_empty() {
 			spans.push(Span::styled(
@@ -214,18 +216,18 @@ fn render_mixer(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &V
 		meter_line("L", view.levels.peak_left, view.levels.rms_left),
 		meter_line("R", view.levels.peak_right, view.levels.rms_right),
 	];
-	lines.push(master_line(view, locale));
+	lines.push(master_line(view, locale, glyphs));
 	lines.push(effects_line(view, locale));
-	lines.extend(channel_lines(view, locale));
+	lines.extend(channel_lines(view, locale, glyphs));
 	frame.render_widget(Paragraph::new(lines), inner);
 }
 
 /// "MASTER ████████░░  80%" plus a mute mark.
-fn master_line(view: &View, locale: &str) -> Line<'static> {
+fn master_line(view: &View, locale: &str, glyphs: &Glyphs) -> Line<'static> {
 	let mixer = &view.mixer;
 	let mut spans = vec![
 		label(t!("mixer.master", locale = locale).into_owned()),
-		Span::raw(format!(" {} {:>3}%", percent_bar(mixer.master, 10), mixer.master)),
+		Span::raw(format!(" {} {:>3}%", percent_bar(mixer.master, 10, glyphs), mixer.master)),
 	];
 	if mixer.master_muted {
 		spans.push(Span::styled(
@@ -253,7 +255,7 @@ fn effects_line(view: &View, locale: &str) -> Line<'static> {
 }
 
 /// Two channel strips per line: "ch01 ████░░ 100  ch02 ───── mute"; the current channel is highlighted.
-fn channel_lines(view: &View, locale: &str) -> Vec<Line<'static>> {
+fn channel_lines(view: &View, locale: &str, glyphs: &Glyphs) -> Vec<Line<'static>> {
 	let mixer = &view.mixer;
 	let current = usize::from(view.channel.saturating_sub(1));
 	(0..CHANNELS)
@@ -263,14 +265,19 @@ fn channel_lines(view: &View, locale: &str) -> Vec<Line<'static>> {
 			for channel in [first, first + 1] {
 				let strip = mixer.channels[channel];
 				let text = if strip.muted {
-					format!("ch{:02} ────── {}", channel + 1, t!("mixer.mute", locale = locale))
+					format!(
+						"ch{:02} {} {}",
+						channel + 1,
+						glyphs.dash.repeat(6),
+						t!("mixer.mute", locale = locale)
+					)
 				} else {
 					let mark = if strip.solo {
 						t!("mixer.solo", locale = locale).into_owned()
 					} else {
 						format!("{:>3}", strip.volume)
 					};
-					format!("ch{:02} {} {mark}", channel + 1, percent_bar(strip.volume, 6))
+					format!("ch{:02} {} {mark}", channel + 1, percent_bar(strip.volume, 6, glyphs))
 				};
 				let style = if channel == current {
 					Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
@@ -285,11 +292,10 @@ fn channel_lines(view: &View, locale: &str) -> Vec<Line<'static>> {
 }
 
 /// Bar for a 0..=max value; the master uses percent (max 100), channels CC 7 (max 127).
-fn percent_bar(value: u8, width: usize) -> String {
+fn percent_bar(value: u8, width: usize, glyphs: &Glyphs) -> String {
 	let max = if width == 10 { 100.0 } else { 127.0 };
 	let filled = ((f32::from(value) / max) * width as f32).round() as usize;
-	let filled = filled.min(width);
-	format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
+	glyphs.bar(filled, width)
 }
 
 /// MIDI monitor panel (F-08): newest at the bottom unless scrolled; title shows the pause state.
@@ -323,7 +329,8 @@ fn render_status(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &
 	let rec = app.recording.map(|elapsed| {
 		Span::styled(
 			format!(
-				"{} ",
+				"{} {} ",
+				app.glyphs.dot,
 				t!(
 					"status.rec",
 					locale = locale,

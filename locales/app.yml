@@ -350,8 +350,8 @@ notice.config_error:
   ru: "Конфиг не сохранён: %{error}"
 
 status.rec:
-  en: "● REC %{time}"
-  ru: "● ЗАП %{time}"
+  en: "REC %{time}"
+  ru: "ЗАП %{time}"
 status.rec_dropped:
   en: "rec lost %{count}"
   ru: "зап. потеряно %{count}"
