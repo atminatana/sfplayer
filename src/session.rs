@@ -395,6 +395,25 @@ impl Session {
 		}
 	}
 
+	/// F-11: All Notes Off + All Sound Off on every channel.
+	pub fn panic(&mut self) {
+		let Some(commands) = self.commands.as_mut() else {
+			return;
+		};
+		for channel in 0..MIDI_CHANNELS as u8 {
+			let _ = commands.try_push(Command::Midi(MidiEvent::ControlChange {
+				channel,
+				controller: controller::ALL_NOTES_OFF,
+				value: 0,
+			}));
+			let _ = commands.try_push(Command::Midi(MidiEvent::ControlChange {
+				channel,
+				controller: controller::ALL_SOUND_OFF,
+				value: 0,
+			}));
+		}
+	}
+
 	pub fn set_record_format(&mut self, format: RecordFormat) {
 		self.config.record.format = format;
 	}

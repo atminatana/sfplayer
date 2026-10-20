@@ -34,6 +34,9 @@ pub struct View {
 	pub bank: Option<BankView>,
 	pub xruns: u32,
 	pub dropped: u32,
+	pub held_notes: u32,
+	pub max_voices: u32,
+	pub load_percent: u32,
 	pub levels: Levels,
 	pub mixer: Mixer,
 	pub notice: Option<Notice>,
@@ -73,6 +76,9 @@ impl View {
 			bank,
 			xruns: session.shared.xruns(),
 			dropped: session.midi_dropped.load(std::sync::atomic::Ordering::Relaxed),
+			held_notes: session.shared.held_notes(),
+			max_voices: session.shared.max_voices(),
+			load_percent: session.shared.load_percent(),
 			levels: session.shared.levels(),
 			mixer: session.mixer.clone(),
 			notice: session.notice.clone(),
@@ -288,8 +294,8 @@ fn render_status(frame: &mut Frame, area: Rect, locale: &str, view: &View) {
 		Some(notice) => Line::from(Span::styled(notice_text(notice, locale), Style::default().fg(Color::Yellow))),
 		None => {
 			let mut counters = vec![
-				t!("status.voices", locale = locale, voices = "-/-").into_owned(),
-				t!("status.cpu", locale = locale, percent = "-").into_owned(),
+				t!("status.voices", locale = locale, voices = voices_text(view)).into_owned(),
+				t!("status.cpu", locale = locale, percent = view.load_percent).into_owned(),
 				t!("status.xruns", locale = locale, count = view.xruns).into_owned(),
 			];
 			if view.dropped > 0 {
@@ -304,6 +310,15 @@ fn render_status(frame: &mut Frame, area: Rect, locale: &str, view: &View) {
 		.collect::<Vec<_>>()
 		.join(" ");
 	frame.render_widget(Paragraph::new(vec![first, Line::from(hints)]), inner);
+}
+
+/// "7/64" while an engine is installed, "-/-" otherwise.
+fn voices_text(view: &View) -> String {
+	if view.max_voices == 0 {
+		"-/-".to_owned()
+	} else {
+		format!("{}/{}", view.held_notes, view.max_voices)
+	}
 }
 
 fn notice_text(notice: &Notice, locale: &str) -> String {

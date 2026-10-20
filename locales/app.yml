@@ -271,3 +271,7 @@ help.action.channel_mute:
 help.action.channel_solo:
   en: "Solo channel (mixer)"
   ru: "Соло канала (микшер)"
+
+help.action.panic:
+  en: "Panic: all notes off + all sound off"
+  ru: "Паника: снять все ноты и заглушить звук"

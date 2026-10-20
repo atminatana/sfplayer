@@ -52,6 +52,10 @@ impl SynthEngine for RustySynthEngine {
 	fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
 		self.synthesizer.render(left, right);
 	}
+
+	fn max_voices(&self) -> usize {
+		self.synthesizer.get_maximum_polyphony()
+	}
 }
 
 #[cfg(test)]

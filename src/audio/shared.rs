@@ -12,6 +12,12 @@ pub struct AudioShared {
 	levels_bits: [AtomicU32; 4],
 	/// Total clipped samples; the UI lights CLIP when it changes.
 	clips: AtomicU32,
+	/// Notes currently held (note on without note off) — the "voices" figure of F-12.
+	held_notes: AtomicU32,
+	/// Callback time as a percentage of the block duration (F-12).
+	load_percent: AtomicU32,
+	/// Polyphony limit of the installed engine; 0 without an engine.
+	max_voices: AtomicU32,
 }
 
 impl AudioShared {
@@ -21,6 +27,9 @@ impl AudioShared {
 			xruns: AtomicU32::new(0),
 			levels_bits: [const { AtomicU32::new(0) }; 4],
 			clips: AtomicU32::new(0),
+			held_notes: AtomicU32::new(0),
+			load_percent: AtomicU32::new(0),
+			max_voices: AtomicU32::new(0),
 		}
 	}
 
@@ -66,6 +75,28 @@ impl AudioShared {
 
 	pub fn clips(&self) -> u32 {
 		self.clips.load(Ordering::Relaxed)
+	}
+
+	/// Audio thread: per-block statistics for the status line.
+	pub fn publish_stats(&self, held_notes: u32, load_percent: u32) {
+		self.held_notes.store(held_notes, Ordering::Relaxed);
+		self.load_percent.store(load_percent, Ordering::Relaxed);
+	}
+
+	pub fn set_max_voices(&self, max_voices: u32) {
+		self.max_voices.store(max_voices, Ordering::Relaxed);
+	}
+
+	pub fn held_notes(&self) -> u32 {
+		self.held_notes.load(Ordering::Relaxed)
+	}
+
+	pub fn load_percent(&self) -> u32 {
+		self.load_percent.load(Ordering::Relaxed)
+	}
+
+	pub fn max_voices(&self) -> u32 {
+		self.max_voices.load(Ordering::Relaxed)
 	}
 }
 

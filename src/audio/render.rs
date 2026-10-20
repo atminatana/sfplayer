@@ -5,13 +5,14 @@
 //! so that deallocation never happens on the audio thread.
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use ringbuf::traits::{Consumer, Producer};
 use ringbuf::{HeapCons, HeapProd};
 
 use super::AudioShared;
 use super::meter::measure;
-use crate::midi::MidiEvent;
+use crate::midi::{MidiEvent, controller};
 use crate::synth::SynthEngine;
 
 /// Frames rendered per inner pass; larger callbacks are processed in chunks of this size.
@@ -31,8 +32,12 @@ pub struct BlockRenderer {
 	commands: HeapCons<Command>,
 	retired: HeapProd<Box<dyn SynthEngine>>,
 	shared: Arc<AudioShared>,
+	sample_rate: u32,
 	left: Vec<f32>,
 	right: Vec<f32>,
+	/// Bit per key, per channel: which notes are held (F-12 "voices").
+	held: [u128; 16],
+	held_count: u32,
 }
 
 impl BlockRenderer {
@@ -42,6 +47,7 @@ impl BlockRenderer {
 		commands: HeapCons<Command>,
 		retired: HeapProd<Box<dyn SynthEngine>>,
 		shared: Arc<AudioShared>,
+		sample_rate: u32,
 	) -> Self {
 		Self {
 			engine: None,
@@ -49,39 +55,92 @@ impl BlockRenderer {
 			commands,
 			retired,
 			shared,
+			sample_rate,
 			left: vec![0.0; MAX_CHUNK_FRAMES],
 			right: vec![0.0; MAX_CHUNK_FRAMES],
+			held: [0; 16],
+			held_count: 0,
 		}
 	}
 
 	/// Fills an interleaved output buffer with `channels` channels per frame.
 	/// Channels beyond the first two are silent; a mono output gets the L/R average.
 	pub fn fill(&mut self, output: &mut [f32], channels: usize) {
+		// Clock reads are user-mode on every supported platform (QPC / vDSO), so they are allowed here (N-03).
+		let started = Instant::now();
 		self.drain_commands();
 		self.drain_events();
-		let Some(engine) = self.engine.as_mut() else {
-			output.fill(0.0);
-			return;
-		};
-		let gain = self.shared.master_gain();
-		for chunk in output.chunks_mut(MAX_CHUNK_FRAMES * channels) {
-			let frames = chunk.len() / channels;
-			engine.render(&mut self.left[..frames], &mut self.right[..frames]);
-			let (levels, clipped) = measure(&self.left[..frames], &self.right[..frames], gain);
-			self.shared.publish_levels(levels, clipped);
-			interleave(&self.left[..frames], &self.right[..frames], gain, chunk, channels);
+		let total_frames = output.len() / channels.max(1);
+		match self.engine.as_mut() {
+			None => output.fill(0.0),
+			Some(engine) => {
+				let gain = self.shared.master_gain();
+				for chunk in output.chunks_mut(MAX_CHUNK_FRAMES * channels) {
+					let frames = chunk.len() / channels;
+					engine.render(&mut self.left[..frames], &mut self.right[..frames]);
+					let (levels, clipped) = measure(&self.left[..frames], &self.right[..frames], gain);
+					self.shared.publish_levels(levels, clipped);
+					interleave(&self.left[..frames], &self.right[..frames], gain, chunk, channels);
+				}
+			}
 		}
+		self.shared.publish_stats(
+			self.held_count,
+			load_percent(started.elapsed().as_secs_f32(), total_frames, self.sample_rate),
+		);
+	}
+
+	/// Keeps the held-note bitmap in sync with what reaches the engine.
+	fn track(&mut self, event: MidiEvent) {
+		match event {
+			MidiEvent::NoteOn { channel, key, .. } => {
+				if let Some(bits) = self.held.get_mut(usize::from(channel)) {
+					let mask = 1u128 << (key & 0x7F);
+					if *bits & mask == 0 {
+						*bits |= mask;
+						self.held_count += 1;
+					}
+				}
+			}
+			MidiEvent::NoteOff { channel, key } => {
+				if let Some(bits) = self.held.get_mut(usize::from(channel)) {
+					let mask = 1u128 << (key & 0x7F);
+					if *bits & mask != 0 {
+						*bits &= !mask;
+						self.held_count -= 1;
+					}
+				}
+			}
+			MidiEvent::ControlChange { channel, controller, .. }
+				if controller == controller::ALL_NOTES_OFF || controller == controller::ALL_SOUND_OFF =>
+			{
+				if let Some(bits) = self.held.get_mut(usize::from(channel)) {
+					self.held_count -= bits.count_ones();
+					*bits = 0;
+				}
+			}
+			_ => {}
+		}
+	}
+
+	fn reset_held(&mut self) {
+		self.held = [0; 16];
+		self.held_count = 0;
 	}
 
 	fn drain_commands(&mut self) {
 		while let Some(command) = self.commands.try_pop() {
 			match command {
 				Command::Midi(event) => {
+					self.track(event);
 					if let Some(engine) = self.engine.as_mut() {
 						apply_event(engine.as_mut(), event);
 					}
 				}
 				Command::ReplaceEngine(next) => {
+					self.reset_held();
+					self.shared
+						.set_max_voices(next.as_ref().map_or(0, |engine| engine.max_voices() as u32));
 					if let Some(previous) = std::mem::replace(&mut self.engine, next) {
 						// A full retired ring means the UI thread is not draining; dropping here is the
 						// lesser evil compared to leaking, and only happens in that degenerate case.
@@ -94,6 +153,7 @@ impl BlockRenderer {
 
 	fn drain_events(&mut self) {
 		while let Some(event) = self.events.try_pop() {
+			self.track(event);
 			if let Some(engine) = self.engine.as_mut() {
 				apply_event(engine.as_mut(), event);
 			}
@@ -115,6 +175,15 @@ fn apply_event(engine: &mut dyn SynthEngine, event: MidiEvent) {
 		// rustysynth has no channel pressure generator; spec F-07 lists it as handled, so it is consumed here, not logged.
 		MidiEvent::ChannelPressure { .. } | MidiEvent::Other { .. } => {}
 	}
+}
+
+/// Callback duration relative to the audio time of the block, in percent (F-12 "cpu").
+fn load_percent(elapsed_seconds: f32, frames: usize, sample_rate: u32) -> u32 {
+	if frames == 0 || sample_rate == 0 {
+		return 0;
+	}
+	let block_seconds = frames as f32 / sample_rate as f32;
+	(elapsed_seconds / block_seconds * 100.0).round().clamp(0.0, 999.0) as u32
 }
 
 fn interleave(left: &[f32], right: &[f32], gain: f32, output: &mut [f32], channels: usize) {
@@ -177,7 +246,7 @@ mod tests {
 		let (events, events_rx) = HeapRb::<MidiEvent>::new(RING_CAPACITY).split();
 		let (commands, commands_rx) = HeapRb::<Command>::new(RING_CAPACITY).split();
 		let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(RING_CAPACITY).split();
-		let renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, Arc::clone(&shared));
+		let renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, Arc::clone(&shared), SAMPLE_RATE);
 		Harness {
 			renderer,
 			events,
@@ -256,6 +325,60 @@ mod tests {
 		h.renderer.fill(&mut output, 2);
 		assert_eq!(h.shared.levels(), crate::audio::Levels::default(), "levels follow the master gain");
 		assert_eq!(h.shared.clips(), 0);
+	}
+
+	#[test]
+	fn held_notes_follow_note_on_off_all_notes_off_and_engine_swap() {
+		let mut h = harness();
+		let mut output = vec![0.0; FRAMES * 2];
+		h.renderer.fill(&mut output, 2);
+		assert_eq!(h.shared.max_voices(), 64, "polyphony of the installed engine");
+		h.events.try_push(NOTE_ON).unwrap();
+		h.events
+			.try_push(MidiEvent::NoteOn {
+				channel: 1,
+				key: 64,
+				velocity: 80,
+			})
+			.unwrap();
+		h.events.try_push(NOTE_ON).unwrap();
+		h.renderer.fill(&mut output, 2);
+		assert_eq!(h.shared.held_notes(), 2, "a repeated note on counts once");
+		h.commands
+			.try_push(Command::Midi(MidiEvent::NoteOff { channel: 0, key: 60 }))
+			.ok()
+			.unwrap();
+		h.renderer.fill(&mut output, 2);
+		assert_eq!(h.shared.held_notes(), 1);
+		h.events
+			.try_push(MidiEvent::ControlChange {
+				channel: 1,
+				controller: 123,
+				value: 0,
+			})
+			.unwrap();
+		h.renderer.fill(&mut output, 2);
+		assert_eq!(h.shared.held_notes(), 0);
+		h.events.try_push(NOTE_ON).unwrap();
+		h.commands.try_push(Command::ReplaceEngine(None)).ok().unwrap();
+		h.renderer.fill(&mut output, 2);
+		assert_eq!(
+			h.shared.held_notes(),
+			1,
+			"note on arrives after the swap and is tracked without an engine"
+		);
+		assert_eq!(h.shared.max_voices(), 0);
+	}
+
+	#[test]
+	fn load_percent_relates_callback_time_to_block_time() {
+		assert_eq!(load_percent(0.001, 480, 48_000), 10);
+		assert_eq!(load_percent(0.5, 480, 48_000), 999, "clamped");
+		assert_eq!(load_percent(0.1, 0, 48_000), 0);
+		let mut h = harness();
+		let mut output = vec![0.0; FRAMES * 2];
+		h.renderer.fill(&mut output, 2);
+		assert!(h.shared.load_percent() <= 999);
 	}
 
 	#[test]

@@ -23,6 +23,9 @@ fn view() -> View {
 		}),
 		xruns: 0,
 		dropped: 0,
+		held_notes: 0,
+		max_voices: 0,
+		load_percent: 0,
 		levels: Levels::default(),
 		mixer: Mixer::new(80),
 		notice: None,
@@ -70,7 +73,7 @@ fn full_frame_matches_the_layout_mockup() {
 		"││                                        ││                                  ││",
 		"│└────────────────────────────────────────┘└──────────────────────────────────┘│",
 		"│┌ Status ────────────────────────────────────────────────────────────────────┐│",
-		"││voices -/-  cpu -%  xruns 0                                                 ││",
+		"││voices -/-  cpu 0%  xruns 0                                                 ││",
 		"││F1 help F2 MIDI F3 audio F4 sf2 F7 rec F10 quit                             ││",
 		"│└────────────────────────────────────────────────────────────────────────────┘│",
 		"└──────────────────────────────────────────────────────────────────────────────┘",
@@ -324,4 +327,17 @@ fn mixer_panel_shows_master_and_channel_strips() {
 	let ru = draw("ru", &mixed, 80, 24);
 	assert!(contains(&ru, "МАСТЕР"));
 	assert!(contains(&ru, "тихо"));
+}
+
+#[test]
+fn status_counters_show_held_notes_polyphony_and_load() {
+	let lines = draw("en", &view(), 80, 24);
+	assert!(contains(&lines, "voices -/-  cpu 0%  xruns 0"), "no engine installed");
+	let mut playing = view();
+	playing.held_notes = 7;
+	playing.max_voices = 64;
+	playing.load_percent = 3;
+	playing.xruns = 2;
+	let lines = draw("ru", &playing, 80, 24);
+	assert!(contains(&lines, "голоса 7/64  cpu 3%  xrun 2"));
 }

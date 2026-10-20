@@ -20,6 +20,10 @@ pub trait SynthEngine: Send {
 	fn pitch_bend(&mut self, channel: u8, value: u16);
 	/// Renders `left.len()` frames; `left` and `right` must have equal length.
 	fn render(&mut self, left: &mut [f32], right: &mut [f32]);
+	/// Polyphony limit shown in the status line (F-12); 0 when unknown.
+	fn max_voices(&self) -> usize {
+		0
+	}
 }
 
 #[cfg(test)]

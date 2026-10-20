@@ -16,6 +16,7 @@ pub enum Action {
 	PresetDialog,
 	RecordFormatDialog,
 	Rescan,
+	Panic,
 	MonitorClear,
 	MonitorPause,
 	MasterUp,
@@ -57,6 +58,8 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::PresetDialog, KeyCode::F(5), KeyModifiers::NONE),
 	bind(Action::RecordFormatDialog, KeyCode::F(6), KeyModifiers::NONE),
 	bind(Action::Rescan, KeyCode::F(8), KeyModifiers::NONE),
+	bind(Action::Panic, KeyCode::F(9), KeyModifiers::NONE),
+	bind(Action::Panic, KeyCode::Char(' '), KeyModifiers::NONE),
 	bind(Action::Quit, KeyCode::F(10), KeyModifiers::NONE),
 	bind(Action::Quit, KeyCode::Char('c'), KeyModifiers::CONTROL),
 	bind(Action::FocusNext, KeyCode::Tab, KeyModifiers::NONE),
@@ -113,6 +116,7 @@ impl Action {
 			Self::PresetDialog => "help.action.preset_dialog",
 			Self::RecordFormatDialog => "help.action.record_format_dialog",
 			Self::Rescan => "help.action.rescan",
+			Self::Panic => "help.action.panic",
 			Self::MonitorClear => "help.action.monitor_clear",
 			Self::MonitorPause => "help.action.monitor_pause",
 			Self::MasterUp => "help.action.master_up",
@@ -149,6 +153,7 @@ pub fn key_label(binding: &Binding) -> String {
 	}
 	let key = match binding.code {
 		KeyCode::F(n) => format!("F{n}"),
+		KeyCode::Char(' ') => "Space".to_owned(),
 		KeyCode::Char(c) => c.to_uppercase().to_string(),
 		KeyCode::Tab => "Tab".to_owned(),
 		KeyCode::BackTab => "Shift+Tab".to_owned(),
@@ -217,6 +222,8 @@ mod tests {
 			Some(Action::RecordFormatDialog)
 		);
 		assert_eq!(action_for(&press(KeyCode::F(8), KeyModifiers::NONE)), Some(Action::Rescan));
+		assert_eq!(action_for(&press(KeyCode::F(9), KeyModifiers::NONE)), Some(Action::Panic));
+		assert_eq!(action_for(&press(KeyCode::Char(' '), KeyModifiers::NONE)), Some(Action::Panic));
 		assert_eq!(action_for(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
 		assert_eq!(action_for(&press(KeyCode::Tab, KeyModifiers::NONE)), Some(Action::FocusNext));
 		assert_eq!(
