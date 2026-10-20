@@ -11,7 +11,7 @@ use sf2_player::audio::{self, AudioShared, StreamParams};
 use sf2_player::cli::{Cli, DeviceSelector};
 use sf2_player::config::{self, Config, Settings};
 use sf2_player::logging;
-use sf2_player::midi::{self, MidiInputHandle};
+use sf2_player::midi::{self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiInputHandle, MidiStatus};
 use sf2_player::synth::{RustySynthEngine, SoundFontBank, SynthEngine};
 
 fn main() -> anyhow::Result<()> {
@@ -57,6 +57,7 @@ fn main() -> anyhow::Result<()> {
 	if midi_missing {
 		println!("MIDI input {:?} not found, using the first available port.", settings.midi_in);
 	}
+	let midi_ports = midi::list_input_ports()?;
 	let midi_handle = match midi_index {
 		Some(index) => Some(midi::connect_input(index, move |event| {
 			if events.try_push(event).is_err() {
@@ -73,6 +74,12 @@ fn main() -> anyhow::Result<()> {
 	let midi_name = midi_handle
 		.as_ref()
 		.map_or("none", |handle: &MidiInputHandle| handle.port_name.as_str());
+	let connected_port = midi_handle.as_ref().map(|handle| handle.port_name.clone());
+	let _hotplug = HotplugWatcher::spawn(DEFAULT_POLL_INTERVAL, midi_ports, move |ports| {
+		let status = MidiStatus::from_ports(connected_port.as_deref(), &ports);
+		tracing::info!(?status, ports = ports.len(), "MIDI ports changed");
+		println!("MIDI ports changed ({} available), status: {status:?}", ports.len());
+	});
 	println!(
 		"Playing {} on {} @ {} Hz, buffer {buffer}.",
 		bank.name(),
