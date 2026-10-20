@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use ratatui::DefaultTerminal;
-use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 
 use super::dialog::{Choice, Dialog, DialogKind};
 use super::keys::{Action, action_for};
@@ -50,6 +50,8 @@ pub enum Request {
 pub enum Modal {
 	Select(Dialog),
 	Sf2Path(PathInput),
+	/// F1: scroll offset in rows.
+	Help(usize),
 }
 
 pub struct App {
@@ -86,7 +88,10 @@ impl App {
 		self.dirty = true;
 		match action {
 			Action::Quit => unreachable!("handled above"),
-			Action::Help => None,
+			Action::Help => {
+				self.modal = Some(Modal::Help(0));
+				None
+			}
 			Action::FocusNext | Action::FocusPrevious => {
 				self.focus = self.focus.next();
 				None
@@ -114,6 +119,18 @@ impl App {
 					choice.map(Request::Apply)
 				}
 			},
+			Modal::Help(scroll) => {
+				match key.code {
+					KeyCode::Esc | KeyCode::F(1) | KeyCode::Enter => self.modal = None,
+					KeyCode::Up => *scroll = scroll.saturating_sub(1),
+					KeyCode::Down => *scroll += 1,
+					KeyCode::PageUp => *scroll = scroll.saturating_sub(10),
+					KeyCode::PageDown => *scroll += 10,
+					KeyCode::Home => *scroll = 0,
+					_ => {}
+				}
+				None
+			}
 			Modal::Sf2Path(input) => match input.handle_key(key, path_input::list_dir) {
 				PathOutcome::Pending => None,
 				PathOutcome::Cancelled => {
@@ -366,5 +383,23 @@ mod tests {
 		app.take_dirty();
 		app.handle_paste("ignored");
 		assert!(!app.take_dirty());
+	}
+
+	#[test]
+	fn f1_opens_help_which_scrolls_and_closes() {
+		let mut app = App::new("en");
+		assert_eq!(app.handle_key(plain(KeyCode::F(1))), None);
+		assert_eq!(app.modal, Some(Modal::Help(0)));
+		app.handle_key(plain(KeyCode::Down));
+		app.handle_key(plain(KeyCode::PageDown));
+		assert_eq!(app.modal, Some(Modal::Help(11)));
+		app.handle_key(plain(KeyCode::Up));
+		assert_eq!(app.modal, Some(Modal::Help(10)));
+		assert_eq!(app.handle_key(plain(KeyCode::F(3))), None, "hotkeys do not leak through the help");
+		app.handle_key(plain(KeyCode::F(1)));
+		assert!(app.modal.is_none());
+		app.handle_key(plain(KeyCode::F(1)));
+		app.handle_key(plain(KeyCode::Esc));
+		assert!(app.modal.is_none());
 	}
 }

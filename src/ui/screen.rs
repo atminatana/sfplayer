@@ -97,6 +97,7 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 	match &app.modal {
 		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, locale, view.channel),
 		Some(Modal::Sf2Path(input)) => modals::render_path_dialog(frame, area, input, locale),
+		Some(Modal::Help(scroll)) => modals::render_help(frame, area, *scroll, locale),
 		None => {}
 	}
 }
@@ -458,5 +459,20 @@ mod tests {
 			path_col + "assets/sin_wave.sf2".chars().count(),
 			"cursor after the last character"
 		);
+	}
+
+	#[test]
+	fn help_overlay_lists_the_bindings_in_both_languages() {
+		let mut app = App::new("ru");
+		app.open_modal(Modal::Help(0));
+		let lines = draw_app(&app, &view(), 80, 24);
+		assert!(contains(&lines, " Справка "));
+		assert!(contains(&lines, "F10 / Ctrl+C"));
+		assert!(contains(&lines, "Выход"));
+		let mut app = App::new("en");
+		app.open_modal(Modal::Help(0));
+		let lines = draw_app(&app, &view(), 80, 24);
+		assert!(contains(&lines, "Shift+Tab"));
+		assert!(contains(&lines, "Rescan MIDI"));
 	}
 }

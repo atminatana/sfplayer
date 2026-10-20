@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use rust_i18n::t;
 
 use super::dialog::{Dialog, DialogKind};
+use super::keys::help_rows;
 use super::path_input::PathInput;
 use super::screen::{label, padded};
 
@@ -134,4 +135,43 @@ pub(super) fn render_path_dialog(frame: &mut Frame, screen: Rect, input: &PathIn
 
 	let cursor_x = inner.x + u16::try_from(field_label.chars().count() + 1 + input.cursor()).unwrap_or(u16::MAX);
 	frame.set_cursor_position((cursor_x.min(inner.x + inner.width.saturating_sub(1)), inner.y));
+}
+
+/// F1: the hotkey table, generated from `keys::BINDINGS` so it can never disagree with the handler (ADR 0004).
+pub(super) fn render_help(frame: &mut Frame, screen: Rect, scroll: usize, locale: &str) {
+	let width = screen.width.saturating_sub(8).clamp(40, 72);
+	let height = screen.height.saturating_sub(4).max(8);
+	let area = Rect {
+		x: screen.x + (screen.width - width) / 2,
+		y: screen.y + (screen.height - height) / 2,
+		width,
+		height,
+	};
+	frame.render_widget(Clear, area);
+	let block = Block::default()
+		.borders(Borders::ALL)
+		.border_style(Style::default().fg(Color::Cyan))
+		.title(padded(&t!("help.title", locale = locale)));
+	let inner = block.inner(area);
+	frame.render_widget(block, area);
+
+	let rows = help_rows(locale);
+	let key_width = rows.iter().map(|(keys, _)| keys.chars().count()).max().unwrap_or(0);
+	let body_rows = usize::from(inner.height.saturating_sub(1));
+	let max_scroll = rows.len().saturating_sub(body_rows);
+	let scroll = scroll.min(max_scroll);
+	let mut lines: Vec<Line> = rows
+		.iter()
+		.skip(scroll)
+		.take(body_rows)
+		.map(|(keys, description)| Line::from(vec![label(format!("{keys:<key_width$}")), Span::raw(format!("  {description}"))]))
+		.collect();
+	while lines.len() < body_rows {
+		lines.push(Line::from(""));
+	}
+	lines.push(Line::from(Span::styled(
+		t!("help.hint", locale = locale).into_owned(),
+		Style::default().fg(Color::DarkGray),
+	)));
+	frame.render_widget(Paragraph::new(lines), inner);
 }

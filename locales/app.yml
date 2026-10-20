@@ -153,3 +153,40 @@ dialog.sf2_no_recent:
 dialog.sf2_hint:
   en: "Tab complete · ↑↓ recent · Enter load · Esc cancel"
   ru: "Tab — дополнить · ↑↓ — недавние · Enter — загрузить · Esc — отмена"
+
+help.title:
+  en: "Help"
+  ru: "Справка"
+help.hint:
+  en: "↑↓ PgUp PgDn scroll · Esc or F1 close"
+  ru: "↑↓ PgUp PgDn — прокрутка · Esc или F1 — закрыть"
+help.action.help:
+  en: "This help"
+  ru: "Эта справка"
+help.action.quit:
+  en: "Quit"
+  ru: "Выход"
+help.action.focus_next:
+  en: "Next panel"
+  ru: "Следующая панель"
+help.action.focus_previous:
+  en: "Previous panel"
+  ru: "Предыдущая панель"
+help.action.midi_dialog:
+  en: "Choose MIDI input"
+  ru: "Выбрать MIDI-вход"
+help.action.audio_dialog:
+  en: "Choose audio output"
+  ru: "Выбрать аудиовыход"
+help.action.sf2_dialog:
+  en: "Open SoundFont file"
+  ru: "Открыть файл SoundFont"
+help.action.preset_dialog:
+  en: "Choose preset for the current channel"
+  ru: "Выбрать пресет для текущего канала"
+help.action.record_format_dialog:
+  en: "Choose recording format"
+  ru: "Выбрать формат записи"
+help.action.rescan:
+  en: "Rescan MIDI ports"
+  ru: "Пересканировать MIDI-порты"
