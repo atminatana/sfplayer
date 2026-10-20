@@ -344,3 +344,7 @@ help.action.toggle_reverb:
 help.action.toggle_chorus:
   en: "Chorus on / off (level: config synth.chorus_level)"
   ru: "Хорус вкл / выкл (уровень: конфиг synth.chorus_level)"
+
+notice.config_error:
+  en: "Config not saved: %{error}"
+  ru: "Конфиг не сохранён: %{error}"

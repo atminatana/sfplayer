@@ -65,6 +65,7 @@ fn main() -> anyhow::Result<()> {
 	}
 	ratatui::restore();
 	result?;
+	session.save_config();
 	tracing::info!(xruns = session.shared.xruns(), "sf2_player exiting");
 	Ok(())
 }

@@ -353,15 +353,27 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 				.unwrap_or_default();
 			app.open_modal(Modal::Sf2Path(PathInput::new(&initial, session.config.synth.recent_banks.clone())));
 		}
-		Request::Apply(Choice::ConnectMidi(index)) => session.connect_midi(index),
-		Request::Apply(Choice::OpenAudio(index)) => session.reopen_audio(index),
+		Request::Apply(Choice::ConnectMidi(index)) => {
+			session.connect_midi(index);
+			session.save_config();
+		}
+		Request::Apply(Choice::OpenAudio(index)) => {
+			session.reopen_audio(index);
+			session.save_config();
+		}
 		Request::Apply(Choice::SelectPreset { bank, program }) => {
 			let channel = session.current_channel;
 			session.select_preset(channel, bank, program);
 		}
-		Request::Apply(Choice::SetRecordFormat(format)) => session.set_record_format(format),
+		Request::Apply(Choice::SetRecordFormat(format)) => {
+			session.set_record_format(format);
+			session.save_config();
+		}
 		Request::LoadBank(path) => match session.load_bank(&path) {
-			Ok(()) => app.modal = None,
+			Ok(()) => {
+				app.modal = None;
+				session.save_config();
+			}
 			Err(error) => {
 				if let Some(Modal::Sf2Path(input)) = app.modal.as_mut() {
 					input.set_error(error.to_string());

@@ -381,6 +381,7 @@ fn notice_text(notice: &Notice, locale: &str) -> String {
 		Notice::MidiFallback => t!("notice.midi_fallback", locale = locale).into_owned(),
 		Notice::MidiError(error) => t!("notice.midi_error", locale = locale, error = error).into_owned(),
 		Notice::Sf2Error(error) => t!("notice.sf2_error", locale = locale, error = error).into_owned(),
+		Notice::ConfigError(error) => t!("notice.config_error", locale = locale, error = error).into_owned(),
 	}
 }
 
