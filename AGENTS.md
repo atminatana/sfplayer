@@ -1,0 +1,62 @@
+# AGENTS.md
+
+This file provides guidance to AI coding agents (Claude Code, Codex, Cursor and others) when working with code in this repository.
+
+## Что это
+
+`sfplayer` — консольный кроссплатформенный SoundFont-синтезатор на Rust (Windows / Linux / macOS): MIDI-вход → рендер через банк .sf2 → аудиовыход, с TUI (монитор MIDI, микшер, индикаторы уровня), игрой с текстовой клавиатуры и записью в FLAC / Ogg Vorbis.
+
+**Состояние репозитория:** проект на старте — `src/main.rs` содержит только Hello World, в `Cargo.toml` нет зависимостей. Единственный источник истины по требованиям и архитектуре — `docs/ТЗ sf2_player.md` (русский). Перед реализацией любого модуля читать соответствующий раздел ТЗ: §4 архитектура, §5 функциональные требования (F-xx с приоритетами M/S/C), §6 UI и горячие клавиши, §7 нефункциональные (N-xx), §8 план из шести этапов.
+
+Тестовый ассет: `assets/sin_wave.sf2` (1,2 КБ, синусоидальный банк) — для оффлайн-тестов синтеза, не для реальных банков. Реальные банки SF2 в репозиторий не кладутся (N-12).
+
+## Команды
+
+Тулчейн: stable (на старте 1.98), edition 2024, файла `rust-toolchain` нет.
+
+```bash
+cargo build --release            # релизная сборка; без ручной установки SDK (N-09)
+cargo run -- --list-devices      # печать MIDI/аудио-устройств без запуска TUI
+cargo run -- --sf2 assets/sin_wave.sf2
+cargo test                       # все тесты
+cargo test <имя_теста>           # один тест (подстрока имени)
+cargo test --test <файл>         # один интеграционный тест из tests/
+cargo clippy -- -D warnings      # обязателен зелёным (N-09, критерий приёмки)
+cargo fmt
+```
+
+На Linux для cpal нужен `libasound2-dev`; для Ogg Vorbis (`vorbis_rs`) — компилятор C (MSVC / Xcode CLT / gcc).
+
+## Архитектура (по ТЗ §4)
+
+Три потока, аудио-поток никогда не ждёт остальных:
+
+- **MIDI-поток** — callback `midir`, парсит байты в `MidiEvent`, кладёт в SPSC-кольцо.
+- **Аудио-поток** — callback `cpal`, читает события/команды из колец, рендерит через `SynthEngine`, отдаёт измерения (пик/RMS, голоса, CPU, xrun) через атомики, сэмплы для записи — в кольцевой буфер.
+- **UI-поток** — `ratatui` + `crossterm`, таймаут цикла 16–33 мс, читает очередь монитора и атомики. Текстовая клавиатура (F-16) генерирует события в **тот же путь**, что и MIDI (монитор + синтез).
+
+Планируемые модули: `main.rs` (clap, конфиг, запуск потоков, восстановление терминала), `midi/`, `audio/` (устройства, поток, микшер, измеритель), `synth/` (трейт `SynthEngine`, `RustySynthEngine`; feature `synth-oxi` → `OxiSynthEngine`), `ui/`, `config.rs` (TOML через `directories`).
+
+Движок синтеза изолирован за трейтом — его сигнатура зафиксирована в ТЗ §3:
+
+```rust
+pub trait SynthEngine: Send {
+    fn note_on(&mut self, ch: u8, key: u8, vel: u8);
+    fn note_off(&mut self, ch: u8, key: u8);
+    fn control_change(&mut self, ch: u8, cc: u8, value: u8);
+    fn program_change(&mut self, ch: u8, program: u8);
+    fn pitch_bend(&mut self, ch: u8, value: u16);
+    fn render(&mut self, left: &mut [f32], right: &mut [f32]);
+}
+```
+
+Запланированный стек (версии из ТЗ §2/§7): `midir 0.11`, `cpal 0.18`, `ratatui 0.30`, `crossterm 0.29`, `rustysynth 1.3` (основной), `oxisynth` (запасной), `ringbuf`, `clap 4`, `serde`+`toml`, `directories`, `tracing`+`tracing-appender`, `anyhow`/`thiserror`, `rust-i18n`, `flacenc`, `vorbis_rs`.
+
+## Жёсткие ограничения из ТЗ
+
+- **Аудио-коллбэк:** без аллокаций, блокировок и системных вызовов; обмен только через lock-free структуры и атомики (N-03). Кодирование записи — в отдельном потоке.
+- **Горячие клавиши:** буквенных команд нет — буквы нижних рядов заняты текстовой клавиатурой. Все команды — на F-клавишах, Ctrl/Alt-сочетаниях и небуквенных клавишах. Раскладка ТЗ §6 — обязательна; справка F1 должна совпадать с реальной раскладкой.
+- **Лицензии:** только MIT/Apache; LGPL запрещён (исключает `fluidlite`). ASIO не используется (решение заказчика) — на Windows только WASAPI shared.
+- **Терминал:** восстановление при любом выходе, включая панику (`std::panic::set_hook` + `ratatui::restore`); во время TUI ничего в stdout — логи через `tracing` в файл.
+- **UI:** все строки интерфейса — в словарях ru/en (`rust-i18n`), никаких захардкоженных текстов; перерисовка ≤ 30 кадров/с; минимальный экран 80×24.
+- **Тесты (N-10):** unit — парсинг MIDI и микшер; интеграционный оффлайн-рендер (загрузить sf2, note_on, RMS > 0); UI-снэпшоты через `ratatui::backend::TestBackend`.
