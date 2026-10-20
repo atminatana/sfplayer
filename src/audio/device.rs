@@ -79,6 +79,15 @@ pub fn select_output_device(selector: Option<&DeviceSelector>) -> Result<Selecte
 	}
 }
 
+/// Device at `index` in the enumeration order shown by `--list-devices` and the F3 dialog.
+pub fn output_device_by_index(index: usize) -> Result<Device, AudioError> {
+	cpal::default_host()
+		.output_devices()
+		.map_err(AudioError::Devices)?
+		.nth(index)
+		.ok_or(AudioError::NoOutputDevice)
+}
+
 pub fn device_name(device: &Device) -> Option<String> {
 	device.description().ok().map(|description| description.name().to_owned())
 }

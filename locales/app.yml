@@ -95,3 +95,46 @@ notice.sf2_error:
 notice.terminal_too_small:
   en: "Terminal too small: need at least %{width}x%{height}"
   ru: "Терминал слишком мал: нужно не меньше %{width}x%{height}"
+
+dialog.midi_title:
+  en: "MIDI input"
+  ru: "MIDI-вход"
+dialog.audio_title:
+  en: "Audio output"
+  ru: "Аудиовыход"
+dialog.preset_title:
+  en: "Preset (channel %{channel})"
+  ru: "Пресет (канал %{channel})"
+dialog.record_title:
+  en: "Recording format"
+  ru: "Формат записи"
+dialog.filter:
+  en: "Filter:"
+  ru: "Фильтр:"
+dialog.empty:
+  en: "nothing to choose"
+  ru: "выбирать нечего"
+dialog.no_match:
+  en: "no matches"
+  ru: "нет совпадений"
+dialog.hint:
+  en: "↑↓ PgUp PgDn move · type to filter · Enter apply · Esc cancel"
+  ru: "↑↓ PgUp PgDn — выбор · набор текста — фильтр · Enter — применить · Esc — отмена"
+dialog.audio_buffer_range:
+  en: "buffer %{min}..%{max} frames"
+  ru: "буфер %{min}..%{max} кадров"
+dialog.audio_buffer_unknown:
+  en: "buffer range unknown"
+  ru: "диапазон буфера неизвестен"
+dialog.record_flac:
+  en: "lossless, about 3–5 MB/min"
+  ru: "без потерь, около 3–5 МБ/мин"
+dialog.record_vorbis:
+  en: "lossy, about 1 MB/min, quality %{quality} (config record.vorbis_quality)"
+  ru: "с потерями, около 1 МБ/мин, качество %{quality} (конфиг record.vorbis_quality)"
+notice.audio_reopened:
+  en: "Audio output switched to %{device}"
+  ru: "Аудиовыход переключён на %{device}"
+notice.audio_error:
+  en: "Audio: %{error}"
+  ru: "Аудио: %{error}"

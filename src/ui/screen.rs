@@ -5,10 +5,11 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use rust_i18n::t;
 
 use super::app::{App, Panel};
+use super::dialog::{Dialog, preset_label};
 use crate::midi::MidiStatus;
 use crate::session::{Notice, Session};
 
@@ -19,6 +20,8 @@ pub const MIN_HEIGHT: u16 = 24;
 /// Everything the screen shows, decoupled from live handles so rendering is testable.
 #[derive(Debug, Clone, PartialEq)]
 pub struct View {
+	/// 1-based channel shown in the header ("Preset ch1").
+	pub channel: u8,
 	pub midi: MidiStatus,
 	pub audio: Option<AudioView>,
 	pub bank: Option<BankView>,
@@ -49,19 +52,13 @@ impl View {
 			sample_rate: stream.sample_rate,
 			buffer: stream.buffer_size,
 		});
-		let bank = session.bank.as_ref().map(|loaded| {
-			let presets = loaded.bank.presets();
-			let preset_label = presets
-				.first()
-				.map(|preset| format!("{:03}:{:03} {}", preset.bank, preset.program, preset.name))
-				.unwrap_or_default();
-			BankView {
-				name: loaded.bank.name().to_owned(),
-				presets: presets.len(),
-				preset_label,
-			}
+		let bank = session.bank.as_ref().map(|loaded| BankView {
+			name: loaded.bank.name().to_owned(),
+			presets: loaded.bank.presets().len(),
+			preset_label: session.preset_info(session.current_channel).map(preset_label).unwrap_or_default(),
 		});
 		Self {
+			channel: session.current_channel + 1,
 			midi: session.midi_status.clone(),
 			audio,
 			bank,
@@ -95,6 +92,78 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 	render_header(frame, rows[0], locale, view);
 	render_panels(frame, rows[1], app, locale);
 	render_status(frame, rows[2], locale, view);
+	if let Some(dialog) = &app.dialog {
+		render_dialog(frame, area, dialog, locale, view.channel);
+	}
+}
+
+/// Rows of the list visible at once in a dialog.
+const DIALOG_LIST_ROWS: u16 = 10;
+
+/// Modal selector centred over the screen (spec §6 dialog type 1).
+fn render_dialog(frame: &mut Frame, screen: Rect, dialog: &Dialog, locale: &str, channel: u8) {
+	let width = screen.width.saturating_sub(8).clamp(40, 70);
+	let height = (DIALOG_LIST_ROWS + 6).min(screen.height.saturating_sub(2));
+	let area = Rect {
+		x: screen.x + (screen.width - width) / 2,
+		y: screen.y + (screen.height - height) / 2,
+		width,
+		height,
+	};
+	frame.render_widget(Clear, area);
+	let title = match dialog.kind {
+		super::dialog::DialogKind::Preset => t!(dialog.kind.title_key(), locale = locale, channel = channel).into_owned(),
+		_ => t!(dialog.kind.title_key(), locale = locale).into_owned(),
+	};
+	let block = Block::default()
+		.borders(Borders::ALL)
+		.border_style(Style::default().fg(Color::Cyan))
+		.title(padded(&title));
+	let inner = block.inner(area);
+	frame.render_widget(block, area);
+
+	let selector = &dialog.selector;
+	let visible = selector.visible();
+	let list_rows = usize::from(inner.height.saturating_sub(3));
+	let first = selector.cursor().saturating_sub(list_rows.saturating_sub(1));
+	let mut lines = vec![Line::from(vec![
+		label(t!("dialog.filter", locale = locale)),
+		Span::raw(format!(" {}_", selector.filter())),
+	])];
+	if visible.is_empty() {
+		let key = if selector.filter().is_empty() {
+			"dialog.empty"
+		} else {
+			"dialog.no_match"
+		};
+		lines.push(Line::from(Span::styled(
+			t!(key, locale = locale).into_owned(),
+			Style::default().fg(Color::DarkGray),
+		)));
+	}
+	for (row, index) in visible.iter().enumerate().skip(first).take(list_rows) {
+		let item = selector.item(*index);
+		let marker = if selector.current() == Some(*index) { "● " } else { "  " };
+		let style = if row == selector.cursor() {
+			Style::default().add_modifier(Modifier::REVERSED)
+		} else {
+			Style::default()
+		};
+		lines.push(Line::from(Span::styled(format!("{marker}{}", item.label), style)));
+	}
+	while lines.len() < list_rows + 1 {
+		lines.push(Line::from(""));
+	}
+	let detail = selector
+		.highlighted()
+		.and_then(|index| selector.item(index).detail.clone())
+		.unwrap_or_default();
+	lines.push(Line::from(Span::styled(detail, Style::default().fg(Color::Gray))));
+	lines.push(Line::from(Span::styled(
+		t!("dialog.hint", locale = locale).into_owned(),
+		Style::default().fg(Color::DarkGray),
+	)));
+	frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn render_header(frame: &mut Frame, area: Rect, locale: &str, view: &View) {
@@ -129,7 +198,7 @@ fn render_header(frame: &mut Frame, area: Rect, locale: &str, view: &View) {
 				bank.name,
 				t!("header.presets", locale = locale, count = bank.presets)
 			)),
-			label(t!("header.preset", locale = locale, channel = 1)),
+			label(t!("header.preset", locale = locale, channel = view.channel)),
 			Span::raw(format!(" {}", bank.preset_label)),
 		]),
 		None => Line::from(vec![
@@ -186,6 +255,8 @@ fn notice_text(notice: &Notice, locale: &str) -> String {
 	match notice {
 		Notice::NoAudioDevice(error) => t!("notice.no_audio_device", locale = locale, error = error).into_owned(),
 		Notice::AudioFallback => t!("notice.audio_fallback", locale = locale).into_owned(),
+		Notice::AudioReopened(device) => t!("notice.audio_reopened", locale = locale, device = device).into_owned(),
+		Notice::AudioError(error) => t!("notice.audio_error", locale = locale, error = error).into_owned(),
 		Notice::MidiFallback => t!("notice.midi_fallback", locale = locale).into_owned(),
 		Notice::MidiError(error) => t!("notice.midi_error", locale = locale, error = error).into_owned(),
 		Notice::Sf2Error(error) => t!("notice.sf2_error", locale = locale, error = error).into_owned(),
@@ -219,6 +290,7 @@ mod tests {
 
 	fn view() -> View {
 		View {
+			channel: 1,
 			midi: MidiStatus::Connected("Arturia KeyStep".into()),
 			audio: Some(AudioView {
 				device: "Speakers".into(),
@@ -237,9 +309,12 @@ mod tests {
 	}
 
 	fn draw(locale: &'static str, view: &View, width: u16, height: u16) -> Vec<String> {
+		draw_app(&App::new(locale), view, width, height)
+	}
+
+	fn draw_app(app: &App, view: &View, width: u16, height: u16) -> Vec<String> {
 		let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
-		let app = App::new(locale);
-		terminal.draw(|frame| render(frame, &app, view)).expect("draw");
+		terminal.draw(|frame| render(frame, app, view)).expect("draw");
 		let buffer = terminal.backend().buffer();
 		(0..height)
 			.map(|y| (0..width).map(|x| buffer[(x, y)].symbol().to_owned()).collect::<String>())
@@ -362,5 +437,48 @@ mod tests {
 		for line in draw("ru", &view(), 80, 24) {
 			assert_eq!(line.chars().count(), 80);
 		}
+	}
+
+	#[test]
+	fn dialog_overlay_shows_title_items_marker_and_detail() {
+		use crate::audio::AudioDeviceInfo;
+		let devices = vec![
+			AudioDeviceInfo {
+				index: 0,
+				name: "Speakers".into(),
+				is_default: true,
+				default_sample_rate: 48_000,
+				buffer_range: Some((128, 2048)),
+			},
+			AudioDeviceInfo {
+				index: 1,
+				name: "HDMI Monitor".into(),
+				is_default: false,
+				default_sample_rate: 44_100,
+				buffer_range: None,
+			},
+		];
+		let mut app = App::new("en");
+		app.open_dialog(Dialog::audio(&devices, Some("HDMI Monitor"), "en"));
+		let lines = draw_app(&app, &view(), 80, 24);
+		assert!(contains(&lines, " Audio output "));
+		assert!(contains(&lines, "Filter: _"));
+		assert!(contains(&lines, "  Speakers"));
+		assert!(contains(&lines, "● HDMI Monitor"));
+		assert!(
+			contains(&lines, "44100 Hz, buffer range unknown"),
+			"detail of the highlighted (current) item"
+		);
+		assert!(contains(&lines, "Enter apply"));
+		assert!(contains(&lines, "MIDI monitor"), "main screen still visible around the modal");
+	}
+
+	#[test]
+	fn empty_dialog_says_so_in_russian() {
+		let mut app = App::new("ru");
+		app.open_dialog(Dialog::midi(&[], None));
+		let lines = draw_app(&app, &view(), 80, 24);
+		assert!(contains(&lines, " MIDI-вход "));
+		assert!(contains(&lines, "выбирать нечего"));
 	}
 }

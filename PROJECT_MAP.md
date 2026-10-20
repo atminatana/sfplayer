@@ -8,14 +8,14 @@
 |------|-----------|--------|
 | `src/lib.rs` | Корень библиотеки: объявляет модули для бинарника и тестов | шаг 1.2 |
 | `src/main.rs` | Запуск: CLI → конфиг → `Settings` → локаль → `Session` → TUI; `--list-devices` | шаг 3.1 |
-| `src/session.rs` | `Session`: аудиопоток, кольца, MIDI, hot-plug, банк, конфиг, `Notice` для статуса | шаг 3.1 |
+| `src/session.rs` | `Session`: аудиопоток и его смена, кольца, MIDI (подключение/переподключение), hot-plug, банк, пресеты каналов, конфиг, `Notice` | шаг 3.3 |
 | `src/cli.rs` | Аргументы командной строки (ТЗ §5), `DeviceSelector` имя/индекс + `find` | шаг 1.1, 1.5 |
 | `src/logging.rs` | `tracing` в файл в локальном каталоге данных ОС (N-07) | шаг 1.1 |
 | `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` (rusty.rs) (ADR 0001) | шаг 1.2 |
 | `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs), `HotplugWatcher` + `MidiStatus` (hotplug.rs) | шаг 1.3–2.3 |
 | `src/audio/` | `AudioShared` атомики (shared.rs), `BlockRenderer` + `Command` ядро коллбэка (render.rs), устройства и `select_output_device` с fallback (device.rs), `open_output_stream` (stream.rs) (ADR 0002); микшер, измеритель — план 4.2, 4.3 | шаг 1.4 |
 | `src/config.rs` | `Config` (все секции, ADR 0007), load/save, `Settings::resolve` CLI > конфиг > умолчания, `project_dirs` | шаг 2.1 |
-| `src/ui/` | `app.rs` цикл ≤ 30 fps, `screen.rs` `View` + отрисовка, `keys.rs` таблица привязок, `i18n.rs` локаль (ADR 0004, 0008, 0009); диалоги — план 3.3–3.5 | шаг 3.1 |
+| `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil`, `screen.rs` `View` + экран + оверлей, `selector.rs` модальный список, `dialog.rs` диалоги F2/F3/F5/F6, `keys.rs` привязки, `i18n.rs` локаль (ADR 0004, 0008, 0009); F4 и F1 — план 3.4–3.5 | шаг 3.3 |
 | `src/record/` | Запись FLAC / Ogg Vorbis в отдельном потоке (ADR 0005) | план 5.3 |
 | `locales/app.yml` | Словарь rust-i18n v2, en и ru рядом для каждого ключа | шаг 3.1 |
 | `assets/sin_wave.sf2` | Минимальный банк для оффлайн-тестов | есть |
@@ -32,10 +32,11 @@
 - Этап 2, шаг 2.3: наблюдатель hot-plug (опрос 2 с), статус MIDI Connected/Disconnected/NoPort. Этап 2 завершён.
 - Этап 3, шаг 3.1: TUI-каркас (ratatui), `Session`, словари ru/en, движок подменяется командой без перезапуска потока.
 - Этап 3, шаг 3.2: главный экран по макету, «золотой» снэпшот 80×24, фокус Tab.
+- Этап 3, шаг 3.3: селектор с фильтром, диалоги MIDI/аудио/пресет/формат записи, смена устройств на лету, F8.
 
 ## Дальше
 
-- Шаг 3.3: обобщённый виджет-селектор и диалоги F2 MIDI, F3 audio, F5 пресет, F6 формат записи.
+- Шаг 3.4: диалог F4 — текстовое поле пути SF2 с автодополнением и списком последних банков.
 - Остальные шаги — по плану `docs/plans/2026-10-20-sf2-player-v1.md`, раздел 4.
 
 ## Проверка

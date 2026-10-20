@@ -6,6 +6,7 @@
 
 /// Controller numbers the spec requires to be handled (F-07).
 pub mod controller {
+	pub const BANK_SELECT: u8 = 0;
 	pub const MODULATION: u8 = 1;
 	pub const VOLUME: u8 = 7;
 	pub const PAN: u8 = 10;

@@ -9,6 +9,11 @@ pub enum Action {
 	Quit,
 	FocusNext,
 	FocusPrevious,
+	MidiDialog,
+	AudioDialog,
+	PresetDialog,
+	RecordFormatDialog,
+	Rescan,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +30,11 @@ const fn bind(action: Action, code: KeyCode, modifiers: KeyModifiers) -> Binding
 /// Default bindings in display order (spec §6 table).
 pub const BINDINGS: &[Binding] = &[
 	bind(Action::Help, KeyCode::F(1), KeyModifiers::NONE),
+	bind(Action::MidiDialog, KeyCode::F(2), KeyModifiers::NONE),
+	bind(Action::AudioDialog, KeyCode::F(3), KeyModifiers::NONE),
+	bind(Action::PresetDialog, KeyCode::F(5), KeyModifiers::NONE),
+	bind(Action::RecordFormatDialog, KeyCode::F(6), KeyModifiers::NONE),
+	bind(Action::Rescan, KeyCode::F(8), KeyModifiers::NONE),
 	bind(Action::Quit, KeyCode::F(10), KeyModifiers::NONE),
 	bind(Action::Quit, KeyCode::Char('c'), KeyModifiers::CONTROL),
 	bind(Action::FocusNext, KeyCode::Tab, KeyModifiers::NONE),
@@ -52,6 +62,14 @@ mod tests {
 	fn function_keys_and_ctrl_c_map_to_actions() {
 		assert_eq!(action_for(&press(KeyCode::F(1), KeyModifiers::NONE)), Some(Action::Help));
 		assert_eq!(action_for(&press(KeyCode::F(10), KeyModifiers::NONE)), Some(Action::Quit));
+		assert_eq!(action_for(&press(KeyCode::F(2), KeyModifiers::NONE)), Some(Action::MidiDialog));
+		assert_eq!(action_for(&press(KeyCode::F(3), KeyModifiers::NONE)), Some(Action::AudioDialog));
+		assert_eq!(action_for(&press(KeyCode::F(5), KeyModifiers::NONE)), Some(Action::PresetDialog));
+		assert_eq!(
+			action_for(&press(KeyCode::F(6), KeyModifiers::NONE)),
+			Some(Action::RecordFormatDialog)
+		);
+		assert_eq!(action_for(&press(KeyCode::F(8), KeyModifiers::NONE)), Some(Action::Rescan));
 		assert_eq!(action_for(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
 		assert_eq!(action_for(&press(KeyCode::Tab, KeyModifiers::NONE)), Some(Action::FocusNext));
 		assert_eq!(
