@@ -81,11 +81,10 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 		return;
 	}
 
-	let outer = Block::default().borders(Borders::ALL).title(
-		t!("app.title", locale = locale, version = env!("CARGO_PKG_VERSION"))
-			.as_ref()
-			.to_owned(),
-	);
+	let outer =
+		Block::default()
+			.borders(Borders::ALL)
+			.title(padded(&t!("app.title", locale = locale, version = env!("CARGO_PKG_VERSION"))));
 	let inner = outer.inner(area);
 	frame.render_widget(outer, area);
 
@@ -203,7 +202,12 @@ fn panel_block(title: &str, focused: bool) -> Block<'static> {
 	} else {
 		Style::default()
 	};
-	Block::default().borders(Borders::ALL).border_style(style).title(title.to_owned())
+	Block::default().borders(Borders::ALL).border_style(style).title(padded(title))
+}
+
+/// Spec §6 mock-up: titles sit inside the border with a space on each side.
+fn padded(title: &str) -> String {
+	format!(" {title} ")
 }
 
 #[cfg(test)]
@@ -244,6 +248,49 @@ mod tests {
 
 	fn contains(lines: &[String], needle: &str) -> bool {
 		lines.iter().any(|line| line.contains(needle))
+	}
+
+	/// Golden frame for the spec §6 mock-up: pins the whole 80×24 layout (symbols only; styles are checked separately).
+	#[test]
+	fn full_frame_matches_the_layout_mockup() {
+		let expected: Vec<&str> = vec![
+			"┌ sf2_player 0.1.0 ────────────────────────────────────────────────────────────┐",
+			"│MIDI: Arturia KeyStep ●   Audio: Speakers 48000 Hz / 256 frames               │",
+			"│SF2: GeneralUser GS (268 presets)   Preset ch1: 000:000 Grand Piano           │",
+			"│┌ MIDI monitor ───────────────────────┐┌ Mixer ──────────────────────────────┐│",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"││                                     ││                                     ││",
+			"│└─────────────────────────────────────┘└─────────────────────────────────────┘│",
+			"│┌ Status ────────────────────────────────────────────────────────────────────┐│",
+			"││voices -/-  cpu -%  xruns 0                                                 ││",
+			"││F1 help F2 MIDI F3 audio F4 sf2 F7 rec F10 quit                             ││",
+			"│└────────────────────────────────────────────────────────────────────────────┘│",
+			"└──────────────────────────────────────────────────────────────────────────────┘",
+		];
+		assert_eq!(draw("en", &view(), 80, 24), expected);
+	}
+
+	#[test]
+	fn focused_panel_border_is_highlighted() {
+		let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+		let mut app = App::new("en");
+		app.focus = Panel::Mixer;
+		terminal.draw(|frame| render(frame, &app, &view())).expect("draw");
+		let buffer = terminal.backend().buffer();
+		assert_eq!(buffer[(40, 3)].fg, Color::Cyan, "mixer border focused");
+		assert_eq!(buffer[(1, 3)].fg, Color::Reset, "monitor border unfocused");
 	}
 
 	#[test]

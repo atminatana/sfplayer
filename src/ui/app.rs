@@ -78,3 +78,42 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+
+	use super::*;
+
+	fn press(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+		KeyEvent::new(code, modifiers)
+	}
+
+	#[test]
+	fn tab_cycles_focus_between_the_two_panels() {
+		let mut app = App::new("en");
+		assert_eq!(app.focus, Panel::Monitor);
+		assert!(app.handle_key(press(KeyCode::Tab, KeyModifiers::NONE)));
+		assert_eq!(app.focus, Panel::Mixer);
+		assert!(app.handle_key(press(KeyCode::BackTab, KeyModifiers::SHIFT)));
+		assert_eq!(app.focus, Panel::Monitor);
+	}
+
+	#[test]
+	fn quit_keys_set_the_flag() {
+		let mut app = App::new("en");
+		app.handle_key(press(KeyCode::F(10), KeyModifiers::NONE));
+		assert!(app.should_quit);
+		let mut app = App::new("en");
+		app.handle_key(press(KeyCode::Char('c'), KeyModifiers::CONTROL));
+		assert!(app.should_quit);
+	}
+
+	#[test]
+	fn unbound_keys_do_nothing_and_need_no_redraw() {
+		let mut app = App::new("en");
+		assert!(!app.handle_key(press(KeyCode::Char('z'), KeyModifiers::NONE)));
+		assert!(!app.should_quit);
+		assert_eq!(app.focus, Panel::Monitor);
+	}
+}
