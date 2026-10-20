@@ -1,0 +1,23 @@
+# Normalize line endings: LF in the repository and in working copies on all platforms
+* text=auto eol=lf
+
+# Rust sources and project files
+*.rs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Cargo.lock text eol=lf
+
+# Windows-specific scripts keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets (SoundFont banks and audio files)
+*.sf2 binary
+*.sf3 binary
+*.wav binary
+*.flac binary
+*.ogg binary
+*.mid binary
