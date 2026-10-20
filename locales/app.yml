@@ -138,3 +138,18 @@ notice.audio_reopened:
 notice.audio_error:
   en: "Audio: %{error}"
   ru: "Аудио: %{error}"
+dialog.sf2_title:
+  en: "SoundFont file"
+  ru: "Файл SoundFont"
+dialog.sf2_path:
+  en: "Path:"
+  ru: "Путь:"
+dialog.sf2_recent:
+  en: "Recent banks:"
+  ru: "Последние банки:"
+dialog.sf2_no_recent:
+  en: "no recent banks"
+  ru: "недавних банков нет"
+dialog.sf2_hint:
+  en: "Tab complete · ↑↓ recent · Enter load · Esc cancel"
+  ru: "Tab — дополнить · ↑↓ — недавние · Enter — загрузить · Esc — отмена"

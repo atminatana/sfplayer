@@ -3,6 +3,7 @@
 //! `App` never touches devices: key handling yields a `Request`, which `fulfil` applies to the `Session`.
 //! That keeps dialogs and hotkeys testable without hardware.
 
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use ratatui::DefaultTerminal;
@@ -10,6 +11,7 @@ use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventKind};
 
 use super::dialog::{Choice, Dialog, DialogKind};
 use super::keys::{Action, action_for};
+use super::path_input::{self, PathInput, PathOutcome};
 use super::screen;
 use super::selector::SelectorOutcome;
 use crate::audio;
@@ -37,15 +39,24 @@ impl Panel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
 	OpenDialog(DialogKind),
+	OpenSf2Dialog,
 	Apply(Choice),
+	LoadBank(PathBuf),
 	Rescan,
+}
+
+/// The modal window on top of the main screen, if any.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Modal {
+	Select(Dialog),
+	Sf2Path(PathInput),
 }
 
 pub struct App {
 	pub locale: &'static str,
 	pub focus: Panel,
 	pub should_quit: bool,
-	pub dialog: Option<Dialog>,
+	pub modal: Option<Modal>,
 	dirty: bool,
 }
 
@@ -55,32 +66,21 @@ impl App {
 			locale,
 			focus: Panel::Monitor,
 			should_quit: false,
-			dialog: None,
+			modal: None,
 			dirty: true,
 		}
 	}
 
-	/// Handles one key press. Quit works everywhere; with a dialog open every other key belongs to the dialog.
+	/// Handles one key press. Quit works everywhere; with a modal open every other key belongs to it.
 	pub fn handle_key(&mut self, key: KeyEvent) -> Option<Request> {
 		if action_for(&key) == Some(Action::Quit) {
 			self.should_quit = true;
 			self.dirty = true;
 			return None;
 		}
-		if let Some(dialog) = self.dialog.as_mut() {
+		if self.modal.is_some() {
 			self.dirty = true;
-			return match dialog.selector.handle_key(key) {
-				SelectorOutcome::Pending => None,
-				SelectorOutcome::Cancelled => {
-					self.dialog = None;
-					None
-				}
-				SelectorOutcome::Chosen(row) => {
-					let choice = dialog.choice(row);
-					self.dialog = None;
-					choice.map(Request::Apply)
-				}
-			};
+			return self.handle_modal_key(key);
 		}
 		let action = action_for(&key)?;
 		self.dirty = true;
@@ -93,15 +93,54 @@ impl App {
 			}
 			Action::MidiDialog => Some(Request::OpenDialog(DialogKind::MidiInput)),
 			Action::AudioDialog => Some(Request::OpenDialog(DialogKind::AudioOutput)),
+			Action::Sf2Dialog => Some(Request::OpenSf2Dialog),
 			Action::PresetDialog => Some(Request::OpenDialog(DialogKind::Preset)),
 			Action::RecordFormatDialog => Some(Request::OpenDialog(DialogKind::RecordFormat)),
 			Action::Rescan => Some(Request::Rescan),
 		}
 	}
 
-	pub fn open_dialog(&mut self, dialog: Dialog) {
-		self.dialog = Some(dialog);
+	fn handle_modal_key(&mut self, key: KeyEvent) -> Option<Request> {
+		match self.modal.as_mut()? {
+			Modal::Select(dialog) => match dialog.selector.handle_key(key) {
+				SelectorOutcome::Pending => None,
+				SelectorOutcome::Cancelled => {
+					self.modal = None;
+					None
+				}
+				SelectorOutcome::Chosen(row) => {
+					let choice = dialog.choice(row);
+					self.modal = None;
+					choice.map(Request::Apply)
+				}
+			},
+			Modal::Sf2Path(input) => match input.handle_key(key, path_input::list_dir) {
+				PathOutcome::Pending => None,
+				PathOutcome::Cancelled => {
+					self.modal = None;
+					None
+				}
+				// The dialog stays open: `fulfil` closes it on success or shows the error inside it.
+				PathOutcome::Submit(path) => Some(Request::LoadBank(path)),
+			},
+		}
+	}
+
+	/// Terminal paste (bracketed paste) goes into the path field; elsewhere it is ignored.
+	pub fn handle_paste(&mut self, text: &str) {
+		if let Some(Modal::Sf2Path(input)) = self.modal.as_mut() {
+			input.insert_str(text);
+			self.dirty = true;
+		}
+	}
+
+	pub fn open_modal(&mut self, modal: Modal) {
+		self.modal = Some(modal);
 		self.dirty = true;
+	}
+
+	pub fn open_dialog(&mut self, dialog: Dialog) {
+		self.open_modal(Modal::Select(dialog));
 	}
 
 	/// Marks the screen for redraw without changing state (terminal resize).
@@ -142,6 +181,14 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 				app.locale,
 			));
 		}
+		Request::OpenSf2Dialog => {
+			let initial = session
+				.bank
+				.as_ref()
+				.map(|loaded| loaded.path.to_string_lossy().into_owned())
+				.unwrap_or_default();
+			app.open_modal(Modal::Sf2Path(PathInput::new(&initial, session.config.synth.recent_banks.clone())));
+		}
 		Request::Apply(Choice::ConnectMidi(index)) => session.connect_midi(index),
 		Request::Apply(Choice::OpenAudio(index)) => session.reopen_audio(index),
 		Request::Apply(Choice::SelectPreset { bank, program }) => {
@@ -149,6 +196,14 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 			session.select_preset(channel, bank, program);
 		}
 		Request::Apply(Choice::SetRecordFormat(format)) => session.set_record_format(format),
+		Request::LoadBank(path) => match session.load_bank(&path) {
+			Ok(()) => app.modal = None,
+			Err(error) => {
+				if let Some(Modal::Sf2Path(input)) = app.modal.as_mut() {
+					input.set_error(error.to_string());
+				}
+			}
+		},
 		Request::Rescan => session.rescan(),
 	}
 }
@@ -171,6 +226,7 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 						fulfil(request, app, session);
 					}
 				}
+				Event::Paste(text) => app.handle_paste(&text),
 				Event::Resize(_, _) => app.mark_dirty(),
 				_ => {}
 			}
@@ -254,6 +310,7 @@ mod tests {
 			app.handle_key(plain(KeyCode::F(3))),
 			Some(Request::OpenDialog(DialogKind::AudioOutput))
 		);
+		assert_eq!(app.handle_key(plain(KeyCode::F(4))), Some(Request::OpenSf2Dialog));
 		assert_eq!(app.handle_key(plain(KeyCode::F(5))), Some(Request::OpenDialog(DialogKind::Preset)));
 		assert_eq!(
 			app.handle_key(plain(KeyCode::F(6))),
@@ -273,16 +330,41 @@ mod tests {
 			None,
 			"other hotkeys are swallowed while a dialog is open"
 		);
-		assert!(app.dialog.is_some());
+		assert!(app.modal.is_some());
 		for c in "loop".chars() {
 			app.handle_key(plain(KeyCode::Char(c)));
 		}
-		assert_eq!(app.dialog.as_ref().unwrap().selector.filter(), "loop");
+		match &app.modal {
+			Some(Modal::Select(dialog)) => assert_eq!(dialog.selector.filter(), "loop"),
+			other => panic!("unexpected modal {other:?}"),
+		}
 		assert_eq!(app.handle_key(plain(KeyCode::Enter)), Some(Request::Apply(Choice::ConnectMidi(1))));
-		assert!(app.dialog.is_none());
+		assert!(app.modal.is_none());
 
 		app.open_dialog(midi_dialog());
 		assert_eq!(app.handle_key(plain(KeyCode::Esc)), None);
-		assert!(app.dialog.is_none());
+		assert!(app.modal.is_none());
+	}
+
+	#[test]
+	fn sf2_dialog_submits_a_path_and_stays_open_until_fulfilled() {
+		let mut app = App::new("en");
+		app.open_modal(Modal::Sf2Path(PathInput::new("", vec![])));
+		app.handle_paste("assets/sin_wave.sf2");
+		assert_eq!(
+			app.handle_key(plain(KeyCode::Enter)),
+			Some(Request::LoadBank(PathBuf::from("assets/sin_wave.sf2")))
+		);
+		assert!(app.modal.is_some(), "closed only by fulfil on success");
+		assert_eq!(app.handle_key(plain(KeyCode::Esc)), None);
+		assert!(app.modal.is_none());
+	}
+
+	#[test]
+	fn paste_outside_the_path_dialog_is_ignored() {
+		let mut app = App::new("en");
+		app.take_dirty();
+		app.handle_paste("ignored");
+		assert!(!app.take_dirty());
 	}
 }

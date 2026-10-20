@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::Parser;
+use ratatui::crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
+use ratatui::crossterm::execute;
 use sf2_player::cli::Cli;
 use sf2_player::config::{self, Config, Settings};
 use sf2_player::session::Session;
@@ -32,7 +34,11 @@ fn main() -> anyhow::Result<()> {
 
 	// Nothing may print to stdout from here until `restore` (spec N-07); ratatui's init installs the panic hook (N-08).
 	let mut terminal = ratatui::init();
+	let paste = execute!(std::io::stdout(), EnableBracketedPaste);
 	let result = ui::run(&mut terminal, &mut app, &mut session);
+	if paste.is_ok() {
+		let _ = execute!(std::io::stdout(), DisableBracketedPaste);
+	}
 	ratatui::restore();
 	result?;
 	tracing::info!(xruns = session.shared.xruns(), "sf2_player exiting");

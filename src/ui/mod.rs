@@ -4,6 +4,8 @@ pub mod app;
 pub mod dialog;
 pub mod i18n;
 pub mod keys;
+pub mod modals;
+pub mod path_input;
 pub mod screen;
 pub mod selector;
 

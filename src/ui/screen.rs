@@ -5,11 +5,13 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use rust_i18n::t;
 
+use super::app::Modal;
 use super::app::{App, Panel};
-use super::dialog::{Dialog, preset_label};
+use super::dialog::preset_label;
+use super::modals;
 use crate::midi::MidiStatus;
 use crate::session::{Notice, Session};
 
@@ -92,78 +94,11 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 	render_header(frame, rows[0], locale, view);
 	render_panels(frame, rows[1], app, locale);
 	render_status(frame, rows[2], locale, view);
-	if let Some(dialog) = &app.dialog {
-		render_dialog(frame, area, dialog, locale, view.channel);
+	match &app.modal {
+		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, locale, view.channel),
+		Some(Modal::Sf2Path(input)) => modals::render_path_dialog(frame, area, input, locale),
+		None => {}
 	}
-}
-
-/// Rows of the list visible at once in a dialog.
-const DIALOG_LIST_ROWS: u16 = 10;
-
-/// Modal selector centred over the screen (spec §6 dialog type 1).
-fn render_dialog(frame: &mut Frame, screen: Rect, dialog: &Dialog, locale: &str, channel: u8) {
-	let width = screen.width.saturating_sub(8).clamp(40, 70);
-	let height = (DIALOG_LIST_ROWS + 6).min(screen.height.saturating_sub(2));
-	let area = Rect {
-		x: screen.x + (screen.width - width) / 2,
-		y: screen.y + (screen.height - height) / 2,
-		width,
-		height,
-	};
-	frame.render_widget(Clear, area);
-	let title = match dialog.kind {
-		super::dialog::DialogKind::Preset => t!(dialog.kind.title_key(), locale = locale, channel = channel).into_owned(),
-		_ => t!(dialog.kind.title_key(), locale = locale).into_owned(),
-	};
-	let block = Block::default()
-		.borders(Borders::ALL)
-		.border_style(Style::default().fg(Color::Cyan))
-		.title(padded(&title));
-	let inner = block.inner(area);
-	frame.render_widget(block, area);
-
-	let selector = &dialog.selector;
-	let visible = selector.visible();
-	let list_rows = usize::from(inner.height.saturating_sub(3));
-	let first = selector.cursor().saturating_sub(list_rows.saturating_sub(1));
-	let mut lines = vec![Line::from(vec![
-		label(t!("dialog.filter", locale = locale)),
-		Span::raw(format!(" {}_", selector.filter())),
-	])];
-	if visible.is_empty() {
-		let key = if selector.filter().is_empty() {
-			"dialog.empty"
-		} else {
-			"dialog.no_match"
-		};
-		lines.push(Line::from(Span::styled(
-			t!(key, locale = locale).into_owned(),
-			Style::default().fg(Color::DarkGray),
-		)));
-	}
-	for (row, index) in visible.iter().enumerate().skip(first).take(list_rows) {
-		let item = selector.item(*index);
-		let marker = if selector.current() == Some(*index) { "● " } else { "  " };
-		let style = if row == selector.cursor() {
-			Style::default().add_modifier(Modifier::REVERSED)
-		} else {
-			Style::default()
-		};
-		lines.push(Line::from(Span::styled(format!("{marker}{}", item.label), style)));
-	}
-	while lines.len() < list_rows + 1 {
-		lines.push(Line::from(""));
-	}
-	let detail = selector
-		.highlighted()
-		.and_then(|index| selector.item(index).detail.clone())
-		.unwrap_or_default();
-	lines.push(Line::from(Span::styled(detail, Style::default().fg(Color::Gray))));
-	lines.push(Line::from(Span::styled(
-		t!("dialog.hint", locale = locale).into_owned(),
-		Style::default().fg(Color::DarkGray),
-	)));
-	frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn render_header(frame: &mut Frame, area: Rect, locale: &str, view: &View) {
@@ -263,7 +198,7 @@ fn notice_text(notice: &Notice, locale: &str) -> String {
 	}
 }
 
-fn label<'a>(text: impl Into<std::borrow::Cow<'a, str>>) -> Span<'a> {
+pub(super) fn label<'a>(text: impl Into<std::borrow::Cow<'a, str>>) -> Span<'a> {
 	Span::styled(text.into(), Style::default().add_modifier(Modifier::BOLD))
 }
 
@@ -277,7 +212,7 @@ fn panel_block(title: &str, focused: bool) -> Block<'static> {
 }
 
 /// Spec §6 mock-up: titles sit inside the border with a space on each side.
-fn padded(title: &str) -> String {
+pub(super) fn padded(title: &str) -> String {
 	format!(" {title} ")
 }
 
@@ -287,6 +222,8 @@ mod tests {
 	use ratatui::backend::TestBackend;
 
 	use super::*;
+	use crate::ui::dialog::Dialog;
+	use crate::ui::path_input::PathInput;
 
 	fn view() -> View {
 		View {
@@ -480,5 +417,46 @@ mod tests {
 		let lines = draw_app(&app, &view(), 80, 24);
 		assert!(contains(&lines, " MIDI-вход "));
 		assert!(contains(&lines, "выбирать нечего"));
+	}
+
+	#[test]
+	fn sf2_path_dialog_shows_field_error_recent_and_cursor() {
+		use std::path::PathBuf;
+		let mut app = App::new("en");
+		let mut input = PathInput::new(
+			"assets/sin_wave.sf2",
+			vec![PathBuf::from("C:/banks/GeneralUser.sf2"), PathBuf::from("old.sf2")],
+		);
+		input.set_error("Cargo.toml is not a valid SoundFont 2 file".into());
+		app.open_modal(Modal::Sf2Path(input));
+		let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+		terminal.draw(|frame| render(frame, &app, &view())).expect("draw");
+		let buffer = terminal.backend().buffer();
+		let lines: Vec<String> = (0..24)
+			.map(|y| (0..80).map(|x| buffer[(x, y)].symbol().to_owned()).collect())
+			.collect();
+		assert!(contains(&lines, " SoundFont file "));
+		assert!(contains(&lines, "Path: assets/sin_wave.sf2"));
+		assert!(contains(&lines, "not a valid SoundFont 2 file"));
+		assert!(contains(&lines, "  C:/banks/GeneralUser.sf2"));
+		assert!(contains(&lines, "Tab complete"));
+		let (cursor_x, cursor_y) = {
+			let mut backend_terminal = terminal;
+			let position = backend_terminal.get_cursor_position().expect("cursor");
+			(position.x, position.y)
+		};
+		let field_row = lines.iter().position(|line| line.contains("Path: assets")).unwrap();
+		assert_eq!(usize::from(cursor_y), field_row);
+		let row: Vec<char> = lines[field_row].chars().collect();
+		let needle: Vec<char> = "assets/sin_wave.sf2".chars().collect();
+		let path_col = row
+			.windows(needle.len())
+			.position(|window| window == needle.as_slice())
+			.expect("path in row");
+		assert_eq!(
+			usize::from(cursor_x),
+			path_col + "assets/sin_wave.sf2".chars().count(),
+			"cursor after the last character"
+		);
 	}
 }

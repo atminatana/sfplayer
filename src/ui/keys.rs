@@ -11,6 +11,7 @@ pub enum Action {
 	FocusPrevious,
 	MidiDialog,
 	AudioDialog,
+	Sf2Dialog,
 	PresetDialog,
 	RecordFormatDialog,
 	Rescan,
@@ -32,6 +33,7 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::Help, KeyCode::F(1), KeyModifiers::NONE),
 	bind(Action::MidiDialog, KeyCode::F(2), KeyModifiers::NONE),
 	bind(Action::AudioDialog, KeyCode::F(3), KeyModifiers::NONE),
+	bind(Action::Sf2Dialog, KeyCode::F(4), KeyModifiers::NONE),
 	bind(Action::PresetDialog, KeyCode::F(5), KeyModifiers::NONE),
 	bind(Action::RecordFormatDialog, KeyCode::F(6), KeyModifiers::NONE),
 	bind(Action::Rescan, KeyCode::F(8), KeyModifiers::NONE),
@@ -64,6 +66,7 @@ mod tests {
 		assert_eq!(action_for(&press(KeyCode::F(10), KeyModifiers::NONE)), Some(Action::Quit));
 		assert_eq!(action_for(&press(KeyCode::F(2), KeyModifiers::NONE)), Some(Action::MidiDialog));
 		assert_eq!(action_for(&press(KeyCode::F(3), KeyModifiers::NONE)), Some(Action::AudioDialog));
+		assert_eq!(action_for(&press(KeyCode::F(4), KeyModifiers::NONE)), Some(Action::Sf2Dialog));
 		assert_eq!(action_for(&press(KeyCode::F(5), KeyModifiers::NONE)), Some(Action::PresetDialog));
 		assert_eq!(
 			action_for(&press(KeyCode::F(6), KeyModifiers::NONE)),

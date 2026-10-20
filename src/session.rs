@@ -125,7 +125,8 @@ impl Session {
 
 		if let Some(path) = &settings.sf2 {
 			let path = path.clone();
-			session.load_bank(&path);
+			// The failure is already a notice; the UI comes up so the user can pick another file with F4.
+			let _ = session.load_bank(&path);
 		}
 		session
 	}
@@ -243,14 +244,15 @@ impl Session {
 		self.midi.as_ref().map(|handle| handle.port_name.as_str())
 	}
 
-	/// Loads a bank and installs a matching engine on the audio thread (F-05); failures become a notice.
-	pub fn load_bank(&mut self, path: &Path) {
+	/// Loads a bank and installs a matching engine on the audio thread (F-05).
+	/// Failures are returned for the dialog and also become a status notice.
+	pub fn load_bank(&mut self, path: &Path) -> Result<(), SynthError> {
 		let bank = match SoundFontBank::load(path) {
 			Ok(bank) => bank,
 			Err(error) => {
 				tracing::warn!(%error, path = %path.display(), "SoundFont load failed");
 				self.notice = Some(Notice::Sf2Error(error.to_string()));
-				return;
+				return Err(error);
 			}
 		};
 		tracing::info!(name = bank.name(), presets = bank.presets().len(), path = %path.display(), "SoundFont loaded");
@@ -261,9 +263,12 @@ impl Session {
 			bank,
 		});
 		self.channel_presets = [None; MIDI_CHANNELS];
+		self.notice = None;
 		if let Err(error) = self.install_engine() {
 			self.notice = Some(Notice::Sf2Error(error.to_string()));
+			return Err(error);
 		}
+		Ok(())
 	}
 
 	/// Creates an engine for the current bank at the stream's sample rate and swaps it in; re-applies presets.

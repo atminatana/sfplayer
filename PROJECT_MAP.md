@@ -15,7 +15,7 @@
 | `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs), `HotplugWatcher` + `MidiStatus` (hotplug.rs) | шаг 1.3–2.3 |
 | `src/audio/` | `AudioShared` атомики (shared.rs), `BlockRenderer` + `Command` ядро коллбэка (render.rs), устройства и `select_output_device` с fallback (device.rs), `open_output_stream` (stream.rs) (ADR 0002); микшер, измеритель — план 4.2, 4.3 | шаг 1.4 |
 | `src/config.rs` | `Config` (все секции, ADR 0007), load/save, `Settings::resolve` CLI > конфиг > умолчания, `project_dirs` | шаг 2.1 |
-| `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil`, `screen.rs` `View` + экран + оверлей, `selector.rs` модальный список, `dialog.rs` диалоги F2/F3/F5/F6, `keys.rs` привязки, `i18n.rs` локаль (ADR 0004, 0008, 0009); F4 и F1 — план 3.4–3.5 | шаг 3.3 |
+| `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil`, `screen.rs` `View` + экран, `modals.rs` отрисовка модальных окон, `selector.rs` модальный список, `dialog.rs` диалоги F2/F3/F5/F6, `path_input.rs` поле пути F4, `keys.rs` привязки, `i18n.rs` локаль (ADR 0004, 0008, 0009); F1 — план 3.5 | шаг 3.4 |
 | `src/record/` | Запись FLAC / Ogg Vorbis в отдельном потоке (ADR 0005) | план 5.3 |
 | `locales/app.yml` | Словарь rust-i18n v2, en и ru рядом для каждого ключа | шаг 3.1 |
 | `assets/sin_wave.sf2` | Минимальный банк для оффлайн-тестов | есть |
@@ -33,10 +33,11 @@
 - Этап 3, шаг 3.1: TUI-каркас (ratatui), `Session`, словари ru/en, движок подменяется командой без перезапуска потока.
 - Этап 3, шаг 3.2: главный экран по макету, «золотой» снэпшот 80×24, фокус Tab.
 - Этап 3, шаг 3.3: селектор с фильтром, диалоги MIDI/аудио/пресет/формат записи, смена устройств на лету, F8.
+- Этап 3, шаг 3.4: диалог F4 — поле пути с автодополнением, недавние банки, ошибка внутри диалога; bracketed paste.
 
 ## Дальше
 
-- Шаг 3.4: диалог F4 — текстовое поле пути SF2 с автодополнением и списком последних банков.
+- Шаг 3.5: справка F1 из таблицы привязок, выход F10/Ctrl+C с подтверждением при записи.
 - Остальные шаги — по плану `docs/plans/2026-10-20-sf2-player-v1.md`, раздел 4.
 
 ## Проверка
