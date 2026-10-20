@@ -23,6 +23,8 @@ pub enum Action {
 	VelocityDown,
 	/// Esc on the main screen: note off for everything the text keyboard holds.
 	NotesOff,
+	TransposeUp,
+	TransposeDown,
 	MonitorClear,
 	MonitorPause,
 	MasterUp,
@@ -82,6 +84,8 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::VelocityDown, KeyCode::Left, KeyModifiers::CONTROL),
 	bind(Action::VelocityUp, KeyCode::Right, KeyModifiers::CONTROL),
 	bind(Action::NotesOff, KeyCode::Esc, KeyModifiers::NONE),
+	bind(Action::TransposeDown, KeyCode::Char('['), KeyModifiers::NONE),
+	bind(Action::TransposeUp, KeyCode::Char(']'), KeyModifiers::NONE),
 	bind(Action::MonitorClear, KeyCode::Char('l'), KeyModifiers::CONTROL),
 	bind(Action::MonitorPause, KeyCode::Char('f'), KeyModifiers::CONTROL),
 	bind(Action::MasterUp, KeyCode::Char('+'), KeyModifiers::NONE),
@@ -133,6 +137,8 @@ impl Action {
 			Self::VelocityUp => "help.action.velocity_up",
 			Self::VelocityDown => "help.action.velocity_down",
 			Self::NotesOff => "help.action.notes_off",
+			Self::TransposeUp => "help.action.transpose_up",
+			Self::TransposeDown => "help.action.transpose_down",
 			Self::MonitorClear => "help.action.monitor_clear",
 			Self::MonitorPause => "help.action.monitor_pause",
 			Self::MasterUp => "help.action.master_up",
@@ -253,6 +259,14 @@ mod tests {
 		assert_eq!(action_for(&press(KeyCode::Up, KeyModifiers::CONTROL)), Some(Action::OctaveUp));
 		assert_eq!(action_for(&press(KeyCode::Left, KeyModifiers::CONTROL)), Some(Action::VelocityDown));
 		assert_eq!(action_for(&press(KeyCode::Esc, KeyModifiers::NONE)), Some(Action::NotesOff));
+		assert_eq!(
+			action_for(&press(KeyCode::Char(']'), KeyModifiers::NONE)),
+			Some(Action::TransposeUp)
+		);
+		assert_eq!(
+			action_for(&press(KeyCode::Char('['), KeyModifiers::NONE)),
+			Some(Action::TransposeDown)
+		);
 		assert_eq!(action_for(&press(KeyCode::Char(' '), KeyModifiers::NONE)), Some(Action::Panic));
 		assert_eq!(action_for(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
 		assert_eq!(action_for(&press(KeyCode::Tab, KeyModifiers::NONE)), Some(Action::FocusNext));

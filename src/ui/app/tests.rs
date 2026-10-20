@@ -306,3 +306,10 @@ fn notes_are_not_played_while_a_modal_is_open() {
 	assert_eq!(app.handle_release(release), None);
 	assert_eq!(app.keyboard.held_count(), 0);
 }
+
+#[test]
+fn brackets_request_transposition() {
+	let mut app = App::new("en");
+	assert_eq!(app.handle_key(plain(KeyCode::Char(']'))), Some(Request::Transpose(1)));
+	assert_eq!(app.handle_key(plain(KeyCode::Char('['))), Some(Request::Transpose(-1)));
+}

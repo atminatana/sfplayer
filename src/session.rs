@@ -94,6 +94,8 @@ pub struct Session {
 	/// Channel the mixer and the preset dialog act on (0-based).
 	pub current_channel: u8,
 	pub mixer: Mixer,
+	/// Semitones, −12..=12 (F-15).
+	pub transpose: i8,
 	pub notice: Option<Notice>,
 }
 
@@ -131,8 +133,17 @@ impl Session {
 			channel_presets: [None; MIDI_CHANNELS],
 			current_channel: 0,
 			mixer: Mixer::new(master_percent),
+			transpose: 0,
 			notice: None,
 		};
+		session.shared.set_omni_channel(
+			session
+				.config
+				.midi
+				.omni_channel
+				.and_then(|channel| channel.checked_sub(1))
+				.filter(|channel| *channel < 16),
+		);
 
 		let selected = match audio::select_output_device(settings.audio_out.as_ref()) {
 			Ok(selected) => Some(selected),
@@ -393,6 +404,16 @@ impl Session {
 			Some((bank, program)) => presets.iter().find(|preset| (preset.bank, preset.program) == (bank, program)),
 			None => presets.first(),
 		}
+	}
+
+	/// `[` / `]`: transposition in semitones, clamped to ±12 (F-15).
+	pub fn adjust_transpose(&mut self, delta: i8) {
+		self.transpose = (i16::from(self.transpose) + i16::from(delta)).clamp(-12, 12) as i8;
+		self.shared.set_transpose(self.transpose);
+	}
+
+	pub fn omni_channel(&self) -> Option<u8> {
+		self.shared.omni_channel()
 	}
 
 	/// Notes from the text keyboard (F-16): same path as hardware MIDI, via the command ring (ADR 0009).

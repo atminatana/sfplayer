@@ -312,3 +312,16 @@ help.action.velocity_down:
 help.action.notes_off:
   en: "Release all text-keyboard notes"
   ru: "Снять все ноты текстовой клавиатуры"
+
+status.transpose:
+  en: "tr %{value}"
+  ru: "тр %{value}"
+status.omni:
+  en: "omni ch%{channel}"
+  ru: "omni к%{channel}"
+help.action.transpose_up:
+  en: "Transpose +1 semitone (up to +12)"
+  ru: "Транспонирование +1 полутон (до +12)"
+help.action.transpose_down:
+  en: "Transpose −1 semitone (down to −12)"
+  ru: "Транспонирование −1 полутон (до −12)"

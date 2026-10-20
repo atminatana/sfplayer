@@ -13,7 +13,7 @@
 | `src/logging.rs` | `tracing` в файл в локальном каталоге данных ОС (N-07) | шаг 1.1 |
 | `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` (rusty.rs) (ADR 0001) | шаг 1.2 |
 | `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs), `HotplugWatcher` + `MidiStatus` (hotplug.rs), `MonitorEntry` + имена нот (monitor.rs) | шаг 1.3–4.1 |
-| `src/audio/` | `AudioShared` атомики: гейн, xrun, уровни, клипы (shared.rs), `measure` peak/RMS/клипы (meter.rs), `Mixer` мастер/каналы/mute/solo (mixer.rs), `BlockRenderer` + `Command` ядро коллбэка с учётом нот и нагрузки (render.rs), устройства и `select_output_device` с fallback (device.rs), `open_output_stream` (stream.rs) (ADR 0002); | шаг 4.3 |
+| `src/audio/` | `AudioShared` атомики: гейн, xrun, уровни, клипы (shared.rs), `measure` peak/RMS/клипы (meter.rs), `Mixer` мастер/каналы/mute/solo (mixer.rs), `BlockRenderer` + `Command` ядро коллбэка с учётом нот, нагрузки, транспонирования и omni (render.rs), устройства и `select_output_device` с fallback (device.rs), `open_output_stream` (stream.rs) (ADR 0002); | шаг 4.3 |
 | `src/config.rs` | `Config` (все секции, ADR 0007), load/save, `Settings::resolve` CLI > конфиг > умолчания, `project_dirs` | шаг 2.1 |
 | `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil` (тесты в `app/tests.rs`), `screen.rs` `View` + экран (тесты в `screen/tests.rs`), `monitor.rs` буфер монитора, `meter.rs` CLIP-удержание и полосы, `text_keyboard.rs` ноты с клавиатуры (release/gate), `modals.rs` отрисовка модальных окон, `selector.rs` модальный список, `dialog.rs` диалоги F2/F3/F5/F6, `path_input.rs` поле пути F4, `keys.rs` привязки + справка из них, `i18n.rs` локаль (ADR 0004, 0008, 0009) | шаг 3.5 |
 | `src/record/` | Запись FLAC / Ogg Vorbis в отдельном потоке (ADR 0005) | план 5.3 |
@@ -39,7 +39,8 @@
 - Этап 4, шаг 4.2: измеритель peak/RMS L/R в дБFS через атомики, CLIP с удержанием 1 с.
 - Этап 4, шаг 4.3: микшер — мастер с mute, 16 каналов CC7 с mute/solo, клавиши по ТЗ §6, панель по макету.
 - Этап 4, шаг 4.4: panic F9/Space, счётчики удерживаемых нот / полифонии и нагрузки коллбэка в статусе.
-- Этап 4, шаг 4.5: текстовая клавиатура — раскладка, октава, velocity, режимы release/gate, Esc. Этап 4 завершён.
+- Этап 4, шаг 4.5: текстовая клавиатура — раскладка, октава, velocity, режимы release/gate, Esc.
+- Этап 4, шаг 4.6: транспонирование [ ] ±12 с памятью звучащей ноты, omni-канал из конфига. Этап 4 завершён.
 
 ## Дальше
 

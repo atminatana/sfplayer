@@ -35,6 +35,8 @@ pub struct View {
 	pub bank: Option<BankView>,
 	pub xruns: u32,
 	pub dropped: u32,
+	pub transpose: i8,
+	pub omni_channel: Option<u8>,
 	pub held_notes: u32,
 	pub max_voices: u32,
 	pub load_percent: u32,
@@ -77,6 +79,8 @@ impl View {
 			bank,
 			xruns: session.shared.xruns(),
 			dropped: session.midi_dropped.load(std::sync::atomic::Ordering::Relaxed),
+			transpose: session.transpose,
+			omni_channel: session.omni_channel(),
 			held_notes: session.shared.held_notes(),
 			max_voices: session.shared.max_voices(),
 			load_percent: session.shared.load_percent(),
@@ -300,6 +304,12 @@ fn render_status(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &
 				t!("status.xruns", locale = locale, count = view.xruns).into_owned(),
 				keyboard_text(app, locale),
 			];
+			if view.transpose != 0 {
+				counters.push(t!("status.transpose", locale = locale, value = format!("{:+}", view.transpose)).into_owned());
+			}
+			if let Some(channel) = view.omni_channel {
+				counters.push(t!("status.omni", locale = locale, channel = channel + 1).into_owned());
+			}
 			if view.dropped > 0 {
 				counters.push(t!("status.dropped", locale = locale, count = view.dropped).into_owned());
 			}

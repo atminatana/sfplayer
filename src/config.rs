@@ -64,6 +64,8 @@ pub struct Config {
 pub struct MidiConfig {
 	/// Port name substring or index.
 	pub input: Option<String>,
+	/// 1-based channel all incoming notes are redirected to (F-15 omni); `None` = off.
+	pub omni_channel: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

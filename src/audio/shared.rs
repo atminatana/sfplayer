@@ -1,6 +1,6 @@
 //! State shared between the audio callback and other threads through atomics only (spec N-03).
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
 use super::meter::Levels;
 
@@ -18,6 +18,10 @@ pub struct AudioShared {
 	load_percent: AtomicU32,
 	/// Polyphony limit of the installed engine; 0 without an engine.
 	max_voices: AtomicU32,
+	/// Semitones added to every note before the engine (F-15), −12..=12.
+	transpose: AtomicI32,
+	/// Channel (0-based) all hardware MIDI is redirected to; −1 = off (F-15 omni).
+	omni_channel: AtomicI32,
 }
 
 impl AudioShared {
@@ -30,6 +34,8 @@ impl AudioShared {
 			held_notes: AtomicU32::new(0),
 			load_percent: AtomicU32::new(0),
 			max_voices: AtomicU32::new(0),
+			transpose: AtomicI32::new(0),
+			omni_channel: AtomicI32::new(-1),
 		}
 	}
 
@@ -97,6 +103,23 @@ impl AudioShared {
 
 	pub fn max_voices(&self) -> u32 {
 		self.max_voices.load(Ordering::Relaxed)
+	}
+
+	pub fn set_transpose(&self, semitones: i8) {
+		self.transpose.store(i32::from(semitones.clamp(-12, 12)), Ordering::Relaxed);
+	}
+
+	pub fn transpose(&self) -> i8 {
+		self.transpose.load(Ordering::Relaxed) as i8
+	}
+
+	pub fn set_omni_channel(&self, channel: Option<u8>) {
+		self.omni_channel
+			.store(channel.map_or(-1, |channel| i32::from(channel.min(15))), Ordering::Relaxed);
+	}
+
+	pub fn omni_channel(&self) -> Option<u8> {
+		u8::try_from(self.omni_channel.load(Ordering::Relaxed)).ok()
 	}
 }
 

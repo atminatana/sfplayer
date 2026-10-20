@@ -38,6 +38,9 @@ pub struct BlockRenderer {
 	/// Bit per key, per channel: which notes are held (F-12 "voices").
 	held: [u128; 16],
 	held_count: u32,
+	/// Key actually sounding for each (channel, played key), so a note off matches its note on even if the
+	/// transposition changed in between (F-15).
+	sounding: [[u8; 128]; 16],
 }
 
 impl BlockRenderer {
@@ -60,6 +63,42 @@ impl BlockRenderer {
 			right: vec![0.0; MAX_CHUNK_FRAMES],
 			held: [0; 16],
 			held_count: 0,
+			sounding: [[0; 128]; 16],
+		}
+	}
+
+	/// Applies omni redirection (hardware MIDI only) and transposition before tracking and the engine.
+	fn prepare(&mut self, event: MidiEvent, from_hardware: bool) -> MidiEvent {
+		let event = match (from_hardware, self.shared.omni_channel(), event) {
+			(true, Some(target), MidiEvent::NoteOn { key, velocity, .. }) => MidiEvent::NoteOn {
+				channel: target,
+				key,
+				velocity,
+			},
+			(true, Some(target), MidiEvent::NoteOff { key, .. }) => MidiEvent::NoteOff { channel: target, key },
+			(_, _, event) => event,
+		};
+		let transpose = self.shared.transpose();
+		match event {
+			MidiEvent::NoteOn { channel, key, velocity } => {
+				let sounding = (i16::from(key) + i16::from(transpose)).clamp(0, 127) as u8;
+				if let Some(map) = self.sounding.get_mut(usize::from(channel)) {
+					map[usize::from(key & 0x7F)] = sounding;
+				}
+				MidiEvent::NoteOn {
+					channel,
+					key: sounding,
+					velocity,
+				}
+			}
+			MidiEvent::NoteOff { channel, key } => {
+				let sounding = self
+					.sounding
+					.get(usize::from(channel))
+					.map_or(key, |map| map[usize::from(key & 0x7F)]);
+				MidiEvent::NoteOff { channel, key: sounding }
+			}
+			other => other,
 		}
 	}
 
@@ -132,6 +171,7 @@ impl BlockRenderer {
 		while let Some(command) = self.commands.try_pop() {
 			match command {
 				Command::Midi(event) => {
+					let event = self.prepare(event, false);
 					self.track(event);
 					if let Some(engine) = self.engine.as_mut() {
 						apply_event(engine.as_mut(), event);
@@ -153,6 +193,7 @@ impl BlockRenderer {
 
 	fn drain_events(&mut self) {
 		while let Some(event) = self.events.try_pop() {
+			let event = self.prepare(event, true);
 			self.track(event);
 			if let Some(engine) = self.engine.as_mut() {
 				apply_event(engine.as_mut(), event);
@@ -368,6 +409,74 @@ mod tests {
 			"note on arrives after the swap and is tracked without an engine"
 		);
 		assert_eq!(h.shared.max_voices(), 0);
+	}
+
+	#[test]
+	fn transposed_note_off_matches_its_note_on_even_after_the_transpose_changes() {
+		let mut h = harness();
+		let mut output = vec![0.0; FRAMES * 2];
+		h.shared.set_transpose(12);
+		h.events.try_push(NOTE_ON).unwrap();
+		h.renderer.fill(&mut output, 2);
+		assert!(rms(&output) > 0.01);
+		h.shared.set_transpose(0);
+		h.events.try_push(MidiEvent::NoteOff { channel: 0, key: 60 }).unwrap();
+		let mut tail = vec![0.0; SAMPLE_RATE as usize * 2];
+		h.renderer.fill(&mut tail, 2);
+		h.renderer.fill(&mut output, 2);
+		assert!(rms(&output) < 0.001, "note off reached the transposed key: {}", rms(&output));
+	}
+
+	#[test]
+	fn omni_redirects_hardware_notes_but_not_ui_notes() {
+		let mut h = harness();
+		let mut output = vec![0.0; FRAMES * 2];
+		h.shared.set_omni_channel(Some(0));
+		h.events
+			.try_push(MidiEvent::NoteOn {
+				channel: 5,
+				key: 60,
+				velocity: 100,
+			})
+			.unwrap();
+		h.renderer.fill(&mut output, 2);
+		assert!(rms(&output) > 0.01);
+		h.events
+			.try_push(MidiEvent::ControlChange {
+				channel: 0,
+				controller: 123,
+				value: 0,
+			})
+			.unwrap();
+		let mut tail = vec![0.0; SAMPLE_RATE as usize * 2];
+		h.renderer.fill(&mut tail, 2);
+		h.renderer.fill(&mut output, 2);
+		assert!(
+			rms(&output) < 0.001,
+			"the note sounded on channel 0, so all-notes-off there silences it"
+		);
+		h.commands
+			.try_push(Command::Midi(MidiEvent::NoteOn {
+				channel: 5,
+				key: 60,
+				velocity: 100,
+			}))
+			.ok()
+			.unwrap();
+		h.renderer.fill(&mut output, 2);
+		h.events
+			.try_push(MidiEvent::ControlChange {
+				channel: 0,
+				controller: 123,
+				value: 0,
+			})
+			.unwrap();
+		h.renderer.fill(&mut tail, 2);
+		h.renderer.fill(&mut output, 2);
+		assert!(
+			rms(&output) > 0.001,
+			"UI notes keep their channel: all-notes-off on channel 0 leaves channel 5 playing"
+		);
 	}
 
 	#[test]

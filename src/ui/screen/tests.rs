@@ -23,6 +23,8 @@ fn view() -> View {
 		}),
 		xruns: 0,
 		dropped: 0,
+		transpose: 0,
+		omni_channel: None,
 		held_notes: 0,
 		max_voices: 0,
 		load_percent: 0,
@@ -354,4 +356,16 @@ fn status_shows_release_mode_in_russian() {
 	);
 	let lines = draw_app(&app, &view(), 80, 24);
 	assert!(contains(&lines, "клав: отпускание  окт 4 vel 100"));
+}
+
+#[test]
+fn status_shows_transpose_and_omni_only_when_active() {
+	let lines = draw("en", &view(), 80, 24);
+	assert!(!contains(&lines, "tr "));
+	assert!(!contains(&lines, "omni"));
+	let mut shifted = view();
+	shifted.transpose = -3;
+	shifted.omni_channel = Some(9);
+	let lines = draw("en", &shifted, 80, 24);
+	assert!(contains(&lines, "tr -3  omni ch10"));
 }

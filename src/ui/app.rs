@@ -54,6 +54,8 @@ pub enum Request {
 	Panic,
 	/// Text keyboard output: goes to the engine and to the monitor.
 	Notes(Vec<MidiEvent>),
+	/// Semitone delta for `[` / `]`.
+	Transpose(i8),
 }
 
 /// The modal window on top of the main screen, if any.
@@ -160,6 +162,8 @@ impl App {
 				self.keyboard.velocity_down();
 				None
 			}
+			Action::TransposeUp => Some(Request::Transpose(1)),
+			Action::TransposeDown => Some(Request::Transpose(-1)),
 			Action::NotesOff => {
 				let events = self.keyboard.all_notes_off();
 				self.notes(events)
@@ -363,6 +367,7 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 		},
 		Request::Rescan => session.rescan(),
 		Request::Panic => session.panic(),
+		Request::Transpose(delta) => session.adjust_transpose(delta),
 		Request::Notes(events) => {
 			session.send_notes(&events);
 			app.monitor.extend(events.into_iter().map(MonitorEntry::now));
