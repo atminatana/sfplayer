@@ -18,6 +18,7 @@
 | `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil` (тесты в `app/tests.rs`), `screen.rs` `View` + экран (тесты в `screen/tests.rs`), `monitor.rs` буфер монитора, `meter.rs` CLIP-удержание и полосы, `text_keyboard.rs` ноты с клавиатуры (release/gate), `modals.rs` отрисовка модальных окон, `selector.rs` модальный список, `dialog.rs` диалоги F2/F3/F5/F6, `path_input.rs` поле пути F4, `keys.rs` таблица умолчаний + `Bindings` из конфига + справка (тесты в `keys/tests.rs`), `glyphs.rs` Unicode/ASCII-глифы, `i18n.rs` локаль (ADR 0004, 0008, 0009) | шаг 3.5 |
 | `src/record/` | `Recorder` поток + кольцо, `flac.rs` потоковый FLAC 24 бит, `vorbis.rs` Ogg Vorbis (ADR 0005) | шаг 5.3 |
 | `locales/app.yml` | Словарь rust-i18n v2, en и ru рядом для каждого ключа | шаг 3.1 |
+| `tests/i18n_completeness.rs` | Полнота словаря: обе локали, все ключи из кода существуют, нет кириллицы в коде | шаг 5.5 |
 | `assets/sin_wave.sf2` | Минимальный банк для оффлайн-тестов | есть |
 
 ## Сделано
@@ -45,14 +46,15 @@
 - Этап 5, шаг 5.2: сохранение конфига при выходе и после действий диалогов; `session/control.rs` выделен.
 - Этап 5, шаг 5.3: запись F7 в FLAC/Ogg Vorbis через поток-кодировщик, индикатор REC, подтверждение выхода при записи.
 - Этап 5, шаг 5.4: переопределение клавиш `[keys]`/`[keyboard]` с проверкой конфликтов, `--ascii` и автоопределение глифов.
+- Этап 5, шаг 5.5: интеграционный тест полноты словарей и отсутствия захардкоженных строк. Этап 5 завершён.
 
 ## Дальше
 
-- Шаг 5.5: тест полноты словарей ru/en и grep литералов в `ui/`.
+- Шаг 6.1: GitHub Actions на трёх ОС (fmt, clippy, test), релизные артефакты, проверка размера бинарника.
 - Остальные шаги — по плану `docs/plans/2026-10-20-sf2-player-v1.md`, раздел 4.
 
 ## Проверка
 
 ```bash
-cargo fmt --check && cargo clippy -- -D warnings && cargo test
+cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
