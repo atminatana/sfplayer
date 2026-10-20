@@ -1,0 +1,97 @@
+_version: 2
+
+app.title:
+  en: "sf2_player %{version}"
+  ru: "sf2_player %{version}"
+
+header.midi:
+  en: "MIDI:"
+  ru: "MIDI:"
+header.audio:
+  en: "Audio:"
+  ru: "Аудио:"
+header.sf2:
+  en: "SF2:"
+  ru: "SF2:"
+header.preset:
+  en: "Preset ch%{channel}:"
+  ru: "Пресет к%{channel}:"
+header.none:
+  en: "none"
+  ru: "нет"
+header.disconnected:
+  en: "%{port} (disconnected)"
+  ru: "%{port} (отключено)"
+header.presets:
+  en: "(%{count} presets)"
+  ru: "(%{count} пресетов)"
+header.no_sf2:
+  en: "no bank loaded, press F4"
+  ru: "банк не загружен, нажмите F4"
+header.buffer:
+  en: "%{frames} frames"
+  ru: "%{frames} кадров"
+header.buffer_default:
+  en: "default buffer"
+  ru: "буфер по умолчанию"
+
+panel.monitor:
+  en: "MIDI monitor"
+  ru: "Монитор MIDI"
+panel.mixer:
+  en: "Mixer"
+  ru: "Микшер"
+panel.status:
+  en: "Status"
+  ru: "Статус"
+
+status.voices:
+  en: "voices %{voices}"
+  ru: "голоса %{voices}"
+status.cpu:
+  en: "cpu %{percent}%"
+  ru: "cpu %{percent}%"
+status.xruns:
+  en: "xruns %{count}"
+  ru: "xrun %{count}"
+status.dropped:
+  en: "dropped %{count}"
+  ru: "потеряно %{count}"
+
+hint.help:
+  en: "F1 help"
+  ru: "F1 справка"
+hint.midi:
+  en: "F2 MIDI"
+  ru: "F2 MIDI"
+hint.audio:
+  en: "F3 audio"
+  ru: "F3 аудио"
+hint.sf2:
+  en: "F4 sf2"
+  ru: "F4 sf2"
+hint.record:
+  en: "F7 rec"
+  ru: "F7 запись"
+hint.quit:
+  en: "F10 quit"
+  ru: "F10 выход"
+
+notice.no_audio_device:
+  en: "No audio output device: %{error}"
+  ru: "Нет аудиоустройства вывода: %{error}"
+notice.audio_fallback:
+  en: "Audio output not found, using the default device"
+  ru: "Аудиовыход не найден, используется устройство по умолчанию"
+notice.midi_fallback:
+  en: "MIDI input not found, using the first available port"
+  ru: "MIDI-вход не найден, используется первый доступный порт"
+notice.midi_error:
+  en: "MIDI: %{error}"
+  ru: "MIDI: %{error}"
+notice.sf2_error:
+  en: "SoundFont: %{error}"
+  ru: "SoundFont: %{error}"
+notice.terminal_too_small:
+  en: "Terminal too small: need at least %{width}x%{height}"
+  ru: "Терминал слишком мал: нужно не меньше %{width}x%{height}"

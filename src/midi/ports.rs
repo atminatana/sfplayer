@@ -40,32 +40,41 @@ pub fn list_input_ports() -> Result<Vec<MidiPortInfo>, MidiError> {
 		.collect()
 }
 
-/// An open input connection; dropping it closes the port.
-pub struct MidiInputHandle {
-	_connection: MidiInputConnection<()>,
+/// An open input connection owning the sink state `T`; `close` hands `T` back so it can be reused.
+pub struct MidiInputHandle<T: 'static> {
+	connection: MidiInputConnection<T>,
 	pub port_name: String,
 }
 
-/// Connects to the port at `index` and delivers every parsed message to `sink` on midir's thread.
+impl<T> MidiInputHandle<T> {
+	pub fn close(self) -> T {
+		self.connection.close().1
+	}
+}
+
+/// Connects to the port at `index`; every parsed message is passed to `sink` together with `state` on midir's thread.
 /// Unparseable messages are logged at debug level and dropped.
-pub fn connect_input(index: usize, mut sink: impl FnMut(MidiEvent) + Send + 'static) -> Result<MidiInputHandle, MidiError> {
+pub fn connect_input<T: Send + 'static>(
+	index: usize,
+	state: T,
+	mut sink: impl FnMut(MidiEvent, &mut T) + Send + 'static,
+) -> Result<MidiInputHandle<T>, MidiError> {
 	let mut input = MidiInput::new(CLIENT_NAME).map_err(MidiError::Init)?;
 	input.ignore(Ignore::None);
 	let ports = input.ports();
 	let port = ports.get(index).ok_or(MidiError::PortNotFound { index })?;
 	let port_name = input.port_name(port).map_err(MidiError::PortName)?;
 
-	let callback = move |_timestamp: u64, bytes: &[u8], _: &mut ()| match parse_message(bytes) {
-		Ok(event) => sink(event),
+	let callback = move |_timestamp: u64, bytes: &[u8], state: &mut T| match parse_message(bytes) {
+		Ok(event) => sink(event, state),
 		Err(error) => tracing::debug!(%error, ?bytes, "ignoring MIDI message"),
 	};
-	let connection = input.connect(port, CLIENT_NAME, callback, ()).map_err(|error| MidiError::Connect {
-		port: port_name.clone(),
-		kind: error.kind(),
-	})?;
+	let connection = input
+		.connect(port, CLIENT_NAME, callback, state)
+		.map_err(|error| MidiError::Connect {
+			port: port_name.clone(),
+			kind: error.kind(),
+		})?;
 	tracing::info!(port = %port_name, "MIDI input connected");
-	Ok(MidiInputHandle {
-		_connection: connection,
-		port_name,
-	})
+	Ok(MidiInputHandle { connection, port_name })
 }

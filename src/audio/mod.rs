@@ -7,9 +7,9 @@ mod shared;
 mod stream;
 
 pub use device::{AudioDeviceInfo, SelectedDevice, default_output_device, list_output_devices, select_output_device};
-pub use render::BlockRenderer;
+pub use render::{BlockRenderer, Command};
 pub use shared::AudioShared;
-pub use stream::{AudioStream, StreamParams, open_output_stream};
+pub use stream::{AudioLinks, AudioStream, StreamParams, open_output_stream};
 
 use crate::synth::SynthError;
 
