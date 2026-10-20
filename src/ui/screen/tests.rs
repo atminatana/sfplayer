@@ -23,6 +23,7 @@ fn view() -> View {
 		}),
 		xruns: 0,
 		dropped: 0,
+		levels: Levels::default(),
 		notice: None,
 	}
 }
@@ -52,8 +53,8 @@ fn full_frame_matches_the_layout_mockup() {
 		"│MIDI: Arturia KeyStep ●   Audio: Speakers 48000 Hz / 256 frames               │",
 		"│SF2: GeneralUser GS (268 presets)   Preset ch1: 000:000 Grand Piano           │",
 		"│┌ MIDI monitor ──────────────────────────┐┌ Mixer ───────────────────────────┐│",
-		"││                                        ││                                  ││",
-		"││                                        ││                                  ││",
+		"││                                        ││L ▐░░░░░░░░░░░░▌   -inf dBFS      ││",
+		"││                                        ││R ▐░░░░░░░░░░░░▌   -inf dBFS      ││",
 		"││                                        ││                                  ││",
 		"││                                        ││                                  ││",
 		"││                                        ││                                  ││",
@@ -281,4 +282,26 @@ fn monitor_panel_shows_formatted_entries_and_pause_marker() {
 	app.monitor.toggle_pause();
 	let lines = draw_app(&app, &view(), 80, 24);
 	assert!(contains(&lines, " MIDI monitor [paused] "));
+}
+
+#[test]
+fn mixer_panel_shows_level_meters_and_clip_mark() {
+	let mut loud = view();
+	loud.levels = Levels {
+		peak_left: 0.5,
+		peak_right: 0.25,
+		rms_left: 0.25,
+		rms_right: 0.125,
+	};
+	let lines = draw("en", &loud, 80, 24);
+	assert!(contains(&lines, "L ▐"), "left meter");
+	assert!(contains(&lines, "-6.0 dBFS"), "left peak in dBFS");
+	assert!(contains(&lines, "-12.0 dBFS"), "right peak in dBFS");
+	assert!(!contains(&lines, "CLIP"));
+	let mut app = App::new("ru");
+	app.clipping = true;
+	let lines = draw_app(&app, &loud, 80, 24);
+	assert!(contains(&lines, "CLIP"));
+	let silent = draw("ru", &view(), 80, 24);
+	assert!(contains(&silent, "−∞ dBFS"), "silence symbol from the dictionary");
 }

@@ -11,6 +11,7 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 
 use super::dialog::{Choice, Dialog, DialogKind};
 use super::keys::{Action, action_for};
+use super::meter::ClipHold;
 use super::monitor::Monitor;
 use super::path_input::{self, PathInput, PathOutcome};
 use super::screen;
@@ -63,6 +64,9 @@ pub struct App {
 	pub should_quit: bool,
 	pub modal: Option<Modal>,
 	pub monitor: Monitor,
+	clip_hold: ClipHold,
+	/// Whether the CLIP mark is lit for the frame being drawn.
+	pub clipping: bool,
 	dirty: bool,
 }
 
@@ -74,8 +78,16 @@ impl App {
 			should_quit: false,
 			modal: None,
 			monitor: Monitor::default(),
+			clip_hold: ClipHold::new(0),
+			clipping: false,
 			dirty: true,
 		}
+	}
+
+	/// Per-frame meter bookkeeping: feeds the clip counter and resolves the CLIP mark for `now`.
+	pub fn update_meters(&mut self, clips: u32, now: Instant) {
+		self.clip_hold.update(clips, now);
+		self.clipping = self.clip_hold.is_lit(now);
 	}
 
 	/// Handles one key press. Quit works everywhere; with a modal open every other key belongs to it.
@@ -270,6 +282,7 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 			app.mark_dirty();
 		}
 		let now = Instant::now();
+		app.update_meters(session.shared.clips(), now);
 		if app.take_dirty() || now >= next_frame {
 			terminal.draw(|frame| screen::render(frame, app, &screen::View::from_session(session)))?;
 			next_frame = now + FRAME_INTERVAL;

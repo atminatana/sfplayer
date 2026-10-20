@@ -221,3 +221,10 @@ help.action.scroll_home:
 help.action.scroll_end:
   en: "Newest entry / end of list"
   ru: "Самая новая запись / конец списка"
+
+meter.clip:
+  en: "CLIP"
+  ru: "CLIP"
+meter.silence:
+  en: "-inf"
+  ru: "−∞"

@@ -10,6 +10,7 @@ use ringbuf::traits::{Consumer, Producer};
 use ringbuf::{HeapCons, HeapProd};
 
 use super::AudioShared;
+use super::meter::measure;
 use crate::midi::MidiEvent;
 use crate::synth::SynthEngine;
 
@@ -66,6 +67,8 @@ impl BlockRenderer {
 		for chunk in output.chunks_mut(MAX_CHUNK_FRAMES * channels) {
 			let frames = chunk.len() / channels;
 			engine.render(&mut self.left[..frames], &mut self.right[..frames]);
+			let (levels, clipped) = measure(&self.left[..frames], &self.right[..frames], gain);
+			self.shared.publish_levels(levels, clipped);
 			interleave(&self.left[..frames], &self.right[..frames], gain, chunk, channels);
 		}
 	}
@@ -238,6 +241,21 @@ mod tests {
 		h.renderer.fill(&mut output, 2);
 		assert!(h.retired.try_pop().is_some(), "old engine handed back");
 		assert!(output.iter().all(|sample| *sample == 0.0), "no engine → silence");
+	}
+
+	#[test]
+	fn levels_are_published_after_each_block() {
+		let mut h = harness();
+		h.events.try_push(NOTE_ON).unwrap();
+		let mut output = vec![0.0; FRAMES * 2];
+		h.renderer.fill(&mut output, 2);
+		let levels = h.shared.levels();
+		assert!(levels.peak_left > 0.01 && levels.rms_left > 0.01, "{levels:?}");
+		assert!(levels.peak_left >= levels.rms_left);
+		h.shared.set_master_gain(0.0);
+		h.renderer.fill(&mut output, 2);
+		assert_eq!(h.shared.levels(), crate::audio::Levels::default(), "levels follow the master gain");
+		assert_eq!(h.shared.clips(), 0);
 	}
 
 	#[test]

@@ -11,7 +11,9 @@ use rust_i18n::t;
 use super::app::Modal;
 use super::app::{App, Panel};
 use super::dialog::preset_label;
+use super::meter::{dbfs_text, level_bar};
 use super::modals;
+use crate::audio::Levels;
 use crate::midi::MidiStatus;
 use crate::session::{Notice, Session};
 
@@ -31,6 +33,7 @@ pub struct View {
 	pub bank: Option<BankView>,
 	pub xruns: u32,
 	pub dropped: u32,
+	pub levels: Levels,
 	pub notice: Option<Notice>,
 }
 
@@ -68,6 +71,7 @@ impl View {
 			bank,
 			xruns: session.shared.xruns(),
 			dropped: session.midi_dropped.load(std::sync::atomic::Ordering::Relaxed),
+			levels: session.shared.levels(),
 			notice: session.notice.clone(),
 		}
 	}
@@ -94,7 +98,7 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 		.constraints([Constraint::Length(2), Constraint::Min(5), Constraint::Length(4)])
 		.split(inner);
 	render_header(frame, rows[0], locale, view);
-	render_panels(frame, rows[1], app, locale);
+	render_panels(frame, rows[1], app, locale, view);
 	render_status(frame, rows[2], locale, view);
 	match &app.modal {
 		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, locale, view.channel),
@@ -147,16 +151,48 @@ fn render_header(frame: &mut Frame, area: Rect, locale: &str, view: &View) {
 	frame.render_widget(Paragraph::new(vec![line1, line2]), area);
 }
 
-fn render_panels(frame: &mut Frame, area: Rect, app: &App, locale: &str) {
+fn render_panels(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &View) {
 	let columns = Layout::default()
 		.direction(Direction::Horizontal)
 		.constraints([Constraint::Length(MONITOR_WIDTH), Constraint::Min(20)])
 		.split(area);
 	render_monitor(frame, columns[0], app, locale);
-	frame.render_widget(
-		panel_block(t!("panel.mixer", locale = locale).as_ref(), app.focus == Panel::Mixer),
-		columns[1],
-	);
+	render_mixer(frame, columns[1], app, locale, view);
+}
+
+/// Width of the level bars in the mixer panel.
+const METER_BAR_WIDTH: usize = 12;
+
+/// Mixer panel: output meters (F-09) at the top; master and channel strips follow in step 4.3.
+fn render_mixer(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &View) {
+	let block = panel_block(t!("panel.mixer", locale = locale).as_ref(), app.focus == Panel::Mixer);
+	let inner = block.inner(area);
+	frame.render_widget(block, area);
+	let silence = t!("meter.silence", locale = locale);
+	let clip = if app.clipping {
+		format!("  {}", t!("meter.clip", locale = locale))
+	} else {
+		String::new()
+	};
+	let meter_line = |name: &str, peak: f32, rms: f32| {
+		let mut spans = vec![
+			Span::raw(format!("{name} ▐")),
+			Span::raw(level_bar(rms, METER_BAR_WIDTH)),
+			Span::raw(format!("▌ {}", dbfs_text(peak, &silence))),
+		];
+		if !clip.is_empty() {
+			spans.push(Span::styled(
+				clip.clone(),
+				Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+			));
+		}
+		Line::from(spans)
+	};
+	let lines = vec![
+		meter_line("L", view.levels.peak_left, view.levels.rms_left),
+		meter_line("R", view.levels.peak_right, view.levels.rms_right),
+	];
+	frame.render_widget(Paragraph::new(lines), inner);
 }
 
 /// MIDI monitor panel (F-08): newest at the bottom unless scrolled; title shows the pause state.
