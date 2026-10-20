@@ -12,10 +12,10 @@
 | `src/cli.rs` | Аргументы командной строки (ТЗ §5), `DeviceSelector` имя/индекс + `find` | шаг 1.1, 1.5 |
 | `src/logging.rs` | `tracing` в файл в локальном каталоге данных ОС (N-07) | шаг 1.1 |
 | `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` (rusty.rs) (ADR 0001) | шаг 1.2 |
-| `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs), `HotplugWatcher` + `MidiStatus` (hotplug.rs) | шаг 1.3–2.3 |
+| `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs), `HotplugWatcher` + `MidiStatus` (hotplug.rs), `MonitorEntry` + имена нот (monitor.rs) | шаг 1.3–4.1 |
 | `src/audio/` | `AudioShared` атомики (shared.rs), `BlockRenderer` + `Command` ядро коллбэка (render.rs), устройства и `select_output_device` с fallback (device.rs), `open_output_stream` (stream.rs) (ADR 0002); микшер, измеритель — план 4.2, 4.3 | шаг 1.4 |
 | `src/config.rs` | `Config` (все секции, ADR 0007), load/save, `Settings::resolve` CLI > конфиг > умолчания, `project_dirs` | шаг 2.1 |
-| `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil`, `screen.rs` `View` + экран, `modals.rs` отрисовка модальных окон, `selector.rs` модальный список, `dialog.rs` диалоги F2/F3/F5/F6, `path_input.rs` поле пути F4, `keys.rs` привязки + справка из них, `i18n.rs` локаль (ADR 0004, 0008, 0009) | шаг 3.5 |
+| `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil`, `screen.rs` `View` + экран (тесты в `screen/tests.rs`), `monitor.rs` буфер монитора, `modals.rs` отрисовка модальных окон, `selector.rs` модальный список, `dialog.rs` диалоги F2/F3/F5/F6, `path_input.rs` поле пути F4, `keys.rs` привязки + справка из них, `i18n.rs` локаль (ADR 0004, 0008, 0009) | шаг 3.5 |
 | `src/record/` | Запись FLAC / Ogg Vorbis в отдельном потоке (ADR 0005) | план 5.3 |
 | `locales/app.yml` | Словарь rust-i18n v2, en и ru рядом для каждого ключа | шаг 3.1 |
 | `assets/sin_wave.sf2` | Минимальный банк для оффлайн-тестов | есть |
@@ -35,10 +35,11 @@
 - Этап 3, шаг 3.3: селектор с фильтром, диалоги MIDI/аудио/пресет/формат записи, смена устройств на лету, F8.
 - Этап 3, шаг 3.4: диалог F4 — поле пути с автодополнением, недавние банки, ошибка внутри диалога; bracketed paste.
 - Этап 3, шаг 3.5: справка F1 из таблицы привязок, прокрутка. Этап 3 завершён.
+- Этап 4, шаг 4.1: монитор MIDI — кольцо MIDI → UI, буфер 200, прокрутка, пауза, очистка, формат макета.
 
 ## Дальше
 
-- Шаг 4.1: монитор MIDI — кольцо MIDI → UI, буфер 200 записей, прокрутка, Ctrl+L, Ctrl+F, имена нот.
+- Шаг 4.2: измеритель уровня — peak/RMS L/R в коллбэке через атомики, дБFS, CLIP с удержанием 1 с.
 - Остальные шаги — по плану `docs/plans/2026-10-20-sf2-player-v1.md`, раздел 4.
 
 ## Проверка

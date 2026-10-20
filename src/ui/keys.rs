@@ -16,6 +16,14 @@ pub enum Action {
 	PresetDialog,
 	RecordFormatDialog,
 	Rescan,
+	MonitorClear,
+	MonitorPause,
+	ScrollUp,
+	ScrollDown,
+	PageUp,
+	PageDown,
+	ScrollHome,
+	ScrollEnd,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +51,14 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::FocusNext, KeyCode::Tab, KeyModifiers::NONE),
 	bind(Action::FocusPrevious, KeyCode::BackTab, KeyModifiers::SHIFT),
 	bind(Action::FocusPrevious, KeyCode::BackTab, KeyModifiers::NONE),
+	bind(Action::ScrollUp, KeyCode::Up, KeyModifiers::NONE),
+	bind(Action::ScrollDown, KeyCode::Down, KeyModifiers::NONE),
+	bind(Action::PageUp, KeyCode::PageUp, KeyModifiers::NONE),
+	bind(Action::PageDown, KeyCode::PageDown, KeyModifiers::NONE),
+	bind(Action::ScrollHome, KeyCode::Home, KeyModifiers::NONE),
+	bind(Action::ScrollEnd, KeyCode::End, KeyModifiers::NONE),
+	bind(Action::MonitorClear, KeyCode::Char('l'), KeyModifiers::CONTROL),
+	bind(Action::MonitorPause, KeyCode::Char('f'), KeyModifiers::CONTROL),
 ];
 
 impl Action {
@@ -59,6 +75,14 @@ impl Action {
 			Self::PresetDialog => "help.action.preset_dialog",
 			Self::RecordFormatDialog => "help.action.record_format_dialog",
 			Self::Rescan => "help.action.rescan",
+			Self::MonitorClear => "help.action.monitor_clear",
+			Self::MonitorPause => "help.action.monitor_pause",
+			Self::ScrollUp => "help.action.scroll_up",
+			Self::ScrollDown => "help.action.scroll_down",
+			Self::PageUp => "help.action.page_up",
+			Self::PageDown => "help.action.page_down",
+			Self::ScrollHome => "help.action.scroll_home",
+			Self::ScrollEnd => "help.action.scroll_end",
 		}
 	}
 }
@@ -82,6 +106,10 @@ pub fn key_label(binding: &Binding) -> String {
 		KeyCode::BackTab => "Shift+Tab".to_owned(),
 		KeyCode::Esc => "Esc".to_owned(),
 		KeyCode::Enter => "Enter".to_owned(),
+		KeyCode::PageUp => "PgUp".to_owned(),
+		KeyCode::PageDown => "PgDn".to_owned(),
+		KeyCode::Home => "Home".to_owned(),
+		KeyCode::End => "End".to_owned(),
 		KeyCode::Up => "\u{2191}".to_owned(),
 		KeyCode::Down => "\u{2193}".to_owned(),
 		KeyCode::Left => "\u{2190}".to_owned(),

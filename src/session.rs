@@ -13,8 +13,12 @@ use ringbuf::{HeapCons, HeapProd};
 use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, StreamParams};
 use crate::cli::DeviceSelector;
 use crate::config::{Config, RecordFormat, Settings};
-use crate::midi::{self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus, controller};
+use crate::midi::{
+	self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus, MonitorEntry, controller,
+};
 use crate::synth::{PresetInfo, RustySynthEngine, SoundFontBank, SynthEngine, SynthError};
+use ringbuf::HeapRb;
+use ringbuf::traits::Split;
 
 /// Something the status line should tell the user (translated by the UI, spec N-07).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,11 +37,16 @@ pub struct LoadedBank {
 	pub bank: SoundFontBank,
 }
 
-/// State handed to the midir callback: the ring producer plus an overflow counter.
+/// State handed to the midir callback: both ring producers plus overflow counters.
 pub struct MidiSink {
 	events: HeapProd<MidiEvent>,
+	monitor: HeapProd<MonitorEntry>,
 	dropped: Arc<AtomicU32>,
+	monitor_dropped: Arc<AtomicU32>,
 }
+
+/// Capacity of the MIDI → UI monitor ring; drained every UI frame (≤ 33 ms).
+pub const MONITOR_RING_CAPACITY: usize = 1024;
 
 pub const MIDI_CHANNELS: usize = 16;
 
@@ -51,6 +60,10 @@ pub struct Session {
 	retired: Option<HeapCons<Box<dyn SynthEngine>>>,
 	/// The MIDI → audio producer while no port is connected.
 	spare_events: Option<HeapProd<MidiEvent>>,
+	/// The MIDI → UI monitor producer while no port is connected.
+	spare_monitor: Option<HeapProd<MonitorEntry>>,
+	monitor_rx: HeapCons<MonitorEntry>,
+	monitor_dropped: Arc<AtomicU32>,
 	midi: Option<MidiInputHandle<MidiSink>>,
 	midi_port_index: Option<usize>,
 	pub midi_status: MidiStatus,
@@ -72,6 +85,7 @@ impl Session {
 	pub fn start(settings: &Settings, config: Config, config_path: PathBuf) -> Self {
 		let shared = Arc::new(AudioShared::new(f32::from(config.mixer.master) / 100.0));
 		let (hotplug_tx, hotplug_rx) = mpsc::channel();
+		let (monitor_tx, monitor_rx) = HeapRb::<MonitorEntry>::new(MONITOR_RING_CAPACITY).split();
 		let mut session = Self {
 			config,
 			config_path,
@@ -84,6 +98,9 @@ impl Session {
 			commands: None,
 			retired: None,
 			spare_events: None,
+			spare_monitor: Some(monitor_tx),
+			monitor_rx,
+			monitor_dropped: Arc::new(AtomicU32::new(0)),
 			midi: None,
 			midi_port_index: None,
 			midi_status: MidiStatus::NoPort,
@@ -159,6 +176,7 @@ impl Session {
 		self.commands = None;
 		self.retired = None;
 		self.spare_events = None;
+		// `spare_monitor` is kept: the monitor ring does not depend on the audio stream.
 		self.open_audio(&device);
 		let Some(stream) = &self.audio else {
 			return;
@@ -207,16 +225,21 @@ impl Session {
 	/// Connects to the MIDI port, moving the event producer into the midir callback.
 	pub fn connect_midi(&mut self, index: usize) {
 		self.disconnect_midi();
-		let Some(events) = self.spare_events.take() else {
+		let (Some(events), Some(monitor)) = (self.spare_events.take(), self.spare_monitor.take()) else {
 			return;
 		};
 		let sink = MidiSink {
 			events,
+			monitor,
 			dropped: Arc::clone(&self.midi_dropped),
+			monitor_dropped: Arc::clone(&self.monitor_dropped),
 		};
 		match midi::connect_input(index, sink, |event, sink| {
 			if sink.events.try_push(event).is_err() {
 				sink.dropped.fetch_add(1, Ordering::Relaxed);
+			}
+			if sink.monitor.try_push(MonitorEntry::now(event)).is_err() {
+				sink.monitor_dropped.fetch_add(1, Ordering::Relaxed);
 			}
 		}) {
 			Ok(handle) => {
@@ -232,9 +255,20 @@ impl Session {
 		}
 	}
 
+	/// Monitor entries that arrived since the last call (MIDI thread → UI, F-08).
+	pub fn drain_monitor(&mut self) -> impl Iterator<Item = MonitorEntry> + '_ {
+		std::iter::from_fn(|| self.monitor_rx.try_pop())
+	}
+
+	pub fn monitor_dropped(&self) -> u32 {
+		self.monitor_dropped.load(Ordering::Relaxed)
+	}
+
 	pub fn disconnect_midi(&mut self) {
 		if let Some(handle) = self.midi.take() {
-			self.spare_events = Some(handle.close().events);
+			let sink = handle.close();
+			self.spare_events = Some(sink.events);
+			self.spare_monitor = Some(sink.monitor);
 		}
 		self.midi_port_index = None;
 		self.midi_status = MidiStatus::NoPort;

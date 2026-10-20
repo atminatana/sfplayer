@@ -11,6 +11,7 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 
 use super::dialog::{Choice, Dialog, DialogKind};
 use super::keys::{Action, action_for};
+use super::monitor::Monitor;
 use super::path_input::{self, PathInput, PathOutcome};
 use super::screen;
 use super::selector::SelectorOutcome;
@@ -19,6 +20,8 @@ use crate::session::{Notice, Session};
 
 /// Spec §6: redraw at most 30 frames per second.
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(33);
+/// Rows moved by PgUp / PgDn in the monitor.
+const MONITOR_PAGE: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Panel {
@@ -59,6 +62,7 @@ pub struct App {
 	pub focus: Panel,
 	pub should_quit: bool,
 	pub modal: Option<Modal>,
+	pub monitor: Monitor,
 	dirty: bool,
 }
 
@@ -69,6 +73,7 @@ impl App {
 			focus: Panel::Monitor,
 			should_quit: false,
 			modal: None,
+			monitor: Monitor::default(),
 			dirty: true,
 		}
 	}
@@ -102,6 +107,35 @@ impl App {
 			Action::PresetDialog => Some(Request::OpenDialog(DialogKind::Preset)),
 			Action::RecordFormatDialog => Some(Request::OpenDialog(DialogKind::RecordFormat)),
 			Action::Rescan => Some(Request::Rescan),
+			Action::MonitorClear
+			| Action::MonitorPause
+			| Action::ScrollUp
+			| Action::ScrollDown
+			| Action::PageUp
+			| Action::PageDown
+			| Action::ScrollHome
+			| Action::ScrollEnd => {
+				self.handle_panel_action(action);
+				None
+			}
+		}
+	}
+
+	/// Keys whose meaning depends on the focused panel (spec §6 "контекст").
+	fn handle_panel_action(&mut self, action: Action) {
+		if self.focus != Panel::Monitor {
+			return;
+		}
+		match action {
+			Action::MonitorClear => self.monitor.clear(),
+			Action::MonitorPause => self.monitor.toggle_pause(),
+			Action::ScrollUp => self.monitor.scroll_up(1),
+			Action::ScrollDown => self.monitor.scroll_down(1),
+			Action::PageUp => self.monitor.scroll_up(MONITOR_PAGE),
+			Action::PageDown => self.monitor.scroll_down(MONITOR_PAGE),
+			Action::ScrollHome => self.monitor.scroll_to_top(),
+			Action::ScrollEnd => self.monitor.scroll_to_bottom(),
+			_ => {}
 		}
 	}
 
@@ -230,6 +264,11 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 	let mut next_frame = Instant::now();
 	loop {
 		session.poll();
+		let before = app.monitor.total();
+		app.monitor.extend(session.drain_monitor());
+		if app.monitor.total() != before {
+			app.mark_dirty();
+		}
 		let now = Instant::now();
 		if app.take_dirty() || now >= next_frame {
 			terminal.draw(|frame| screen::render(frame, app, &screen::View::from_session(session)))?;
@@ -383,6 +422,28 @@ mod tests {
 		app.take_dirty();
 		app.handle_paste("ignored");
 		assert!(!app.take_dirty());
+	}
+
+	#[test]
+	fn monitor_keys_work_only_while_the_monitor_panel_is_focused() {
+		use crate::midi::{MidiEvent, MonitorEntry};
+		let mut app = App::new("en");
+		app.monitor
+			.extend((0..5).map(|key| MonitorEntry::now(MidiEvent::NoteOff { channel: 0, key })));
+		app.handle_key(plain(KeyCode::Up));
+		assert_eq!(app.monitor.scroll(), 1);
+		app.handle_key(plain(KeyCode::PageUp));
+		assert_eq!(app.monitor.scroll(), 4, "clamped to the oldest entry");
+		app.handle_key(plain(KeyCode::End));
+		assert_eq!(app.monitor.scroll(), 0);
+		app.handle_key(press(KeyCode::Char('f'), KeyModifiers::CONTROL));
+		assert!(app.monitor.is_paused());
+		app.handle_key(plain(KeyCode::Tab));
+		app.handle_key(press(KeyCode::Char('l'), KeyModifiers::CONTROL));
+		assert_eq!(app.monitor.len(), 5, "Ctrl+L ignored while the mixer is focused");
+		app.handle_key(plain(KeyCode::Tab));
+		app.handle_key(press(KeyCode::Char('l'), KeyModifiers::CONTROL));
+		assert!(app.monitor.is_empty());
 	}
 
 	#[test]

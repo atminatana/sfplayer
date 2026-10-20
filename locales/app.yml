@@ -190,3 +190,34 @@ help.action.record_format_dialog:
 help.action.rescan:
   en: "Rescan MIDI ports"
   ru: "Пересканировать MIDI-порты"
+
+panel.monitor_paused:
+  en: "[paused]"
+  ru: "[пауза]"
+panel.monitor_scrolled:
+  en: "[-%{rows}]"
+  ru: "[-%{rows}]"
+help.action.monitor_clear:
+  en: "Clear the MIDI monitor"
+  ru: "Очистить монитор MIDI"
+help.action.monitor_pause:
+  en: "Pause / resume the MIDI monitor"
+  ru: "Пауза / продолжить монитор MIDI"
+help.action.scroll_up:
+  en: "Scroll up (monitor, dialogs)"
+  ru: "Прокрутка вверх (монитор, диалоги)"
+help.action.scroll_down:
+  en: "Scroll down (monitor, dialogs)"
+  ru: "Прокрутка вниз (монитор, диалоги)"
+help.action.page_up:
+  en: "Page up"
+  ru: "Страница вверх"
+help.action.page_down:
+  en: "Page down"
+  ru: "Страница вниз"
+help.action.scroll_home:
+  en: "Oldest entry / start of list"
+  ru: "Самая старая запись / начало списка"
+help.action.scroll_end:
+  en: "Newest entry / end of list"
+  ru: "Самая новая запись / конец списка"

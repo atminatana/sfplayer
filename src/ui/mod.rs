@@ -5,6 +5,7 @@ pub mod dialog;
 pub mod i18n;
 pub mod keys;
 pub mod modals;
+pub mod monitor;
 pub mod path_input;
 pub mod screen;
 pub mod selector;
