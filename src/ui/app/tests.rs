@@ -1,8 +1,9 @@
 //! Key handling and request tests for `App` (no devices involved).
 
-use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 
 use super::*;
+use crate::midi::MidiEvent;
 use crate::midi::MidiPortInfo;
 
 fn press(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
@@ -55,7 +56,7 @@ fn quit_keys_set_the_flag_even_inside_a_dialog() {
 fn unbound_keys_do_nothing_and_need_no_redraw() {
 	let mut app = App::new("en");
 	app.take_dirty();
-	assert_eq!(app.handle_key(plain(KeyCode::Char('z'))), None);
+	assert_eq!(app.handle_key(plain(KeyCode::Char('q'))), None, "q is neither a command nor a note");
 	assert!(!app.take_dirty());
 	assert!(!app.should_quit);
 }
@@ -217,4 +218,91 @@ fn f1_opens_help_which_scrolls_and_closes() {
 	app.handle_key(plain(KeyCode::F(1)));
 	app.handle_key(plain(KeyCode::Esc));
 	assert!(app.modal.is_none());
+}
+
+fn release_app() -> App {
+	use crate::ui::text_keyboard::{NoteOffMode, TextKeyboard};
+	App::with_keyboard(
+		"en",
+		TextKeyboard::new(&crate::config::KeyboardConfig::default(), NoteOffMode::Release),
+	)
+}
+
+#[test]
+fn text_keyboard_plays_notes_on_both_panels_and_stops_on_release_or_esc() {
+	let mut app = release_app();
+	assert_eq!(
+		app.handle_key(plain(KeyCode::Char('z'))),
+		Some(Request::Notes(vec![MidiEvent::NoteOn {
+			channel: 0,
+			key: 60,
+			velocity: 100
+		}]))
+	);
+	app.handle_key(plain(KeyCode::Tab));
+	assert_eq!(
+		app.handle_key(press(KeyCode::Char('S'), KeyModifiers::SHIFT)),
+		Some(Request::Notes(vec![MidiEvent::NoteOn {
+			channel: 0,
+			key: 61,
+			velocity: 100
+		}])),
+		"shifted letters still play, on the mixer panel too"
+	);
+	let mut repeat = plain(KeyCode::Char('z'));
+	repeat.kind = KeyEventKind::Repeat;
+	assert_eq!(app.handle_key(repeat), None, "auto-repeat is ignored");
+	let mut release = plain(KeyCode::Char('z'));
+	release.kind = KeyEventKind::Release;
+	assert_eq!(
+		app.handle_release(release),
+		Some(Request::Notes(vec![MidiEvent::NoteOff { channel: 0, key: 60 }]))
+	);
+	assert_eq!(
+		app.handle_key(plain(KeyCode::Esc)),
+		Some(Request::Notes(vec![MidiEvent::NoteOff { channel: 0, key: 61 }]))
+	);
+	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None, "nothing left to release");
+}
+
+#[test]
+fn ctrl_arrows_change_octave_and_velocity_and_panic_forgets_held_notes() {
+	let mut app = release_app();
+	app.handle_key(press(KeyCode::Up, KeyModifiers::CONTROL));
+	app.handle_key(press(KeyCode::Right, KeyModifiers::CONTROL));
+	assert_eq!(
+		app.handle_key(plain(KeyCode::Char('z'))),
+		Some(Request::Notes(vec![MidiEvent::NoteOn {
+			channel: 0,
+			key: 72,
+			velocity: 110
+		}]))
+	);
+	assert_eq!(app.handle_key(plain(KeyCode::F(9))), Some(Request::Panic));
+	assert_eq!(app.keyboard.held_count(), 0);
+}
+
+#[test]
+fn gate_mode_releases_through_the_tick() {
+	let mut app = App::new("en");
+	app.handle_key(plain(KeyCode::Char('z')));
+	let mut release = plain(KeyCode::Char('z'));
+	release.kind = KeyEventKind::Release;
+	assert_eq!(app.handle_release(release), None, "gate mode ignores releases");
+	assert_eq!(app.tick_keyboard(Instant::now()), None);
+	assert_eq!(
+		app.tick_keyboard(Instant::now() + Duration::from_secs(1)),
+		Some(Request::Notes(vec![MidiEvent::NoteOff { channel: 0, key: 60 }]))
+	);
+}
+
+#[test]
+fn notes_are_not_played_while_a_modal_is_open() {
+	let mut app = release_app();
+	app.open_dialog(midi_dialog());
+	assert_eq!(app.handle_key(plain(KeyCode::Char('z'))), None);
+	let mut release = plain(KeyCode::Char('z'));
+	release.kind = KeyEventKind::Release;
+	assert_eq!(app.handle_release(release), None);
+	assert_eq!(app.keyboard.held_count(), 0);
 }

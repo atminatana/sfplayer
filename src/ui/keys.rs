@@ -17,6 +17,12 @@ pub enum Action {
 	RecordFormatDialog,
 	Rescan,
 	Panic,
+	OctaveUp,
+	OctaveDown,
+	VelocityUp,
+	VelocityDown,
+	/// Esc on the main screen: note off for everything the text keyboard holds.
+	NotesOff,
 	MonitorClear,
 	MonitorPause,
 	MasterUp,
@@ -71,6 +77,11 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::PageDown, KeyCode::PageDown, KeyModifiers::NONE),
 	bind(Action::ScrollHome, KeyCode::Home, KeyModifiers::NONE),
 	bind(Action::ScrollEnd, KeyCode::End, KeyModifiers::NONE),
+	bind(Action::OctaveDown, KeyCode::Down, KeyModifiers::CONTROL),
+	bind(Action::OctaveUp, KeyCode::Up, KeyModifiers::CONTROL),
+	bind(Action::VelocityDown, KeyCode::Left, KeyModifiers::CONTROL),
+	bind(Action::VelocityUp, KeyCode::Right, KeyModifiers::CONTROL),
+	bind(Action::NotesOff, KeyCode::Esc, KeyModifiers::NONE),
 	bind(Action::MonitorClear, KeyCode::Char('l'), KeyModifiers::CONTROL),
 	bind(Action::MonitorPause, KeyCode::Char('f'), KeyModifiers::CONTROL),
 	bind(Action::MasterUp, KeyCode::Char('+'), KeyModifiers::NONE),
@@ -117,6 +128,11 @@ impl Action {
 			Self::RecordFormatDialog => "help.action.record_format_dialog",
 			Self::Rescan => "help.action.rescan",
 			Self::Panic => "help.action.panic",
+			Self::OctaveUp => "help.action.octave_up",
+			Self::OctaveDown => "help.action.octave_down",
+			Self::VelocityUp => "help.action.velocity_up",
+			Self::VelocityDown => "help.action.velocity_down",
+			Self::NotesOff => "help.action.notes_off",
 			Self::MonitorClear => "help.action.monitor_clear",
 			Self::MonitorPause => "help.action.monitor_pause",
 			Self::MasterUp => "help.action.master_up",
@@ -188,9 +204,20 @@ pub fn help_rows(locale: &str) -> Vec<(String, String)> {
 			None => rows.push((key, vec![label])),
 		}
 	}
-	rows.into_iter()
+	let mut rows: Vec<(String, String)> = rows
+		.into_iter()
 		.map(|(key, labels)| (labels.join(" / "), t!(key, locale = locale).into_owned()))
-		.collect()
+		.collect();
+	// The piano rows are not commands, but they belong in the same table (F-16).
+	rows.push((
+		t!("help.chord.white_keys", locale = locale).into_owned(),
+		t!("help.action.white_keys", locale = locale).into_owned(),
+	));
+	rows.push((
+		t!("help.chord.black_keys", locale = locale).into_owned(),
+		t!("help.action.black_keys", locale = locale).into_owned(),
+	));
+	rows
 }
 
 /// Maps a key press to a command; `None` means the key is free for other handlers (dialogs, text keyboard).
@@ -223,6 +250,9 @@ mod tests {
 		);
 		assert_eq!(action_for(&press(KeyCode::F(8), KeyModifiers::NONE)), Some(Action::Rescan));
 		assert_eq!(action_for(&press(KeyCode::F(9), KeyModifiers::NONE)), Some(Action::Panic));
+		assert_eq!(action_for(&press(KeyCode::Up, KeyModifiers::CONTROL)), Some(Action::OctaveUp));
+		assert_eq!(action_for(&press(KeyCode::Left, KeyModifiers::CONTROL)), Some(Action::VelocityDown));
+		assert_eq!(action_for(&press(KeyCode::Esc, KeyModifiers::NONE)), Some(Action::NotesOff));
 		assert_eq!(action_for(&press(KeyCode::Char(' '), KeyModifiers::NONE)), Some(Action::Panic));
 		assert_eq!(action_for(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
 		assert_eq!(action_for(&press(KeyCode::Tab, KeyModifiers::NONE)), Some(Action::FocusNext));

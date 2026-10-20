@@ -395,6 +395,18 @@ impl Session {
 		}
 	}
 
+	/// Notes from the text keyboard (F-16): same path as hardware MIDI, via the command ring (ADR 0009).
+	pub fn send_notes(&mut self, events: &[MidiEvent]) {
+		let Some(commands) = self.commands.as_mut() else {
+			return;
+		};
+		for event in events {
+			if commands.try_push(Command::Midi(*event)).is_err() {
+				tracing::warn!("command ring full, text keyboard event dropped");
+			}
+		}
+	}
+
 	/// F-11: All Notes Off + All Sound Off on every channel.
 	pub fn panic(&mut self) {
 		let Some(commands) = self.commands.as_mut() else {

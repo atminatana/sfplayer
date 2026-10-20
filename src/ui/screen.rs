@@ -13,6 +13,7 @@ use super::app::{App, Panel};
 use super::dialog::preset_label;
 use super::meter::{dbfs_text, level_bar};
 use super::modals;
+use super::text_keyboard::NoteOffMode;
 use crate::audio::mixer::CHANNELS;
 use crate::audio::{Levels, Mixer};
 use crate::midi::MidiStatus;
@@ -108,7 +109,7 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 		.split(inner);
 	render_header(frame, rows[0], locale, view);
 	render_panels(frame, rows[1], app, locale, view);
-	render_status(frame, rows[2], locale, view);
+	render_status(frame, rows[2], app, locale, view);
 	match &app.modal {
 		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, locale, view.channel),
 		Some(Modal::Sf2Path(input)) => modals::render_path_dialog(frame, area, input, locale),
@@ -285,7 +286,7 @@ fn render_monitor(frame: &mut Frame, area: Rect, app: &App, locale: &str) {
 	frame.render_widget(Paragraph::new(lines), inner);
 }
 
-fn render_status(frame: &mut Frame, area: Rect, locale: &str, view: &View) {
+fn render_status(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &View) {
 	let block = panel_block(t!("panel.status", locale = locale).as_ref(), false);
 	let inner = block.inner(area);
 	frame.render_widget(block, area);
@@ -297,6 +298,7 @@ fn render_status(frame: &mut Frame, area: Rect, locale: &str, view: &View) {
 				t!("status.voices", locale = locale, voices = voices_text(view)).into_owned(),
 				t!("status.cpu", locale = locale, percent = view.load_percent).into_owned(),
 				t!("status.xruns", locale = locale, count = view.xruns).into_owned(),
+				keyboard_text(app, locale),
 			];
 			if view.dropped > 0 {
 				counters.push(t!("status.dropped", locale = locale, count = view.dropped).into_owned());
@@ -310,6 +312,23 @@ fn render_status(frame: &mut Frame, area: Rect, locale: &str, view: &View) {
 		.collect::<Vec<_>>()
 		.join(" ");
 	frame.render_widget(Paragraph::new(vec![first, Line::from(hints)]), inner);
+}
+
+/// "kbd: gate 300ms  oct 4 vel 100" — note-off mode, octave and velocity of the text keyboard (F-16).
+fn keyboard_text(app: &App, locale: &str) -> String {
+	let mode = match app.keyboard.mode() {
+		NoteOffMode::Release => t!("status.kbd_release", locale = locale).into_owned(),
+		NoteOffMode::Gate(gate) => t!("status.kbd_gate", locale = locale, ms = gate.as_millis()).into_owned(),
+	};
+	format!(
+		"{mode}  {}",
+		t!(
+			"status.octave",
+			locale = locale,
+			octave = app.keyboard.octave(),
+			velocity = app.keyboard.velocity()
+		)
+	)
 }
 
 /// "7/64" while an engine is installed, "-/-" otherwise.

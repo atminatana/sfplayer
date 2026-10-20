@@ -10,5 +10,6 @@ pub mod monitor;
 pub mod path_input;
 pub mod screen;
 pub mod selector;
+pub mod text_keyboard;
 
 pub use app::{App, run};

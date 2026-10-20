@@ -73,7 +73,7 @@ fn full_frame_matches_the_layout_mockup() {
 		"││                                        ││                                  ││",
 		"│└────────────────────────────────────────┘└──────────────────────────────────┘│",
 		"│┌ Status ────────────────────────────────────────────────────────────────────┐│",
-		"││voices -/-  cpu 0%  xruns 0                                                 ││",
+		"││voices -/-  cpu 0%  xruns 0  kbd: gate 300ms  oct 4 vel 100                 ││",
 		"││F1 help F2 MIDI F3 audio F4 sf2 F7 rec F10 quit                             ││",
 		"│└────────────────────────────────────────────────────────────────────────────┘│",
 		"└──────────────────────────────────────────────────────────────────────────────┘",
@@ -332,7 +332,10 @@ fn mixer_panel_shows_master_and_channel_strips() {
 #[test]
 fn status_counters_show_held_notes_polyphony_and_load() {
 	let lines = draw("en", &view(), 80, 24);
-	assert!(contains(&lines, "voices -/-  cpu 0%  xruns 0"), "no engine installed");
+	assert!(
+		contains(&lines, "voices -/-  cpu 0%  xruns 0  kbd: gate 300ms  oct 4 vel 100"),
+		"no engine installed"
+	);
 	let mut playing = view();
 	playing.held_notes = 7;
 	playing.max_voices = 64;
@@ -340,4 +343,15 @@ fn status_counters_show_held_notes_polyphony_and_load() {
 	playing.xruns = 2;
 	let lines = draw("ru", &playing, 80, 24);
 	assert!(contains(&lines, "голоса 7/64  cpu 3%  xrun 2"));
+}
+
+#[test]
+fn status_shows_release_mode_in_russian() {
+	use crate::ui::text_keyboard::{NoteOffMode, TextKeyboard};
+	let app = App::with_keyboard(
+		"ru",
+		TextKeyboard::new(&crate::config::KeyboardConfig::default(), NoteOffMode::Release),
+	);
+	let lines = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&lines, "клав: отпускание  окт 4 vel 100"));
 }

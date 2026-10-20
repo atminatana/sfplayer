@@ -275,3 +275,40 @@ help.action.channel_solo:
 help.action.panic:
   en: "Panic: all notes off + all sound off"
   ru: "Паника: снять все ноты и заглушить звук"
+
+status.kbd_release:
+  en: "kbd: release"
+  ru: "клав: отпускание"
+status.kbd_gate:
+  en: "kbd: gate %{ms}ms"
+  ru: "клав: gate %{ms}мс"
+status.octave:
+  en: "oct %{octave} vel %{velocity}"
+  ru: "окт %{octave} vel %{velocity}"
+help.chord.white_keys:
+  en: "Z X C V B N M , . /"
+  ru: "Z X C V B N M , . /"
+help.chord.black_keys:
+  en: "S D G H J L ;"
+  ru: "S D G H J L ;"
+help.action.white_keys:
+  en: "White keys C–E from the base octave (text keyboard)"
+  ru: "Белые клавиши C–E от базовой октавы (текстовая клавиатура)"
+help.action.black_keys:
+  en: "Black keys C# D# F# G# A# C# D# (text keyboard)"
+  ru: "Чёрные клавиши C# D# F# G# A# C# D# (текстовая клавиатура)"
+help.action.octave_up:
+  en: "Text keyboard octave +1"
+  ru: "Октава текстовой клавиатуры +1"
+help.action.octave_down:
+  en: "Text keyboard octave −1"
+  ru: "Октава текстовой клавиатуры −1"
+help.action.velocity_up:
+  en: "Text keyboard velocity +10"
+  ru: "Velocity текстовой клавиатуры +10"
+help.action.velocity_down:
+  en: "Text keyboard velocity −10"
+  ru: "Velocity текстовой клавиатуры −10"
+help.action.notes_off:
+  en: "Release all text-keyboard notes"
+  ru: "Снять все ноты текстовой клавиатуры"

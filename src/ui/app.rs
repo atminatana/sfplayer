@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use ratatui::DefaultTerminal;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::dialog::{Choice, Dialog, DialogKind};
 use super::keys::{Action, action_for};
@@ -16,7 +16,10 @@ use super::monitor::Monitor;
 use super::path_input::{self, PathInput, PathOutcome};
 use super::screen;
 use super::selector::SelectorOutcome;
+use super::text_keyboard::{NoteOffMode, TextKeyboard};
 use crate::audio;
+use crate::config::KeyboardConfig;
+use crate::midi::{MidiEvent, MonitorEntry};
 use crate::session::{MixerAction, Notice, Session};
 
 /// Spec §6: redraw at most 30 frames per second.
@@ -49,6 +52,8 @@ pub enum Request {
 	LoadBank(PathBuf),
 	Rescan,
 	Panic,
+	/// Text keyboard output: goes to the engine and to the monitor.
+	Notes(Vec<MidiEvent>),
 }
 
 /// The modal window on top of the main screen, if any.
@@ -66,6 +71,9 @@ pub struct App {
 	pub should_quit: bool,
 	pub modal: Option<Modal>,
 	pub monitor: Monitor,
+	pub keyboard: TextKeyboard,
+	/// MIDI channel the text keyboard plays on (0-based); follows the mixer's current channel.
+	pub keyboard_channel: u8,
 	clip_hold: ClipHold,
 	/// Whether the CLIP mark is lit for the frame being drawn.
 	pub clipping: bool,
@@ -74,12 +82,21 @@ pub struct App {
 
 impl App {
 	pub fn new(locale: &'static str) -> Self {
+		Self::with_keyboard(
+			locale,
+			TextKeyboard::new(&KeyboardConfig::default(), NoteOffMode::Gate(Duration::from_millis(300))),
+		)
+	}
+
+	pub fn with_keyboard(locale: &'static str, keyboard: TextKeyboard) -> Self {
 		Self {
 			locale,
 			focus: Panel::Monitor,
 			should_quit: false,
 			modal: None,
 			monitor: Monitor::default(),
+			keyboard,
+			keyboard_channel: 0,
 			clip_hold: ClipHold::new(0),
 			clipping: false,
 			dirty: true,
@@ -103,7 +120,9 @@ impl App {
 			self.dirty = true;
 			return self.handle_modal_key(key);
 		}
-		let action = action_for(&key)?;
+		let Some(action) = action_for(&key) else {
+			return self.handle_note_key(key);
+		};
 		self.dirty = true;
 		match action {
 			Action::Quit => unreachable!("handled above"),
@@ -121,7 +140,30 @@ impl App {
 			Action::PresetDialog => Some(Request::OpenDialog(DialogKind::Preset)),
 			Action::RecordFormatDialog => Some(Request::OpenDialog(DialogKind::RecordFormat)),
 			Action::Rescan => Some(Request::Rescan),
-			Action::Panic => Some(Request::Panic),
+			Action::Panic => {
+				self.keyboard.clear();
+				Some(Request::Panic)
+			}
+			Action::OctaveUp => {
+				self.keyboard.octave_up();
+				None
+			}
+			Action::OctaveDown => {
+				self.keyboard.octave_down();
+				None
+			}
+			Action::VelocityUp => {
+				self.keyboard.velocity_up();
+				None
+			}
+			Action::VelocityDown => {
+				self.keyboard.velocity_down();
+				None
+			}
+			Action::NotesOff => {
+				let events = self.keyboard.all_notes_off();
+				self.notes(events)
+			}
 			Action::MasterUp => Some(Request::Mixer(MixerAction::MasterUp)),
 			Action::MasterDown => Some(Request::Mixer(MixerAction::MasterDown)),
 			Action::MasterUpFast => Some(Request::Mixer(MixerAction::MasterUpFast)),
@@ -162,6 +204,44 @@ impl App {
 			_ => {}
 		}
 		None
+	}
+
+	/// A key that is not a command: a note on the text keyboard when it is a plain (or shifted) character.
+	fn handle_note_key(&mut self, key: KeyEvent) -> Option<Request> {
+		let KeyCode::Char(c) = key.code else {
+			return None;
+		};
+		if key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) || key.kind == KeyEventKind::Repeat {
+			return None;
+		}
+		let events = self.keyboard.press(c, self.keyboard_channel, Instant::now());
+		self.notes(events)
+	}
+
+	/// Key release events (only delivered by terminals that report them).
+	pub fn handle_release(&mut self, key: KeyEvent) -> Option<Request> {
+		if self.modal.is_some() {
+			return None;
+		}
+		let KeyCode::Char(c) = key.code else {
+			return None;
+		};
+		let events = self.keyboard.release(c);
+		self.notes(events)
+	}
+
+	/// Gate timer; called every frame.
+	pub fn tick_keyboard(&mut self, now: Instant) -> Option<Request> {
+		let events = self.keyboard.tick(now);
+		self.notes(events)
+	}
+
+	fn notes(&mut self, events: Vec<MidiEvent>) -> Option<Request> {
+		if events.is_empty() {
+			return None;
+		}
+		self.dirty = true;
+		Some(Request::Notes(events))
 	}
 
 	fn handle_modal_key(&mut self, key: KeyEvent) -> Option<Request> {
@@ -283,6 +363,10 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 		},
 		Request::Rescan => session.rescan(),
 		Request::Panic => session.panic(),
+		Request::Notes(events) => {
+			session.send_notes(&events);
+			app.monitor.extend(events.into_iter().map(MonitorEntry::now));
+		}
 	}
 }
 
@@ -297,6 +381,10 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 			app.mark_dirty();
 		}
 		let now = Instant::now();
+		app.keyboard_channel = session.current_channel;
+		if let Some(request) = app.tick_keyboard(now) {
+			fulfil(request, app, session);
+		}
 		app.update_meters(session.shared.clips(), now);
 		if app.take_dirty() || now >= next_frame {
 			terminal.draw(|frame| screen::render(frame, app, &screen::View::from_session(session)))?;
@@ -305,7 +393,12 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 		let timeout = next_frame.saturating_duration_since(Instant::now());
 		if event::poll(timeout)? {
 			match event::read()? {
-				Event::Key(key) if key.kind != KeyEventKind::Release => {
+				Event::Key(key) if key.kind == KeyEventKind::Release => {
+					if let Some(request) = app.handle_release(key) {
+						fulfil(request, app, session);
+					}
+				}
+				Event::Key(key) => {
 					if let Some(request) = app.handle_key(key) {
 						fulfil(request, app, session);
 					}

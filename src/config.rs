@@ -118,6 +118,8 @@ pub struct KeyboardConfig {
 	/// White keys left to right starting at C; black keys for C#, D#, F#, G#, A#, C#, D#.
 	pub white: String,
 	pub black: String,
+	/// Use gate mode even when the terminal reports key releases (escape hatch for odd terminals).
+	pub force_gate: bool,
 }
 
 impl Default for KeyboardConfig {
@@ -128,6 +130,7 @@ impl Default for KeyboardConfig {
 			velocity: 100,
 			white: "zxcvbnm,./".to_owned(),
 			black: "sdghjl;".to_owned(),
+			force_gate: false,
 		}
 	}
 }
