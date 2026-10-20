@@ -1,0 +1,51 @@
+//! Output device enumeration (spec F-03) and the default device.
+
+use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::{Device, SupportedBufferSize};
+
+use super::AudioError;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioDeviceInfo {
+	/// Position in the enumeration order; what `--audio-out INDEX` refers to.
+	pub index: usize,
+	pub name: String,
+	pub is_default: bool,
+	pub default_sample_rate: u32,
+	/// Supported buffer size range in frames when the backend reports one.
+	pub buffer_range: Option<(u32, u32)>,
+}
+
+pub fn list_output_devices() -> Result<Vec<AudioDeviceInfo>, AudioError> {
+	let host = cpal::default_host();
+	let default_name = host.default_output_device().and_then(|device| device_name(&device));
+	let devices = host.output_devices().map_err(AudioError::Devices)?;
+	let mut infos = Vec::new();
+	for (index, device) in devices.enumerate() {
+		let name = device_name(&device).unwrap_or_else(|| format!("device {index}"));
+		let config = device.default_output_config().map_err(|source| AudioError::DeviceConfig {
+			device: name.clone(),
+			source,
+		})?;
+		let buffer_range = match config.buffer_size() {
+			SupportedBufferSize::Range { min, max } => Some((*min, *max)),
+			SupportedBufferSize::Unknown => None,
+		};
+		infos.push(AudioDeviceInfo {
+			index,
+			is_default: default_name.as_deref() == Some(name.as_str()),
+			name,
+			default_sample_rate: config.sample_rate(),
+			buffer_range,
+		});
+	}
+	Ok(infos)
+}
+
+pub fn default_output_device() -> Result<Device, AudioError> {
+	cpal::default_host().default_output_device().ok_or(AudioError::NoOutputDevice)
+}
+
+pub fn device_name(device: &Device) -> Option<String> {
+	device.description().ok().map(|description| description.name().to_owned())
+}
