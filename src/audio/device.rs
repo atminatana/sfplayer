@@ -24,10 +24,15 @@ pub fn list_output_devices() -> Result<Vec<AudioDeviceInfo>, AudioError> {
 	let mut infos = Vec::new();
 	for (index, device) in devices.enumerate() {
 		let name = device_name(&device).unwrap_or_else(|| format!("device {index}"));
-		let config = device.default_output_config().map_err(|source| AudioError::DeviceConfig {
-			device: name.clone(),
-			source,
-		})?;
+		// A single unreadable device (e.g. an ALSA hint whose plugin cannot open the hardware)
+		// must not hide the whole list: it is skipped with a warning in the log.
+		let config = match device.default_output_config() {
+			Ok(config) => config,
+			Err(source) => {
+				tracing::warn!(device = %name, %source, "skipping audio device, cannot read its configuration");
+				continue;
+			}
+		};
 		let buffer_range = match config.buffer_size() {
 			SupportedBufferSize::Range { min, max } => Some((*min, *max)),
 			SupportedBufferSize::Unknown => None,

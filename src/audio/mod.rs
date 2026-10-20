@@ -25,7 +25,7 @@ pub enum AudioError {
 	NoOutputDevice,
 	#[error("cannot enumerate audio devices")]
 	Devices(#[source] cpal::Error),
-	#[error("cannot read device configuration for {device}")]
+	#[error("cannot read device configuration for {device}: {source}")]
 	DeviceConfig {
 		device: String,
 		#[source]
@@ -41,4 +41,23 @@ pub enum AudioError {
 	Play(#[source] cpal::Error),
 	#[error(transparent)]
 	Synth(#[from] SynthError),
+}
+
+#[cfg(test)]
+mod tests {
+	use super::AudioError;
+	use cpal::ErrorKind;
+
+	#[test]
+	fn device_config_error_names_the_device_and_the_cause() {
+		let error = AudioError::DeviceConfig {
+			device: "HDA Intel PCH, ALC897 Analog".to_owned(),
+			source: cpal::Error::with_message(ErrorKind::UnsupportedOperation, "Device does not support output"),
+		};
+		let text = error.to_string();
+		assert!(
+			text.contains("HDA Intel PCH, ALC897 Analog") && text.contains("Device does not support output"),
+			"{text}"
+		);
+	}
 }
