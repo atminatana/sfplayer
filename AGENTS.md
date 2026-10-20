@@ -10,7 +10,9 @@ This file provides guidance to AI coding agents (Claude Code, Codex, Cursor and 
 
 Тестовый ассет: `assets/sin_wave.sf2` (1,2 КБ, синусоидальный банк) — для оффлайн-тестов синтеза, не для реальных банков. Реальные банки SF2 в репозиторий не кладутся (N-12).
 
-Порядок работы над шагом (принят владельцем): `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` зелёные → разделы в `docs/done/` и `docs/test/` → обновление `PROJECT_MAP.md` → один коммит на шаг. Тесты крупных модулей лежат в подмодулях `*/tests.rs`; таблица клавиш в README генерируется тестом `readme_keys` (`cargo test --test readme_keys print_table -- --nocapture`).
+Порядок работы над шагом (принят владельцем): `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` зелёные → разделы в `docs/done/` и `docs/test/` → обновление `PROJECT_MAP.md` → один коммит на шаг. Тесты крупных модулей лежат в подмодулях `*/tests.rs`; таблицы клавиш в README генерируются тестом `readme_keys` (`cargo test --test readme_keys print_table -- --nocapture`).
+
+**README (обязательно на каждом шаге).** В корне два файла по конвенции GitHub: `README.md` — английский, `README.ru.md` — русский; в начале каждого — ссылки на оба языка. При любом изменении, видимом пользователю (CLI-флаги, горячие клавиши, поля конфига, форматы записи, индикаторы, зависимости сборки, ограничения), в том же шаге проверить и обновить **оба** README синхронно — содержание должно совпадать, расхождения между языками недопустимы. Таблицы клавиш не редактируются вручную: после изменения `src/ui/keys.rs` или словаря `locales/app.yml` перегенерировать их тестом `print_table` и вставить между маркерами `<!-- keys:start -->` / `<!-- keys:end -->`; тест `readme_keys` падает, если таблица устарела. Оба README попадают в релизные архивы (`.github/workflows/release.yml`).
 
 ## Команды
 

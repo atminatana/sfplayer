@@ -47,11 +47,11 @@ jobs:
           mkdir -p dist
           if [ "${{ runner.os }}" = "Windows" ]; then
             cp target/${{ matrix.target }}/release/sf2_player.exe dist/
-            cp README.md LICENSE-MIT LICENSE-APACHE dist/
+            cp README.md README.ru.md LICENSE-MIT LICENSE-APACHE dist/
             (cd dist && 7z a ../${{ matrix.archive }} *)
           else
             cp target/${{ matrix.target }}/release/sf2_player dist/
-            cp README.md LICENSE-MIT LICENSE-APACHE dist/
+            cp README.md README.ru.md LICENSE-MIT LICENSE-APACHE dist/
             tar -czf ${{ matrix.archive }} -C dist .
           fi
 
