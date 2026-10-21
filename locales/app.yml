@@ -71,8 +71,8 @@ hint.sf2:
   en: "F4 sf2"
   ru: "F4 sf2"
 hint.record:
-  en: "F7 rec"
-  ru: "F7 запись"
+  en: "Home/End rec"
+  ru: "Home/End запись"
 hint.quit:
   en: "F10 quit"
   ru: "F10 выход"
@@ -184,9 +184,18 @@ help.action.sf2_dialog:
 help.action.preset_dialog:
   en: "Choose preset for the current channel"
   ru: "Выбрать пресет для текущего канала"
-help.action.record_format_dialog:
-  en: "Choose recording format"
-  ru: "Выбрать формат записи"
+help.action.effects_dialog:
+  en: "Effects: reverb / chorus on, off and send levels"
+  ru: "Эффекты: реверб и хорус — вкл/выкл и уровни посыла"
+help.action.record_dialog:
+  en: "Recording settings: format"
+  ru: "Настройки записи: формат"
+help.action.record_start:
+  en: "Start recording"
+  ru: "Начать запись"
+help.action.record_stop:
+  en: "Stop recording"
+  ru: "Остановить запись"
 help.action.rescan:
   en: "Rescan MIDI ports"
   ru: "Пересканировать MIDI-порты"
@@ -215,12 +224,6 @@ help.action.page_up:
 help.action.page_down:
   en: "Page down"
   ru: "Страница вниз"
-help.action.scroll_home:
-  en: "Oldest entry / start of list"
-  ru: "Самая старая запись / начало списка"
-help.action.scroll_end:
-  en: "Newest entry / end of list"
-  ru: "Самая новая запись / конец списка"
 
 meter.clip:
   en: "CLIP"
@@ -339,11 +342,11 @@ mixer.off:
   en: "off"
   ru: "выкл"
 help.action.toggle_reverb:
-  en: "Reverb on / off (level: config synth.reverb_level)"
-  ru: "Реверб вкл / выкл (уровень: конфиг synth.reverb_level)"
+  en: "Reverb on / off (level: F6 or config synth.reverb_level)"
+  ru: "Реверб вкл / выкл (уровень: F6 или конфиг synth.reverb_level)"
 help.action.toggle_chorus:
-  en: "Chorus on / off (level: config synth.chorus_level)"
-  ru: "Хорус вкл / выкл (уровень: конфиг synth.chorus_level)"
+  en: "Chorus on / off (level: F6 or config synth.chorus_level)"
+  ru: "Хорус вкл / выкл (уровень: F6 или конфиг synth.chorus_level)"
 
 notice.config_error:
   en: "Config not saved: %{error}"
@@ -370,6 +373,18 @@ confirm.quit_text:
 confirm.quit_hint:
   en: "Enter — stop and quit · Esc — keep recording"
   ru: "Enter — остановить и выйти · Esc — продолжить запись"
-help.action.record:
-  en: "Start / stop recording (format: F6)"
-  ru: "Начать / остановить запись (формат: F6)"
+dialog.effects_title:
+  en: "Effects"
+  ru: "Эффекты"
+dialog.effects_reverb:
+  en: "Reverb"
+  ru: "Реверб"
+dialog.effects_chorus:
+  en: "Chorus"
+  ru: "Хорус"
+dialog.effects_level:
+  en: "level"
+  ru: "уровень"
+dialog.effects_hint:
+  en: "↑↓ row · Space on/off · ←→ level ±5 · Enter save · Esc cancel"
+  ru: "↑↓ — строка · Space — вкл/выкл · ←→ — уровень ±5 · Enter — сохранить · Esc — отмена"

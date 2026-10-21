@@ -5,7 +5,7 @@
 
 mod control;
 
-pub use control::{EffectsAction, MixerAction};
+pub use control::{EffectsAction, EffectsSettings, MixerAction};
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -363,16 +363,11 @@ impl Session {
 		Ok(())
 	}
 
-	/// F7: starts a recording in the configured format, or stops the running one (F-20).
-	pub fn toggle_recording(&mut self) {
+	/// Home: starts a recording in the configured format (F-20); a running take is left alone.
+	pub fn start_recording(&mut self) {
 		if self.recorder.is_some() {
-			self.stop_recording();
-		} else {
-			self.start_recording();
+			return;
 		}
-	}
-
-	fn start_recording(&mut self) {
 		let (Some(stream), Some(samples)) = (&self.audio, self.record_rx.take()) else {
 			return;
 		};
@@ -401,7 +396,7 @@ impl Session {
 		}
 	}
 
-	/// Stops the recording if one is running; the file name or the error goes to the status line.
+	/// End (and quit): stops the recording if one is running; the file name or the error goes to the status line.
 	pub fn stop_recording(&mut self) {
 		let Some(recorder) = self.recorder.take() else {
 			return;

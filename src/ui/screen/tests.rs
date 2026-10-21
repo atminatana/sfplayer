@@ -79,7 +79,7 @@ fn full_frame_matches_the_layout_mockup() {
 		"│└────────────────────────────────────────┘└──────────────────────────────────┘│",
 		"│┌ Status ────────────────────────────────────────────────────────────────────┐│",
 		"││voices -/- cpu 0% xruns 0 kbd: gate 300ms oct 4 vel 100                     ││",
-		"││F1 help F2 MIDI F3 audio F4 sf2 F7 rec F10 quit                             ││",
+		"││F1 help F2 MIDI F3 audio F4 sf2 Home/End rec F10 quit                       ││",
 		"│└────────────────────────────────────────────────────────────────────────────┘│",
 		"└──────────────────────────────────────────────────────────────────────────────┘",
 	];
@@ -108,7 +108,44 @@ fn english_screen_shows_devices_bank_and_hints() {
 	assert!(contains(&lines, "MIDI monitor"));
 	assert!(contains(&lines, "Mixer"));
 	assert!(contains(&lines, "xruns 0"));
-	assert!(contains(&lines, "F1 help F2 MIDI F3 audio F4 sf2 F7 rec F10 quit"));
+	assert!(contains(&lines, "F1 help F2 MIDI F3 audio F4 sf2 Home/End rec F10 quit"));
+}
+
+#[test]
+fn effects_dialog_overlay_shows_switches_levels_and_the_highlighted_row() {
+	use crate::session::EffectsSettings;
+	use crate::ui::effects_dialog::EffectsDialog;
+	let mut app = App::new("en");
+	app.open_modal(Modal::Effects(EffectsDialog::new(EffectsSettings {
+		reverb: true,
+		chorus: false,
+		reverb_level: 40,
+		chorus_level: 7,
+	})));
+	let lines = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&lines, " Effects "));
+	assert!(contains(&lines, "Reverb   [x]  level  40"), "{lines:#?}");
+	assert!(contains(&lines, "Chorus   [ ]  level   7"));
+	assert!(contains(&lines, "Space on/off"));
+	let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+	terminal.draw(|frame| render(frame, &app, &view())).expect("draw");
+	let buffer = terminal.backend().buffer();
+	let row = lines.iter().position(|line| line.contains("Reverb   [x]")).expect("reverb row");
+	let column = lines[row].find("Reverb").expect("column");
+	assert!(
+		buffer[(column as u16, row as u16)].modifier.contains(Modifier::REVERSED),
+		"current row is highlighted"
+	);
+	let mut app = App::new("ru");
+	app.open_modal(Modal::Effects(EffectsDialog::new(EffectsSettings {
+		reverb: false,
+		chorus: true,
+		reverb_level: 0,
+		chorus_level: 127,
+	})));
+	let lines = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&lines, " Эффекты "));
+	assert!(contains(&lines, "Хорус    [x]  уровень 127"), "{lines:#?}");
 }
 
 #[test]

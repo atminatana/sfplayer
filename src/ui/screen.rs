@@ -125,6 +125,7 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 	match &app.modal {
 		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, &app.glyphs, locale, view.channel),
 		Some(Modal::Sf2Path(input)) => modals::render_path_dialog(frame, area, input, locale),
+		Some(Modal::Effects(dialog)) => modals::render_effects_dialog(frame, area, dialog, locale),
 		Some(Modal::Help(scroll)) => modals::render_help(frame, area, &app.bindings, *scroll, locale),
 		Some(Modal::ConfirmQuit) => modals::render_confirm_quit(frame, area, locale),
 		None => {}

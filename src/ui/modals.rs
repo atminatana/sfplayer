@@ -1,4 +1,4 @@
-//! Drawing the modal windows (spec §6): the list selector and the SoundFont path field.
+//! Drawing the modal windows (spec §6): the list selector, the SoundFont path field, the effects dialog.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use rust_i18n::t;
 
 use super::dialog::{Dialog, DialogKind};
+use super::effects_dialog::{EffectRow, EffectsDialog};
 use super::glyphs::Glyphs;
 use super::keys::Bindings;
 use super::path_input::PathInput;
@@ -140,6 +141,58 @@ pub(super) fn render_path_dialog(frame: &mut Frame, screen: Rect, input: &PathIn
 
 	let cursor_x = inner.x + u16::try_from(field_label.chars().count() + 1 + input.cursor()).unwrap_or(u16::MAX);
 	frame.set_cursor_position((cursor_x.min(inner.x + inner.width.saturating_sub(1)), inner.y));
+}
+
+/// F6 (spec v1.1 §4.2): one row per effect — switch and send level; the highlighted row is reversed.
+pub(super) fn render_effects_dialog(frame: &mut Frame, screen: Rect, dialog: &EffectsDialog, locale: &str) {
+	let width = screen.width.saturating_sub(8).clamp(40, 60);
+	let height = 6.min(screen.height);
+	let area = Rect {
+		x: screen.x + (screen.width - width) / 2,
+		y: screen.y + (screen.height - height) / 2,
+		width,
+		height,
+	};
+	frame.render_widget(Clear, area);
+	let block = Block::default()
+		.borders(Borders::ALL)
+		.border_style(Style::default().fg(Color::Cyan))
+		.title(padded(&t!("dialog.effects_title", locale = locale)));
+	let inner = block.inner(area);
+	frame.render_widget(block, area);
+
+	let settings = dialog.settings();
+	let level_label = t!("dialog.effects_level", locale = locale);
+	let row_line = |row: EffectRow, name: &str, on: bool, level: u8| {
+		let switch = if on { "[x]" } else { "[ ]" };
+		let text = format!("{name:<8} {switch}  {level_label} {level:>3}");
+		let style = if dialog.row() == row {
+			Style::default().add_modifier(Modifier::REVERSED)
+		} else {
+			Style::default()
+		};
+		Line::from(Span::styled(text, style))
+	};
+	let lines = vec![
+		row_line(
+			EffectRow::Reverb,
+			&t!("dialog.effects_reverb", locale = locale),
+			settings.reverb,
+			settings.reverb_level,
+		),
+		row_line(
+			EffectRow::Chorus,
+			&t!("dialog.effects_chorus", locale = locale),
+			settings.chorus,
+			settings.chorus_level,
+		),
+		Line::from(""),
+		Line::from(Span::styled(
+			t!("dialog.effects_hint", locale = locale).into_owned(),
+			Style::default().fg(Color::DarkGray),
+		)),
+	];
+	frame.render_widget(Paragraph::new(lines), inner);
 }
 
 /// Spec §6: quitting while a recording runs asks first. Enter stops the take and quits, Esc stays.

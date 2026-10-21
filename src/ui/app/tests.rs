@@ -74,8 +74,9 @@ fn function_keys_request_dialogs_and_rescan() {
 	);
 	assert_eq!(app.handle_key(plain(KeyCode::F(4))), Some(Request::OpenSf2Dialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(5))), Some(Request::OpenDialog(DialogKind::Preset)));
+	assert_eq!(app.handle_key(plain(KeyCode::F(6))), Some(Request::OpenEffectsDialog));
 	assert_eq!(
-		app.handle_key(plain(KeyCode::F(6))),
+		app.handle_key(plain(KeyCode::F(7))),
 		Some(Request::OpenDialog(DialogKind::RecordFormat))
 	);
 	assert_eq!(app.handle_key(plain(KeyCode::F(8))), Some(Request::Rescan));
@@ -140,7 +141,7 @@ fn monitor_keys_work_only_while_the_monitor_panel_is_focused() {
 	assert_eq!(app.monitor.scroll(), 1);
 	app.handle_key(plain(KeyCode::PageUp));
 	assert_eq!(app.monitor.scroll(), 4, "clamped to the oldest entry");
-	app.handle_key(plain(KeyCode::End));
+	app.handle_key(plain(KeyCode::PageDown));
 	assert_eq!(app.monitor.scroll(), 0);
 	app.handle_key(press(KeyCode::Char('f'), KeyModifiers::CONTROL));
 	assert!(app.monitor.is_paused());
@@ -329,9 +330,44 @@ fn alt_r_and_alt_c_toggle_effects() {
 }
 
 #[test]
-fn f7_toggles_recording_and_quit_asks_for_confirmation_while_recording() {
+fn f6_dialog_applies_changes_live_saves_on_enter_and_rolls_back_on_esc() {
+	use crate::session::EffectsAction;
+	use crate::ui::effects_dialog::EffectsDialog;
+	let settings = EffectsSettings {
+		reverb: true,
+		chorus: false,
+		reverb_level: 40,
+		chorus_level: 20,
+	};
 	let mut app = App::new("en");
-	assert_eq!(app.handle_key(plain(KeyCode::F(7))), Some(Request::ToggleRecord));
+	app.open_modal(Modal::Effects(EffectsDialog::new(settings)));
+	assert_eq!(app.handle_key(plain(KeyCode::F(3))), None, "hotkeys do not leak through the dialog");
+	let toggled = EffectsSettings { reverb: false, ..settings };
+	assert_eq!(
+		app.handle_key(plain(KeyCode::Char(' '))),
+		Some(Request::Effects(EffectsAction::Set(toggled)))
+	);
+	assert!(app.modal.is_some(), "still open after a change");
+	assert_eq!(app.handle_key(plain(KeyCode::Enter)), Some(Request::SaveEffects(toggled)));
+	assert!(app.modal.is_none());
+
+	app.open_modal(Modal::Effects(EffectsDialog::new(settings)));
+	app.handle_key(plain(KeyCode::Right));
+	assert_eq!(
+		app.handle_key(plain(KeyCode::Esc)),
+		Some(Request::Effects(EffectsAction::Set(settings))),
+		"Esc restores the opening state"
+	);
+	assert!(app.modal.is_none());
+	app.open_modal(Modal::Effects(EffectsDialog::new(settings)));
+	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None, "nothing to roll back");
+}
+
+#[test]
+fn home_and_end_drive_recording_and_quit_asks_for_confirmation_while_recording() {
+	let mut app = App::new("en");
+	assert_eq!(app.handle_key(plain(KeyCode::Home)), Some(Request::StartRecord));
+	assert_eq!(app.handle_key(plain(KeyCode::End)), Some(Request::StopRecord));
 	app.recording = Some(Duration::from_secs(12));
 	assert_eq!(app.handle_key(plain(KeyCode::F(10))), None);
 	assert_eq!(app.modal, Some(Modal::ConfirmQuit));

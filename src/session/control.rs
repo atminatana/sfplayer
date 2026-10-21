@@ -11,11 +11,39 @@ use crate::config::{RecordFormat, SynthConfig};
 use crate::midi::{MidiEvent, controller};
 use crate::synth::PresetInfo;
 
-/// Reverb / chorus switches (F-13).
+/// Reverb / chorus switches (F-13): Alt+R / Alt+C toggle one effect, the F6 dialog sets everything at once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectsAction {
 	ToggleReverb,
 	ToggleChorus,
+	Set(EffectsSettings),
+}
+
+/// The effect state the F6 dialog edits: switches plus send levels (CC 91 / CC 93, 0..=127).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EffectsSettings {
+	pub reverb: bool,
+	pub chorus: bool,
+	pub reverb_level: u8,
+	pub chorus_level: u8,
+}
+
+impl EffectsSettings {
+	pub fn from_config(synth: &SynthConfig) -> Self {
+		Self {
+			reverb: synth.reverb,
+			chorus: synth.chorus,
+			reverb_level: synth.reverb_level.min(127),
+			chorus_level: synth.chorus_level.min(127),
+		}
+	}
+
+	fn apply_to(self, synth: &mut SynthConfig) {
+		synth.reverb = self.reverb;
+		synth.chorus = self.chorus;
+		synth.reverb_level = self.reverb_level;
+		synth.chorus_level = self.chorus_level;
+	}
 }
 
 /// What the mixer keys do (spec F-10, §6).
@@ -62,13 +90,14 @@ impl Session {
 		}
 	}
 
-	/// Toggles an effect (F-13). Turning the last effect off or the first one on rebuilds the engine,
+	/// Changes the effects (F-13). Turning the last effect off or the first one on rebuilds the engine,
 	/// because rustysynth decides at construction whether the effect units exist; otherwise only the sends change.
 	pub fn apply_effects(&mut self, action: EffectsAction) {
 		let had_effects = self.config.synth.reverb || self.config.synth.chorus;
 		match action {
 			EffectsAction::ToggleReverb => self.config.synth.reverb = !self.config.synth.reverb,
 			EffectsAction::ToggleChorus => self.config.synth.chorus = !self.config.synth.chorus,
+			EffectsAction::Set(settings) => settings.apply_to(&mut self.config.synth),
 		}
 		let has_effects = self.config.synth.reverb || self.config.synth.chorus;
 		if has_effects != had_effects {
@@ -78,6 +107,11 @@ impl Session {
 		} else if let Some(commands) = self.commands.as_mut() {
 			push_effect_sends(commands, &self.config.synth);
 		}
+	}
+
+	/// What the F6 dialog starts from.
+	pub fn effects(&self) -> EffectsSettings {
+		EffectsSettings::from_config(&self.config.synth)
 	}
 
 	/// Current send levels for the UI: `None` when the effect is off.
@@ -197,4 +231,40 @@ pub(super) fn push_preset(commands: &mut HeapProd<Command>, channel: u8, bank: u
 		value: bank_msb,
 	}));
 	let _ = commands.try_push(Command::Midi(MidiEvent::ProgramChange { channel, program }));
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn effects_settings_round_trip_through_the_config_and_clamp_levels() {
+		let mut synth = SynthConfig {
+			reverb: false,
+			chorus: true,
+			reverb_level: 200,
+			chorus_level: 7,
+			..SynthConfig::default()
+		};
+		let settings = EffectsSettings::from_config(&synth);
+		assert_eq!(
+			settings,
+			EffectsSettings {
+				reverb: false,
+				chorus: true,
+				reverb_level: 127,
+				chorus_level: 7
+			}
+		);
+		EffectsSettings {
+			reverb: true,
+			chorus: false,
+			reverb_level: 40,
+			chorus_level: 0,
+		}
+		.apply_to(&mut synth);
+		assert!(synth.reverb && !synth.chorus);
+		assert_eq!((synth.reverb_level, synth.chorus_level), (40, 0));
+		assert_eq!(synth.sf2, None, "other synth fields untouched");
+	}
 }

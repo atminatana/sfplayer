@@ -10,6 +10,7 @@ use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::dialog::{Choice, Dialog, DialogKind};
+use super::effects_dialog::{EffectsDialog, EffectsOutcome};
 use super::glyphs::Glyphs;
 use super::keys::{Action, Bindings};
 use super::meter::ClipHold;
@@ -21,7 +22,7 @@ use super::text_keyboard::{NoteOffMode, TextKeyboard};
 use crate::audio;
 use crate::config::KeyboardConfig;
 use crate::midi::{MidiEvent, MonitorEntry};
-use crate::session::{EffectsAction, MixerAction, Notice, Session};
+use crate::session::{EffectsAction, EffectsSettings, MixerAction, Notice, Session};
 
 /// Spec §6: redraw at most 30 frames per second.
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(33);
@@ -49,11 +50,14 @@ pub enum Request {
 	Mixer(MixerAction),
 	OpenDialog(DialogKind),
 	OpenSf2Dialog,
+	OpenEffectsDialog,
 	Apply(Choice),
 	LoadBank(PathBuf),
 	Rescan,
 	Panic,
-	ToggleRecord,
+	/// Home / End (spec v1.1 §4.3).
+	StartRecord,
+	StopRecord,
 	/// Quit confirmed while recording: stop the take, then quit.
 	StopRecordingAndQuit,
 	/// Text keyboard output: goes to the engine and to the monitor.
@@ -61,6 +65,8 @@ pub enum Request {
 	/// Semitone delta for `[` / `]`.
 	Transpose(i8),
 	Effects(EffectsAction),
+	/// Enter in the F6 dialog: apply and write the config.
+	SaveEffects(EffectsSettings),
 }
 
 /// The modal window on top of the main screen, if any.
@@ -68,6 +74,7 @@ pub enum Request {
 pub enum Modal {
 	Select(Dialog),
 	Sf2Path(PathInput),
+	Effects(EffectsDialog),
 	/// F1: scroll offset in rows.
 	Help(usize),
 	/// F10 / Ctrl+C while recording (spec §6): Enter stops and quits, Esc stays.
@@ -158,9 +165,11 @@ impl App {
 			Action::AudioDialog => Some(Request::OpenDialog(DialogKind::AudioOutput)),
 			Action::Sf2Dialog => Some(Request::OpenSf2Dialog),
 			Action::PresetDialog => Some(Request::OpenDialog(DialogKind::Preset)),
-			Action::RecordFormatDialog => Some(Request::OpenDialog(DialogKind::RecordFormat)),
+			Action::EffectsDialog => Some(Request::OpenEffectsDialog),
+			Action::RecordDialog => Some(Request::OpenDialog(DialogKind::RecordFormat)),
 			Action::Rescan => Some(Request::Rescan),
-			Action::Record => Some(Request::ToggleRecord),
+			Action::RecordStart => Some(Request::StartRecord),
+			Action::RecordStop => Some(Request::StopRecord),
 			Action::Panic => {
 				self.keyboard.clear();
 				Some(Request::Panic)
@@ -204,9 +213,7 @@ impl App {
 			| Action::ScrollUp
 			| Action::ScrollDown
 			| Action::PageUp
-			| Action::PageDown
-			| Action::ScrollHome
-			| Action::ScrollEnd => self.handle_panel_action(action),
+			| Action::PageDown => self.handle_panel_action(action),
 		}
 	}
 
@@ -219,8 +226,6 @@ impl App {
 			(Panel::Monitor, Action::ScrollDown) => self.monitor.scroll_down(1),
 			(Panel::Monitor, Action::PageUp) => self.monitor.scroll_up(MONITOR_PAGE),
 			(Panel::Monitor, Action::PageDown) => self.monitor.scroll_down(MONITOR_PAGE),
-			(Panel::Monitor, Action::ScrollHome) => self.monitor.scroll_to_top(),
-			(Panel::Monitor, Action::ScrollEnd) => self.monitor.scroll_to_bottom(),
 			(Panel::Mixer, Action::SelectChannel(channel)) => return Some(Request::Mixer(MixerAction::SelectChannel(channel))),
 			(Panel::Mixer, Action::ChannelUp) => return Some(Request::Mixer(MixerAction::ChannelUp)),
 			(Panel::Mixer, Action::ChannelDown) => return Some(Request::Mixer(MixerAction::ChannelDown)),
@@ -307,6 +312,18 @@ impl App {
 				}
 				None
 			}
+			Modal::Effects(dialog) => match dialog.handle_key(key) {
+				EffectsOutcome::Pending => None,
+				EffectsOutcome::Changed(settings) => Some(Request::Effects(EffectsAction::Set(settings))),
+				EffectsOutcome::Accepted(settings) => {
+					self.modal = None;
+					Some(Request::SaveEffects(settings))
+				}
+				EffectsOutcome::Cancelled(rollback) => {
+					self.modal = None;
+					rollback.map(|settings| Request::Effects(EffectsAction::Set(settings)))
+				}
+			},
 			Modal::Sf2Path(input) => match input.handle_key(key, path_input::list_dir) {
 				PathOutcome::Pending => None,
 				PathOutcome::Cancelled => {
@@ -375,6 +392,7 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 				app.locale,
 			));
 		}
+		Request::OpenEffectsDialog => app.open_modal(Modal::Effects(EffectsDialog::new(session.effects()))),
 		Request::OpenSf2Dialog => {
 			let initial = session
 				.bank
@@ -411,11 +429,15 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 			}
 		},
 		Request::Rescan => session.rescan(),
-		Request::ToggleRecord => session.toggle_recording(),
-		Request::StopRecordingAndQuit => session.stop_recording(),
+		Request::StartRecord => session.start_recording(),
+		Request::StopRecord | Request::StopRecordingAndQuit => session.stop_recording(),
 		Request::Panic => session.panic(),
 		Request::Transpose(delta) => session.adjust_transpose(delta),
 		Request::Effects(action) => session.apply_effects(action),
+		Request::SaveEffects(settings) => {
+			session.apply_effects(EffectsAction::Set(settings));
+			session.save_config();
+		}
 		Request::Notes(events) => {
 			session.send_notes(&events);
 			app.monitor.extend(events.into_iter().map(MonitorEntry::now));

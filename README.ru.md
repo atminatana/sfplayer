@@ -53,8 +53,10 @@ sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
 | F3 | Выбрать аудиовыход |
 | F4 | Открыть файл SoundFont |
 | F5 | Выбрать пресет для текущего канала |
-| F6 | Выбрать формат записи |
-| F7 | Начать / остановить запись (формат: F6) |
+| F6 | Эффекты: реверб и хорус — вкл/выкл и уровни посыла |
+| F7 | Настройки записи: формат |
+| Home | Начать запись |
+| End | Остановить запись |
 | F8 | Пересканировать MIDI-порты |
 | F9 / Space | Паника: снять все ноты и заглушить звук |
 | F10 / Ctrl+C | Выход |
@@ -64,8 +66,6 @@ sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
 | ↓ | Прокрутка вниз (монитор, диалоги) |
 | PgUp | Страница вверх |
 | PgDn | Страница вниз |
-| Home | Самая старая запись / начало списка |
-| End | Самая новая запись / конец списка |
 | Ctrl+↓ | Октава текстовой клавиатуры −1 |
 | Ctrl+↑ | Октава текстовой клавиатуры +1 |
 | Ctrl+← | Velocity текстовой клавиатуры −10 |
@@ -73,8 +73,8 @@ sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
 | Esc | Снять все ноты текстовой клавиатуры |
 | [ | Транспонирование −1 полутон (до −12) |
 | ] | Транспонирование +1 полутон (до +12) |
-| Alt+R | Реверб вкл / выкл (уровень: конфиг synth.reverb_level) |
-| Alt+C | Хорус вкл / выкл (уровень: конфиг synth.chorus_level) |
+| Alt+R | Реверб вкл / выкл (уровень: F6 или конфиг synth.reverb_level) |
+| Alt+C | Хорус вкл / выкл (уровень: F6 или конфиг synth.chorus_level) |
 | Ctrl+L | Очистить монитор MIDI |
 | Ctrl+F | Пауза / продолжить монитор MIDI |
 | + / = | Мастер-громкость +1 % |
@@ -166,11 +166,11 @@ format = "flac"            # "flac" | "ogg_vorbis"
 vorbis_quality = 0.5       # 0.0–1.0
 ```
 
-Имена команд для `[keys]`: `help`, `quit`, `focus_next`, `focus_previous`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `record_format_dialog`, `rescan`, `record`, `panic`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `monitor_clear`, `monitor_pause`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`, `select_channel_1` … `select_channel_16`, `channel_up`, `channel_down`, `channel_mute`, `channel_solo`, `scroll_up`, `scroll_down`, `page_up`, `page_down`, `scroll_home`, `scroll_end`. Сочетания: `Ctrl`, `Alt`, `Shift`, затем `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` или один символ. Голая буква запрещена (она нужна нотам), конфликт двух команд на одной клавише — ошибка при запуске с указанием ключа.
+Имена команд для `[keys]`: `help`, `quit`, `focus_next`, `focus_previous`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `effects_dialog`, `record_dialog`, `rescan`, `record_start`, `record_stop`, `panic`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `monitor_clear`, `monitor_pause`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`, `select_channel_1` … `select_channel_16`, `channel_up`, `channel_down`, `channel_mute`, `channel_solo`, `scroll_up`, `scroll_down`, `page_up`, `page_down`. Сочетания: `Ctrl`, `Alt`, `Shift`, затем `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` или один символ. Голая буква запрещена (она нужна нотам), конфликт двух команд на одной клавише — ошибка при запуске с указанием ключа.
 
 ## Запись
 
-F6 выбирает формат, F7 начинает и останавливает запись. Файл `ГГГГ-ММ-ДД_ЧЧ-ММ-СС.flac` или `.ogg` появляется в `record.dir` (по умолчанию папка «Музыка»/sf2_player). FLAC пишется без потерь в 24 бита; Ogg Vorbis — с качеством `record.vorbis_quality`. Кодирование идёт в отдельном потоке, аудио-коллбэк только копирует сэмплы в кольцевой буфер; переполнение показывается в статусе как `rec lost N`. Выход во время записи запрашивает подтверждение.
+F7 открывает настройки записи (формат), Home начинает, End останавливает запись. Файл `ГГГГ-ММ-ДД_ЧЧ-ММ-СС.flac` или `.ogg` появляется в `record.dir` (по умолчанию папка «Музыка»/sf2_player). FLAC пишется без потерь в 24 бита; Ogg Vorbis — с качеством `record.vorbis_quality`. Кодирование идёт в отдельном потоке, аудио-коллбэк только копирует сэмплы в кольцевой буфер; переполнение показывается в статусе как `rec lost N`. Выход во время записи запрашивает подтверждение.
 
 ## Индикаторы
 
@@ -187,7 +187,7 @@ F6 выбирает формат, F7 начинает и останавлива�
 
 - Воспроизведение и запись MIDI-файлов, SF3 и собственный синтез не входят в версию 1.0.
 - Входящие CC 7 с MIDI-клавиатуры меняют громкость в движке, но не отражаются в микшере до следующего действия в нём.
-- Включение или выключение эффектов пересоздаёт синтезатор: звучащие ноты обрываются.
+- Включение или выключение эффектов (F6, Alt+R, Alt+C) пересоздаёт синтезатор: звучащие ноты обрываются. Смена уровня посыла в F6 — нет.
 
 ## Лицензия
 

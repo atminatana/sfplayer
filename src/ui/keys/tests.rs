@@ -18,11 +18,10 @@ fn function_keys_and_ctrl_c_map_to_actions() {
 	assert_eq!(action_for(&press(KeyCode::F(3), KeyModifiers::NONE)), Some(Action::AudioDialog));
 	assert_eq!(action_for(&press(KeyCode::F(4), KeyModifiers::NONE)), Some(Action::Sf2Dialog));
 	assert_eq!(action_for(&press(KeyCode::F(5), KeyModifiers::NONE)), Some(Action::PresetDialog));
-	assert_eq!(
-		action_for(&press(KeyCode::F(6), KeyModifiers::NONE)),
-		Some(Action::RecordFormatDialog)
-	);
-	assert_eq!(action_for(&press(KeyCode::F(7), KeyModifiers::NONE)), Some(Action::Record));
+	assert_eq!(action_for(&press(KeyCode::F(6), KeyModifiers::NONE)), Some(Action::EffectsDialog));
+	assert_eq!(action_for(&press(KeyCode::F(7), KeyModifiers::NONE)), Some(Action::RecordDialog));
+	assert_eq!(action_for(&press(KeyCode::Home, KeyModifiers::NONE)), Some(Action::RecordStart));
+	assert_eq!(action_for(&press(KeyCode::End, KeyModifiers::NONE)), Some(Action::RecordStop));
 	assert_eq!(action_for(&press(KeyCode::F(8), KeyModifiers::NONE)), Some(Action::Rescan));
 	assert_eq!(action_for(&press(KeyCode::F(9), KeyModifiers::NONE)), Some(Action::Panic));
 	assert_eq!(action_for(&press(KeyCode::Char(' '), KeyModifiers::NONE)), Some(Action::Panic));

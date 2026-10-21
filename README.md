@@ -53,8 +53,10 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | F3 | Choose audio output |
 | F4 | Open SoundFont file |
 | F5 | Choose preset for the current channel |
-| F6 | Choose recording format |
-| F7 | Start / stop recording (format: F6) |
+| F6 | Effects: reverb / chorus on, off and send levels |
+| F7 | Recording settings: format |
+| Home | Start recording |
+| End | Stop recording |
 | F8 | Rescan MIDI ports |
 | F9 / Space | Panic: all notes off + all sound off |
 | F10 / Ctrl+C | Quit |
@@ -64,8 +66,6 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | ↓ | Scroll down (monitor, dialogs) |
 | PgUp | Page up |
 | PgDn | Page down |
-| Home | Oldest entry / start of list |
-| End | Newest entry / end of list |
 | Ctrl+↓ | Text keyboard octave −1 |
 | Ctrl+↑ | Text keyboard octave +1 |
 | Ctrl+← | Text keyboard velocity −10 |
@@ -73,8 +73,8 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | Esc | Release all text-keyboard notes |
 | [ | Transpose −1 semitone (down to −12) |
 | ] | Transpose +1 semitone (up to +12) |
-| Alt+R | Reverb on / off (level: config synth.reverb_level) |
-| Alt+C | Chorus on / off (level: config synth.chorus_level) |
+| Alt+R | Reverb on / off (level: F6 or config synth.reverb_level) |
+| Alt+C | Chorus on / off (level: F6 or config synth.chorus_level) |
 | Ctrl+L | Clear the MIDI monitor |
 | Ctrl+F | Pause / resume the MIDI monitor |
 | + / = | Master volume +1 % |
@@ -166,11 +166,11 @@ format = "flac"            # "flac" | "ogg_vorbis"
 vorbis_quality = 0.5       # 0.0–1.0
 ```
 
-Command names for `[keys]`: `help`, `quit`, `focus_next`, `focus_previous`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `record_format_dialog`, `rescan`, `record`, `panic`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `monitor_clear`, `monitor_pause`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`, `select_channel_1` … `select_channel_16`, `channel_up`, `channel_down`, `channel_mute`, `channel_solo`, `scroll_up`, `scroll_down`, `page_up`, `page_down`, `scroll_home`, `scroll_end`. Chords: `Ctrl`, `Alt`, `Shift`, then `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` or a single character. A bare letter is rejected (letters belong to the notes); two commands on the same key is a startup error that names the key.
+Command names for `[keys]`: `help`, `quit`, `focus_next`, `focus_previous`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `effects_dialog`, `record_dialog`, `rescan`, `record_start`, `record_stop`, `panic`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `monitor_clear`, `monitor_pause`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`, `select_channel_1` … `select_channel_16`, `channel_up`, `channel_down`, `channel_mute`, `channel_solo`, `scroll_up`, `scroll_down`, `page_up`, `page_down`. Chords: `Ctrl`, `Alt`, `Shift`, then `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` or a single character. A bare letter is rejected (letters belong to the notes); two commands on the same key is a startup error that names the key.
 
 ## Recording
 
-F6 chooses the format, F7 starts and stops recording. The file `YYYY-MM-DD_HH-MM-SS.flac` or `.ogg` appears in `record.dir` (by default the Music folder/sf2_player). FLAC is lossless 24-bit; Ogg Vorbis uses the `record.vorbis_quality` setting. Encoding runs in a separate thread; the audio callback only copies samples into a ring buffer, and an overflow is shown in the status line as `rec lost N`. Quitting while recording asks for confirmation.
+F7 opens the recording settings (format), Home starts and End stops recording. The file `YYYY-MM-DD_HH-MM-SS.flac` or `.ogg` appears in `record.dir` (by default the Music folder/sf2_player). FLAC is lossless 24-bit; Ogg Vorbis uses the `record.vorbis_quality` setting. Encoding runs in a separate thread; the audio callback only copies samples into a ring buffer, and an overflow is shown in the status line as `rec lost N`. Quitting while recording asks for confirmation.
 
 ## Indicators
 
@@ -187,7 +187,7 @@ Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How t
 
 - MIDI file playback and recording, SF3 and a custom synthesizer are not part of version 1.0.
 - Incoming CC 7 from a MIDI keyboard changes the volume in the engine but is not reflected in the mixer until the next action in it.
-- Toggling effects recreates the synthesizer: sounding notes are cut off.
+- Toggling effects on or off (F6, Alt+R, Alt+C) recreates the synthesizer: sounding notes are cut off. Changing a send level in F6 does not.
 
 ## License
 
