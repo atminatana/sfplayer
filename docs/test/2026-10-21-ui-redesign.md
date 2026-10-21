@@ -45,3 +45,18 @@
 **Результат** — 182 unit + 3 i18n + 2 readme = 187 passed, 0 failed; unit-прогон 0.78 s.
 
 **Ограничения** — `Session::set_recording` и создание каталога при старте записи не покрыты автотестом (нужна живая сессия с аудиоустройством); покрыт путь UI → `Request`.
+
+## Шаг 3 (2026-10-21)
+
+**Состав**
+
+| Тест | Файл | Что проверяет |
+|------|------|---------------|
+| `global_preset_selects_bank_and_program_on_every_channel_but_percussion` | `session/control.rs` | `push_global_preset` кладёт CC 0 = bank и Program Change = program на каналы 1–9 и 11–16, канал 10 не трогает, других команд нет |
+| `save_then_load_round_trips` (обновлён) | `config.rs` | `synth.preset = [128, 5]` сохраняется и читается; в TOML — массив из двух чисел |
+| `full_frame_matches_the_layout_mockup`, `english_screen_shows_devices_bank_and_hints` (обновлены) | `ui/screen/tests.rs` | шапка «Preset: 000:000 Grand Piano» без номера канала |
+| `readmes_contain_the_generated_hotkey_tables` | `tests/readme_keys.rs` | строка F5 в обоих README — «все каналы, кроме 10» |
+
+**Результат** — 183 unit + 3 i18n + 2 readme = 188 passed, 0 failed; unit-прогон 0.80 s.
+
+**Ограничения** — слышимая смена пресета не проверяется (в `sin_wave.sf2` один пресет); восстановление/сброс пресета в `load_bank` требует живой сессии.

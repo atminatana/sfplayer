@@ -61,7 +61,7 @@ pub struct AudioView {
 pub struct BankView {
 	pub name: String,
 	pub presets: usize,
-	/// "bank:program name" of the preset on the current channel.
+	/// "bank:program name" of the F5 preset (all channels except 10).
 	pub preset_label: String,
 }
 
@@ -75,7 +75,7 @@ impl View {
 		let bank = session.bank.as_ref().map(|loaded| BankView {
 			name: loaded.bank.name().to_owned(),
 			presets: loaded.bank.presets().len(),
-			preset_label: session.preset_info(session.current_channel).map(preset_label).unwrap_or_default(),
+			preset_label: session.preset_info().map(preset_label).unwrap_or_default(),
 		});
 		Self {
 			channel: session.current_channel + 1,
@@ -123,7 +123,7 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 	render_panels(frame, rows[1], app, locale, view);
 	render_status(frame, rows[2], app, locale, view);
 	match &app.modal {
-		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, &app.glyphs, locale, view.channel),
+		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, &app.glyphs, locale),
 		Some(Modal::Sf2Path(input)) => modals::render_path_dialog(frame, area, input, locale),
 		Some(Modal::Effects(dialog)) => modals::render_effects_dialog(frame, area, dialog, locale),
 		Some(Modal::Record(dialog)) => modals::render_record_dialog(frame, area, dialog, &app.glyphs, locale),
@@ -165,7 +165,7 @@ fn render_header(frame: &mut Frame, area: Rect, locale: &str, view: &View, glyph
 				bank.name,
 				t!("header.presets", locale = locale, count = bank.presets)
 			)),
-			label(t!("header.preset", locale = locale, channel = view.channel)),
+			label(t!("header.preset", locale = locale)),
 			Span::raw(format!(" {}", bank.preset_label)),
 		]),
 		None => Line::from(vec![

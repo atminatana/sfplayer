@@ -82,9 +82,10 @@ pub struct Session {
 	_hotplug: Option<HotplugWatcher>,
 	hotplug_rx: Receiver<Vec<MidiPortInfo>>,
 	pub bank: Option<LoadedBank>,
-	/// Preset chosen per MIDI channel (F-06); `None` = the engine default.
-	channel_presets: [Option<(u16, u8)>; MIDI_CHANNELS],
-	/// Channel the mixer and the preset dialog act on (0-based).
+	/// Preset chosen with F5 for every channel except percussion (spec v1.1 §4.1, ADR 0011);
+	/// `None` = the engine default. Mirrors `config.synth.preset` while the bank it was chosen for is loaded.
+	preset: Option<(u16, u8)>,
+	/// Channel the mixer acts on (0-based).
 	pub current_channel: u8,
 	pub mixer: Mixer,
 	/// Semitones, −12..=12 (F-15).
@@ -125,7 +126,7 @@ impl Session {
 			_hotplug: None,
 			hotplug_rx,
 			bank: None,
-			channel_presets: [None; MIDI_CHANNELS],
+			preset: None,
 			current_channel: 0,
 			mixer: Mixer::new(master_percent),
 			transpose: 0,
@@ -196,7 +197,7 @@ impl Session {
 	}
 
 	/// Switches to another output device (F-03): new stream and rings, engine re-created for the new rate,
-	/// MIDI reconnected to the new ring, channel presets re-applied.
+	/// MIDI reconnected to the new ring, the preset re-applied.
 	pub fn reopen_audio(&mut self, index: usize) {
 		let device = match audio::output_device_by_index(index) {
 			Ok(device) => device,
@@ -327,13 +328,20 @@ impl Session {
 			}
 		};
 		tracing::info!(name = bank.name(), presets = bank.presets().len(), path = %path.display(), "SoundFont loaded");
+		// The remembered preset belongs to the remembered bank (F-14); another file starts from its first preset.
+		let same_bank = self.config.synth.sf2.as_deref() == Some(path);
+		self.preset = self.config.synth.preset.filter(|_| same_bank).filter(|(bank_number, program)| {
+			bank.presets()
+				.iter()
+				.any(|preset| (preset.bank, preset.program) == (*bank_number, *program))
+		});
+		self.config.synth.preset = self.preset;
 		self.config.remember_bank(path);
 		self.config.synth.sf2 = Some(path.to_owned());
 		self.bank = Some(LoadedBank {
 			path: path.to_owned(),
 			bank,
 		});
-		self.channel_presets = [None; MIDI_CHANNELS];
 		self.notice = None;
 		if let Err(error) = self.install_engine() {
 			self.notice = Some(Notice::Sf2Error(error.to_string()));
@@ -342,7 +350,7 @@ impl Session {
 		Ok(())
 	}
 
-	/// Creates an engine for the current bank at the stream's sample rate and swaps it in; re-applies presets.
+	/// Creates an engine for the current bank at the stream's sample rate and swaps it in; re-applies the preset.
 	fn install_engine(&mut self) -> Result<(), SynthError> {
 		let (Some(stream), Some(commands), Some(loaded)) = (&self.audio, self.commands.as_mut(), &self.bank) else {
 			return Ok(());
@@ -353,10 +361,8 @@ impl Session {
 			tracing::error!("command ring full, engine not installed");
 			return Ok(());
 		}
-		for channel in 0..MIDI_CHANNELS {
-			if let Some((bank, program)) = self.channel_presets[channel] {
-				control::push_preset(commands, channel as u8, bank, program);
-			}
+		if let Some((bank, program)) = self.preset {
+			control::push_global_preset(commands, bank, program);
 		}
 		control::push_channel_volumes(commands, &self.mixer.effective_volumes());
 		control::push_effect_sends(commands, &self.config.synth);

@@ -60,7 +60,7 @@ fn full_frame_matches_the_layout_mockup() {
 	let expected: Vec<&str> = vec![
 		"┌ sf2_player 0.1.0 ────────────────────────────────────────────────────────────┐",
 		"│MIDI: Arturia KeyStep ●   Audio: Speakers 48000 Hz / 256 frames               │",
-		"│SF2: GeneralUser GS (268 presets)   Preset ch1: 000:000 Grand Piano           │",
+		"│SF2: GeneralUser GS (268 presets)   Preset: 000:000 Grand Piano               │",
 		"│┌ MIDI monitor ──────────────────────────┐┌ Mixer ───────────────────────────┐│",
 		"││                                        ││L ▐░░░░░░░░░░░░▌   -inf dBFS      ││",
 		"││                                        ││R ▐░░░░░░░░░░░░▌   -inf dBFS      ││",
@@ -104,7 +104,7 @@ fn english_screen_shows_devices_bank_and_hints() {
 	assert!(contains(&lines, "MIDI: Arturia KeyStep ●"));
 	assert!(contains(&lines, "Audio: Speakers 48000 Hz / 256 frames"));
 	assert!(contains(&lines, "SF2: GeneralUser GS (268 presets)"));
-	assert!(contains(&lines, "Preset ch1: 000:000 Grand Piano"));
+	assert!(contains(&lines, "Preset: 000:000 Grand Piano"));
 	assert!(contains(&lines, "MIDI monitor"));
 	assert!(contains(&lines, "Mixer"));
 	assert!(contains(&lines, "xruns 0"));

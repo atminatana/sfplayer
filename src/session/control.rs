@@ -172,28 +172,37 @@ impl Session {
 		self.config.record.format = format;
 	}
 
-	/// Chooses the preset for `channel` (F-06) by sending Bank Select + Program Change down the command ring.
-	pub fn select_preset(&mut self, channel: u8, bank: u16, program: u8) {
-		let Some(slot) = self.channel_presets.get_mut(usize::from(channel)) else {
-			return;
-		};
-		*slot = Some((bank, program));
+	/// F5: the preset for every channel except percussion (spec v1.1 §4.1, ADR 0011), remembered in the config.
+	pub fn select_preset(&mut self, bank: u16, program: u8) {
+		self.preset = Some((bank, program));
+		self.config.synth.preset = self.preset;
 		if let Some(commands) = self.commands.as_mut() {
-			push_preset(commands, channel, bank, program);
+			push_global_preset(commands, bank, program);
 		}
 	}
 
-	pub fn preset_for(&self, channel: u8) -> Option<(u16, u8)> {
-		self.channel_presets.get(usize::from(channel)).copied().flatten()
+	/// The user's F5 choice; `None` = the first preset of the bank.
+	pub fn preset_for(&self) -> Option<(u16, u8)> {
+		self.preset
 	}
 
-	/// The preset shown for `channel`: the chosen one, or the engine default (first preset of the bank).
-	pub fn preset_info(&self, channel: u8) -> Option<&PresetInfo> {
+	/// The preset shown in the header: the chosen one, or the engine default (first preset of the bank).
+	pub fn preset_info(&self) -> Option<&PresetInfo> {
 		let presets = self.bank.as_ref()?.bank.presets();
-		match self.preset_for(channel) {
+		match self.preset {
 			Some((bank, program)) => presets.iter().find(|preset| (preset.bank, preset.program) == (bank, program)),
 			None => presets.first(),
 		}
+	}
+}
+
+/// MIDI channel 10 (0-based 9): percussion in General MIDI and in SF2 (bank 128), left out of the global preset.
+pub const PERCUSSION_CHANNEL: u8 = 9;
+
+/// Bank Select + Program Change on every melodic channel (spec v1.1 §4.1): 30 ring pushes.
+pub(super) fn push_global_preset(commands: &mut HeapProd<Command>, bank: u16, program: u8) {
+	for channel in (0..MIDI_CHANNELS as u8).filter(|channel| *channel != PERCUSSION_CHANNEL) {
+		push_preset(commands, channel, bank, program);
 	}
 }
 
@@ -239,7 +248,39 @@ pub(super) fn push_preset(commands: &mut HeapProd<Command>, channel: u8, bank: u
 
 #[cfg(test)]
 mod tests {
+	use ringbuf::HeapRb;
+	use ringbuf::traits::{Consumer, Split};
+
 	use super::*;
+
+	/// The global preset reaches channels 1 and 16 and skips channel 10 (spec v1.1 §7, criterion 3).
+	#[test]
+	fn global_preset_selects_bank_and_program_on_every_channel_but_percussion() {
+		let (mut commands, mut received) = HeapRb::<Command>::new(64).split();
+		push_global_preset(&mut commands, 8, 5);
+		let mut programs = Vec::new();
+		let mut bank_selects = Vec::new();
+		while let Some(command) = received.try_pop() {
+			match command {
+				Command::Midi(MidiEvent::ProgramChange { channel, program }) => programs.push((channel, program)),
+				Command::Midi(MidiEvent::ControlChange {
+					channel,
+					controller: controller::BANK_SELECT,
+					value,
+				}) => bank_selects.push((channel, value)),
+				_ => panic!("unexpected command: only Bank Select and Program Change belong here"),
+			}
+		}
+		let expected_channels: Vec<u8> = (0..16).filter(|channel| *channel != PERCUSSION_CHANNEL).collect();
+		assert_eq!(programs.iter().map(|(channel, _)| *channel).collect::<Vec<_>>(), expected_channels);
+		assert_eq!(
+			bank_selects.iter().map(|(channel, _)| *channel).collect::<Vec<_>>(),
+			expected_channels
+		);
+		assert!(programs.iter().all(|(_, program)| *program == 5));
+		assert!(bank_selects.iter().all(|(_, bank)| *bank == 8));
+		assert!(!programs.iter().any(|(channel, _)| *channel == 9), "channel 10 keeps its drum kit");
+	}
 
 	#[test]
 	fn effects_settings_round_trip_through_the_config_and_clamp_levels() {

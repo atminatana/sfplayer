@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use rust_i18n::t;
 
-use super::dialog::{Dialog, DialogKind};
+use super::dialog::Dialog;
 use super::effects_dialog::{EffectRow, EffectsDialog};
 use super::glyphs::Glyphs;
 use super::keys::Bindings;
@@ -20,7 +20,7 @@ use crate::config::RecordFormat;
 const DIALOG_LIST_ROWS: u16 = 10;
 
 /// Modal selector centred over the screen (spec §6 dialog type 1).
-pub(super) fn render_dialog(frame: &mut Frame, screen: Rect, dialog: &Dialog, glyphs: &Glyphs, locale: &str, channel: u8) {
+pub(super) fn render_dialog(frame: &mut Frame, screen: Rect, dialog: &Dialog, glyphs: &Glyphs, locale: &str) {
 	let width = screen.width.saturating_sub(8).clamp(40, 70);
 	let height = (DIALOG_LIST_ROWS + 6).min(screen.height.saturating_sub(2));
 	let area = Rect {
@@ -30,14 +30,10 @@ pub(super) fn render_dialog(frame: &mut Frame, screen: Rect, dialog: &Dialog, gl
 		height,
 	};
 	frame.render_widget(Clear, area);
-	let title = match dialog.kind {
-		DialogKind::Preset => t!(dialog.kind.title_key(), locale = locale, channel = channel).into_owned(),
-		_ => t!(dialog.kind.title_key(), locale = locale).into_owned(),
-	};
 	let block = Block::default()
 		.borders(Borders::ALL)
 		.border_style(Style::default().fg(Color::Cyan))
-		.title(padded(&title));
+		.title(padded(&t!(dialog.kind.title_key(), locale = locale)));
 	let inner = block.inner(area);
 	frame.render_widget(block, area);
 

@@ -397,8 +397,7 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 		},
 		Request::OpenDialog(DialogKind::Preset) => {
 			if let Some(loaded) = &session.bank {
-				let channel = session.current_channel;
-				app.open_dialog(Dialog::preset(loaded.bank.presets(), session.preset_for(channel)));
+				app.open_dialog(Dialog::preset(loaded.bank.presets(), session.preset_for()));
 			}
 		}
 		Request::OpenRecordDialog => app.open_modal(Modal::Record(RecordDialog::new(
@@ -424,8 +423,8 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 			session.save_config();
 		}
 		Request::Apply(Choice::SelectPreset { bank, program }) => {
-			let channel = session.current_channel;
-			session.select_preset(channel, bank, program);
+			session.select_preset(bank, program);
+			session.save_config();
 		}
 		Request::Apply(Choice::SetRecording { dir, format }) => {
 			session.set_recording(dir, format);

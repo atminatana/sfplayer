@@ -52,7 +52,7 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | F2 | Choose MIDI input |
 | F3 | Choose audio output |
 | F4 | Open SoundFont file |
-| F5 | Choose preset for the current channel |
+| F5 | Choose the preset for all channels except 10 |
 | F6 | Effects: reverb / chorus on, off and send levels |
 | F7 | Recording settings: folder and format |
 | Home | Start recording |
@@ -133,6 +133,7 @@ sample_rate = 48000        # remove — use the device rate
 
 [synth]
 sf2 = "C:/banks/GeneralUser GS.sf2"
+preset = [0, 0]            # F5 choice as [bank, program]; remove — the bank's first preset
 reverb = true
 chorus = false
 reverb_level = 40          # CC 91 send, 0–127
@@ -187,6 +188,7 @@ Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How t
 
 - MIDI file playback and recording, SF3 and a custom synthesizer are not part of version 1.0.
 - Incoming CC 7 from a MIDI keyboard changes the volume in the engine but is not reflected in the mixer until the next action in it.
+- The F5 preset applies to every channel except 10 (percussion); a Program Change from the MIDI keyboard still switches its own channel until the next F5 choice, and the header keeps showing the F5 choice.
 - Toggling effects on or off (F6, Alt+R, Alt+C) recreates the synthesizer: sounding notes are cut off. Changing a send level in F6 does not.
 
 ## License

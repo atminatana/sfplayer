@@ -14,8 +14,8 @@ header.sf2:
   en: "SF2:"
   ru: "SF2:"
 header.preset:
-  en: "Preset ch%{channel}:"
-  ru: "Пресет к%{channel}:"
+  en: "Preset:"
+  ru: "Пресет:"
 header.none:
   en: "none"
   ru: "нет"
@@ -103,8 +103,8 @@ dialog.audio_title:
   en: "Audio output"
   ru: "Аудиовыход"
 dialog.preset_title:
-  en: "Preset (channel %{channel})"
-  ru: "Пресет (канал %{channel})"
+  en: "Preset (all channels except 10)"
+  ru: "Пресет (все каналы, кроме 10)"
 dialog.record_title:
   en: "Recording"
   ru: "Запись"
@@ -194,8 +194,8 @@ help.action.sf2_dialog:
   en: "Open SoundFont file"
   ru: "Открыть файл SoundFont"
 help.action.preset_dialog:
-  en: "Choose preset for the current channel"
-  ru: "Выбрать пресет для текущего канала"
+  en: "Choose the preset for all channels except 10"
+  ru: "Выбрать пресет для всех каналов, кроме 10"
 help.action.effects_dialog:
   en: "Effects: reverb / chorus on, off and send levels"
   ru: "Эффекты: реверб и хорус — вкл/выкл и уровни посыла"

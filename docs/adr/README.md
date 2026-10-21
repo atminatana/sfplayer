@@ -13,3 +13,4 @@
 | [0007](0007-config-keyboard-and-keys.md) | Секции конфига: [keyboard] для нот, [keys] для команд | Accepted |
 | [0008](0008-i18n-from-first-tui-line.md) | Локализация rust-i18n с первой строки TUI | Accepted |
 | [0009](0009-text-keyboard-via-command-ring.md) | События текстовой клавиатуры через кольцо команд UI→audio | Accepted |
+| [0011](0011-global-preset.md) | Пресет F5 — один на все каналы, кроме ударных (v1.1) | Accepted |

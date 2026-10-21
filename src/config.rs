@@ -93,6 +93,9 @@ pub struct SynthConfig {
 	pub sf2: Option<PathBuf>,
 	/// Most recent first, at most `RECENT_BANKS_LIMIT` entries.
 	pub recent_banks: Vec<PathBuf>,
+	/// `[bank, program]` chosen with F5 for every channel except 10 (spec v1.1 §4.1, ADR 0011);
+	/// `None` = the first preset of the bank. Forgotten when another bank is loaded.
+	pub preset: Option<(u16, u8)>,
 	pub reverb: bool,
 	pub chorus: bool,
 	/// Send levels (CC 91 / CC 93), 0..=127, applied to every channel while the effect is on (F-13).
@@ -105,6 +108,7 @@ impl Default for SynthConfig {
 		Self {
 			sf2: None,
 			recent_banks: Vec::new(),
+			preset: None,
 			reverb: true,
 			chorus: false,
 			reverb_level: 40,
@@ -323,11 +327,18 @@ mod tests {
 		config.midi.input = Some("KeyStep".into());
 		config.audio.sample_rate = Some(44_100);
 		config.synth.sf2 = Some(PathBuf::from("bank.sf2"));
+		config.synth.preset = Some((128, 5));
 		config.keys.insert("panic".into(), "F9".into());
 		config.record.format = RecordFormat::OggVorbis;
 		config.save(&path).expect("save");
 		let loaded = Config::load(&path).expect("load");
 		assert_eq!(loaded, config);
+		// `to_string_pretty` may break the array over several lines; the shape `preset = [128, 5]` is what matters.
+		let compact: String = std::fs::read_to_string(&path).expect("read back").split_whitespace().collect();
+		assert!(
+			compact.contains("preset=[128,5,]") || compact.contains("preset=[128,5]"),
+			"{compact}"
+		);
 		std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).ok();
 	}
 
