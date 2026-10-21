@@ -60,3 +60,28 @@
 **Результат** — 183 unit + 3 i18n + 2 readme = 188 passed, 0 failed; unit-прогон 0.80 s.
 
 **Ограничения** — слышимая смена пресета не проверяется (в `sin_wave.sf2` один пресет); восстановление/сброс пресета в `load_bank` требует живой сессии.
+
+## Шаг 4 (2026-10-21)
+
+**Состав** — `src/ui/screen/tests.rs` переписан под новый макет (18 тестов), `ui/app/tests.rs` (17), `ui/keys/tests.rs` (10):
+
+| Тест | Файл | Что проверяет |
+|------|------|---------------|
+| `full_frame_matches_the_layout_mockup` | `ui/screen/tests.rs` | золотой кадр 80×24 (en) по ТЗ §2: заголовок по центру, `[F1]…[F7]`, Home/End, микшер, статус в нижней рамке |
+| `russian_screen_uses_the_russian_dictionary` | `ui/screen/tests.rs` | те же строки на русском, `−∞`, статус «голоса… клав: gate 300мс окт 4 vel 100» |
+| `missing_devices_and_bank_are_red_and_audio_ok_is_green` | `ui/screen/tests.rs` | цвета ячеек: `no device`/`not set` красные, `OK` зелёный, `no bank` серый, `(disconnected)` красный |
+| `notices_land_in_the_line_they_belong_to_or_in_the_message_line` | `ui/screen/tests.rs` | шесть уведомлений: строка и цвет (F2/F3/F4/F7 красным, строка 9 жёлтым); ошибка аудио заменяет текст устройства |
+| `status_fields_keep_their_columns_whatever_the_values` | `ui/screen/tests.rs` | колонки `cpu/xrun/kbd/oct/vel` не сдвигаются при 999/256, 100 %, 99999, `9999+`, release/gate |
+| `optional_status_fields_sit_on_the_right_and_never_push_the_fixed_ones` | `ui/screen/tests.rs` | tr/omni/dropped справа при 100 колонках, скрыты при 80, `tr +12` помещается |
+| `recording_indicator_blinks_in_the_recording_line_and_quit_asks_for_confirmation` | `ui/screen/tests.rs` | `● REC` в строке F7, фазы мигания, красный цвет, диалог подтверждения, Ogg Vorbis в строке |
+| `mixer_shows_meters_clip_mark_and_master_mute` | `ui/screen/tests.rs` | дБFS, CLIP, `MASTER █████░░░░░   50%  mute`, нет `ch01` |
+| `every_line_fits_eighty_columns` | `ui/screen/tests.rs` | длинный каталог и все необязательные поля — ровно 80 ячеек |
+| `help_overlay_lists_the_bindings_in_both_languages` (обновлён) | `ui/screen/tests.rs` | нет Tab, есть Home/«Start recording», последняя строка по прокрутке |
+| `dialog_overlay…`, `sf2_path_dialog…`, `effects_dialog…`, `record_dialog…`, `ascii_mode…` (обновлены) | `ui/screen/tests.rs` | оверлеи поверх нового экрана; ASCII-глифы в микшере и индикаторе |
+| `unbound_keys_do_nothing_and_need_no_redraw` (обновлён), `master_keys_work_everywhere`, `text_keyboard_plays_notes_on_channel_one…` | `ui/app/tests.rs` | Tab/стрелки/цифры — ничего; мастер-клавиши без фокуса; ноты всегда на канале 1 |
+| `panel_monitor_and_channel_keys_are_gone`, `config_overrides…` (обновлён), `bad_overrides…` (обновлён) | `ui/keys/tests.rs` | удалённые клавиши и имена команд не распознаются; `record` из v1 — неизвестная команда |
+| удалены | `ui/monitor.rs`, `midi/monitor.rs`, `audio/mixer.rs`, `ui/app/tests.rs` | 4 теста монитора UI, 3 теста формата монитора, 2 теста каналов микшера, тесты фокуса/монитора/каналов в `app` |
+
+**Результат** — 165 unit + 3 i18n + 2 readme = 170 passed, 0 failed; unit-прогон 0.90 s.
+
+**Ограничения** — живой прогон в терминале не выполнен (см. ⚠ WARNINGS шага 4); цвета и раскладка подтверждены `TestBackend`.

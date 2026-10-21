@@ -18,11 +18,9 @@ use ringbuf::{HeapCons, HeapProd};
 use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, Mixer, StreamParams};
 use crate::cli::DeviceSelector;
 use crate::config::{Config, Settings};
-use crate::midi::{self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus, MonitorEntry};
+use crate::midi::{self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus};
 use crate::record::{RecordParams, Recorder, file_name};
 use crate::synth::{RustySynthEngine, SoundFontBank, SynthEngine, SynthError};
-use ringbuf::HeapRb;
-use ringbuf::traits::Split;
 
 /// Something the status line should tell the user (translated by the UI, spec N-07).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,16 +42,11 @@ pub struct LoadedBank {
 	pub bank: SoundFontBank,
 }
 
-/// State handed to the midir callback: both ring producers plus overflow counters.
+/// State handed to the midir callback: the MIDI → audio ring producer plus its overflow counter.
 pub struct MidiSink {
 	events: HeapProd<MidiEvent>,
-	monitor: HeapProd<MonitorEntry>,
 	dropped: Arc<AtomicU32>,
-	monitor_dropped: Arc<AtomicU32>,
 }
-
-/// Capacity of the MIDI → UI monitor ring; drained every UI frame (≤ 33 ms).
-pub const MONITOR_RING_CAPACITY: usize = 1024;
 
 pub const MIDI_CHANNELS: usize = 16;
 
@@ -70,10 +63,6 @@ pub struct Session {
 	recorder: Option<Recorder>,
 	/// The MIDI → audio producer while no port is connected.
 	spare_events: Option<HeapProd<MidiEvent>>,
-	/// The MIDI → UI monitor producer while no port is connected.
-	spare_monitor: Option<HeapProd<MonitorEntry>>,
-	monitor_rx: HeapCons<MonitorEntry>,
-	monitor_dropped: Arc<AtomicU32>,
 	midi: Option<MidiInputHandle<MidiSink>>,
 	midi_port_index: Option<usize>,
 	pub midi_status: MidiStatus,
@@ -85,8 +74,6 @@ pub struct Session {
 	/// Preset chosen with F5 for every channel except percussion (spec v1.1 §4.1, ADR 0011);
 	/// `None` = the engine default. Mirrors `config.synth.preset` while the bank it was chosen for is loaded.
 	preset: Option<(u16, u8)>,
-	/// Channel the mixer acts on (0-based).
-	pub current_channel: u8,
 	pub mixer: Mixer,
 	/// Semitones, −12..=12 (F-15).
 	pub transpose: i8,
@@ -100,7 +87,6 @@ impl Session {
 		let master_percent = config.mixer.master.min(100);
 		let shared = Arc::new(AudioShared::new(f32::from(master_percent) / 100.0));
 		let (hotplug_tx, hotplug_rx) = mpsc::channel();
-		let (monitor_tx, monitor_rx) = HeapRb::<MonitorEntry>::new(MONITOR_RING_CAPACITY).split();
 		let mut session = Self {
 			config,
 			config_path,
@@ -115,9 +101,6 @@ impl Session {
 			record_rx: None,
 			recorder: None,
 			spare_events: None,
-			spare_monitor: Some(monitor_tx),
-			monitor_rx,
-			monitor_dropped: Arc::new(AtomicU32::new(0)),
 			midi: None,
 			midi_port_index: None,
 			midi_status: MidiStatus::NoPort,
@@ -127,7 +110,6 @@ impl Session {
 			hotplug_rx,
 			bank: None,
 			preset: None,
-			current_channel: 0,
 			mixer: Mixer::new(master_percent),
 			transpose: 0,
 			notice: None,
@@ -214,7 +196,6 @@ impl Session {
 		self.retired = None;
 		self.record_rx = None;
 		self.spare_events = None;
-		// `spare_monitor` is kept: the monitor ring does not depend on the audio stream.
 		self.open_audio(&device);
 		let Some(stream) = &self.audio else {
 			return;
@@ -263,21 +244,16 @@ impl Session {
 	/// Connects to the MIDI port, moving the event producer into the midir callback.
 	pub fn connect_midi(&mut self, index: usize) {
 		self.disconnect_midi();
-		let (Some(events), Some(monitor)) = (self.spare_events.take(), self.spare_monitor.take()) else {
+		let Some(events) = self.spare_events.take() else {
 			return;
 		};
 		let sink = MidiSink {
 			events,
-			monitor,
 			dropped: Arc::clone(&self.midi_dropped),
-			monitor_dropped: Arc::clone(&self.monitor_dropped),
 		};
 		match midi::connect_input(index, sink, |event, sink| {
 			if sink.events.try_push(event).is_err() {
 				sink.dropped.fetch_add(1, Ordering::Relaxed);
-			}
-			if sink.monitor.try_push(MonitorEntry::now(event)).is_err() {
-				sink.monitor_dropped.fetch_add(1, Ordering::Relaxed);
 			}
 		}) {
 			Ok(handle) => {
@@ -293,20 +269,10 @@ impl Session {
 		}
 	}
 
-	/// Monitor entries that arrived since the last call (MIDI thread → UI, F-08).
-	pub fn drain_monitor(&mut self) -> impl Iterator<Item = MonitorEntry> + '_ {
-		std::iter::from_fn(|| self.monitor_rx.try_pop())
-	}
-
-	pub fn monitor_dropped(&self) -> u32 {
-		self.monitor_dropped.load(Ordering::Relaxed)
-	}
-
 	pub fn disconnect_midi(&mut self) {
 		if let Some(handle) = self.midi.take() {
 			let sink = handle.close();
 			self.spare_events = Some(sink.events);
-			self.spare_monitor = Some(sink.monitor);
 		}
 		self.midi_port_index = None;
 		self.midi_status = MidiStatus::NoPort;
@@ -364,7 +330,6 @@ impl Session {
 		if let Some((bank, program)) = self.preset {
 			control::push_global_preset(commands, bank, program);
 		}
-		control::push_channel_volumes(commands, &self.mixer.effective_volumes());
 		control::push_effect_sends(commands, &self.config.synth);
 		Ok(())
 	}
@@ -422,7 +387,7 @@ impl Session {
 	}
 
 	/// `record.dir` from the config, else the user's Music directory, else the app data directory.
-	fn record_dir(&self) -> PathBuf {
+	pub fn record_dir(&self) -> PathBuf {
 		if let Some(dir) = &self.config.record.dir {
 			return dir.clone();
 		}

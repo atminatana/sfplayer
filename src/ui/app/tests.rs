@@ -7,7 +7,13 @@ use crate::midi::MidiEvent;
 use crate::midi::MidiPortInfo;
 
 fn press(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
-	KeyEvent::new(code, modifiers)
+	press_kind(code, modifiers, KeyEventKind::Press)
+}
+
+fn press_kind(code: KeyCode, modifiers: KeyModifiers, kind: KeyEventKind) -> KeyEvent {
+	let mut key = KeyEvent::new(code, modifiers);
+	key.kind = kind;
+	key
 }
 
 fn plain(code: KeyCode) -> KeyEvent {
@@ -31,17 +37,6 @@ fn midi_dialog() -> Dialog {
 }
 
 #[test]
-fn tab_cycles_focus_between_the_two_panels() {
-	let mut app = App::new("en");
-	assert_eq!(app.focus, Panel::Monitor);
-	assert_eq!(app.handle_key(plain(KeyCode::Tab)), None);
-	assert_eq!(app.focus, Panel::Mixer);
-	assert_eq!(app.handle_key(press(KeyCode::BackTab, KeyModifiers::SHIFT)), None);
-	assert_eq!(app.focus, Panel::Monitor);
-	assert!(app.take_dirty());
-}
-
-#[test]
 fn quit_keys_set_the_flag_even_inside_a_dialog() {
 	let mut app = App::new("en");
 	app.handle_key(plain(KeyCode::F(10)));
@@ -57,6 +52,9 @@ fn unbound_keys_do_nothing_and_need_no_redraw() {
 	let mut app = App::new("en");
 	app.take_dirty();
 	assert_eq!(app.handle_key(plain(KeyCode::Char('q'))), None, "q is neither a command nor a note");
+	assert_eq!(app.handle_key(plain(KeyCode::Tab)), None, "Tab is no longer a command (ADR 0010)");
+	assert_eq!(app.handle_key(plain(KeyCode::Up)), None, "arrows mean nothing on the main screen");
+	assert_eq!(app.handle_key(plain(KeyCode::Char('3'))), None, "digits no longer pick a channel");
 	assert!(!app.take_dirty());
 	assert!(!app.should_quit);
 }
@@ -110,8 +108,6 @@ fn f7_dialog_takes_paste_into_the_folder_and_reports_folder_and_format_on_enter(
 fn dialog_captures_keys_until_enter_or_esc() {
 	let mut app = App::new("en");
 	app.open_dialog(midi_dialog());
-	assert_eq!(app.handle_key(plain(KeyCode::Tab)), None, "Tab goes to the dialog, not to focus");
-	assert_eq!(app.focus, Panel::Monitor);
 	assert_eq!(
 		app.handle_key(plain(KeyCode::F(3))),
 		None,
@@ -148,7 +144,7 @@ fn sf2_dialog_submits_a_path_and_stays_open_until_fulfilled() {
 }
 
 #[test]
-fn paste_outside_the_path_dialog_is_ignored() {
+fn paste_outside_the_path_dialogs_is_ignored() {
 	let mut app = App::new("en");
 	app.take_dirty();
 	app.handle_paste("ignored");
@@ -156,68 +152,26 @@ fn paste_outside_the_path_dialog_is_ignored() {
 }
 
 #[test]
-fn monitor_keys_work_only_while_the_monitor_panel_is_focused() {
-	use crate::midi::{MidiEvent, MonitorEntry};
-	let mut app = App::new("en");
-	app.monitor
-		.extend((0..5).map(|key| MonitorEntry::now(MidiEvent::NoteOff { channel: 0, key })));
-	app.handle_key(plain(KeyCode::Up));
-	assert_eq!(app.monitor.scroll(), 1);
-	app.handle_key(plain(KeyCode::PageUp));
-	assert_eq!(app.monitor.scroll(), 4, "clamped to the oldest entry");
-	app.handle_key(plain(KeyCode::PageDown));
-	assert_eq!(app.monitor.scroll(), 0);
-	app.handle_key(press(KeyCode::Char('f'), KeyModifiers::CONTROL));
-	assert!(app.monitor.is_paused());
-	app.handle_key(plain(KeyCode::Tab));
-	app.handle_key(press(KeyCode::Char('l'), KeyModifiers::CONTROL));
-	assert_eq!(app.monitor.len(), 5, "Ctrl+L ignored while the mixer is focused");
-	app.handle_key(plain(KeyCode::Tab));
-	app.handle_key(press(KeyCode::Char('l'), KeyModifiers::CONTROL));
-	assert!(app.monitor.is_empty());
-}
-
-#[test]
-fn master_keys_work_everywhere_but_channel_keys_need_the_mixer_focus() {
+fn master_keys_work_everywhere() {
 	let mut app = App::new("en");
 	assert_eq!(
 		app.handle_key(plain(KeyCode::Char('+'))),
 		Some(Request::Mixer(MixerAction::MasterUp))
 	);
 	assert_eq!(
+		app.handle_key(plain(KeyCode::Char('-'))),
+		Some(Request::Mixer(MixerAction::MasterDown))
+	);
+	assert_eq!(
+		app.handle_key(press(KeyCode::Char('+'), KeyModifiers::SHIFT)),
+		Some(Request::Mixer(MixerAction::MasterUpFast))
+	);
+	assert_eq!(
 		app.handle_key(press(KeyCode::Char('u'), KeyModifiers::CONTROL)),
 		Some(Request::Mixer(MixerAction::MasterMute))
 	);
-	assert_eq!(
-		app.handle_key(plain(KeyCode::Char('3'))),
-		None,
-		"monitor focused: digits do nothing"
-	);
-	assert_eq!(app.handle_key(plain(KeyCode::Right)), None);
-	app.handle_key(plain(KeyCode::Tab));
-	assert_eq!(
-		app.handle_key(plain(KeyCode::Char('3'))),
-		Some(Request::Mixer(MixerAction::SelectChannel(2)))
-	);
-	assert_eq!(
-		app.handle_key(press(KeyCode::Char('2'), KeyModifiers::ALT)),
-		Some(Request::Mixer(MixerAction::SelectChannel(11)))
-	);
-	assert_eq!(app.handle_key(plain(KeyCode::Right)), Some(Request::Mixer(MixerAction::ChannelUp)));
-	assert_eq!(app.handle_key(plain(KeyCode::Left)), Some(Request::Mixer(MixerAction::ChannelDown)));
-	assert_eq!(
-		app.handle_key(press(KeyCode::Char('x'), KeyModifiers::CONTROL)),
-		Some(Request::Mixer(MixerAction::ChannelMute))
-	);
-	assert_eq!(
-		app.handle_key(press(KeyCode::Char('o'), KeyModifiers::CONTROL)),
-		Some(Request::Mixer(MixerAction::ChannelSolo))
-	);
-	assert_eq!(
-		app.handle_key(plain(KeyCode::Up)),
-		None,
-		"monitor scrolling is inactive while the mixer is focused"
-	);
+	assert_eq!(app.handle_key(plain(KeyCode::Right)), None, "channel keys are gone with the strips");
+	assert_eq!(app.handle_key(press(KeyCode::Char('x'), KeyModifiers::CONTROL)), None);
 }
 
 #[test]
@@ -254,7 +208,7 @@ fn release_app() -> App {
 }
 
 #[test]
-fn text_keyboard_plays_notes_on_both_panels_and_stops_on_release_or_esc() {
+fn text_keyboard_plays_notes_on_channel_one_and_stops_on_release_or_esc() {
 	let mut app = release_app();
 	assert_eq!(
 		app.handle_key(plain(KeyCode::Char('z'))),
@@ -264,7 +218,6 @@ fn text_keyboard_plays_notes_on_both_panels_and_stops_on_release_or_esc() {
 			velocity: 100
 		}]))
 	);
-	app.handle_key(plain(KeyCode::Tab));
 	assert_eq!(
 		app.handle_key(press(KeyCode::Char('S'), KeyModifiers::SHIFT)),
 		Some(Request::Notes(vec![MidiEvent::NoteOn {
@@ -272,15 +225,15 @@ fn text_keyboard_plays_notes_on_both_panels_and_stops_on_release_or_esc() {
 			key: 61,
 			velocity: 100
 		}])),
-		"shifted letters still play, on the mixer panel too"
+		"shifted letters still play"
 	);
-	let mut repeat = plain(KeyCode::Char('z'));
-	repeat.kind = KeyEventKind::Repeat;
-	assert_eq!(app.handle_key(repeat), None, "auto-repeat is ignored");
-	let mut release = plain(KeyCode::Char('z'));
-	release.kind = KeyEventKind::Release;
 	assert_eq!(
-		app.handle_release(release),
+		app.handle_key(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Repeat)),
+		None,
+		"auto-repeat is ignored"
+	);
+	assert_eq!(
+		app.handle_release(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Release)),
 		Some(Request::Notes(vec![MidiEvent::NoteOff { channel: 0, key: 60 }]))
 	);
 	assert_eq!(
@@ -311,9 +264,11 @@ fn ctrl_arrows_change_octave_and_velocity_and_panic_forgets_held_notes() {
 fn gate_mode_releases_through_the_tick() {
 	let mut app = App::new("en");
 	app.handle_key(plain(KeyCode::Char('z')));
-	let mut release = plain(KeyCode::Char('z'));
-	release.kind = KeyEventKind::Release;
-	assert_eq!(app.handle_release(release), None, "gate mode ignores releases");
+	assert_eq!(
+		app.handle_release(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Release)),
+		None,
+		"gate mode ignores releases"
+	);
 	assert_eq!(app.tick_keyboard(Instant::now()), None);
 	assert_eq!(
 		app.tick_keyboard(Instant::now() + Duration::from_secs(1)),
@@ -326,9 +281,10 @@ fn notes_are_not_played_while_a_modal_is_open() {
 	let mut app = release_app();
 	app.open_dialog(midi_dialog());
 	assert_eq!(app.handle_key(plain(KeyCode::Char('z'))), None);
-	let mut release = plain(KeyCode::Char('z'));
-	release.kind = KeyEventKind::Release;
-	assert_eq!(app.handle_release(release), None);
+	assert_eq!(
+		app.handle_release(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Release)),
+		None
+	);
 	assert_eq!(app.keyboard.held_count(), 0);
 }
 

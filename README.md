@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md)
 
-Console cross-platform SoundFont synthesizer in Rust: notes from a MIDI keyboard (or from the two bottom rows of a regular keyboard) are played through the chosen audio output with a SoundFont 2 (.sf2) bank. The terminal UI shows the MIDI message stream, the output level and a mixer; a session can be recorded to FLAC or Ogg Vorbis. Windows, Linux, macOS; the interface is in English or Russian.
+Console cross-platform SoundFont synthesizer in Rust: notes from a MIDI keyboard (or from the two bottom rows of a regular keyboard) are played through the chosen audio output with a SoundFont 2 (.sf2) bank. The terminal UI lists the chosen devices, bank, preset, effects and recording settings on F-keys, shows the output level and the master volume, and keeps the counters in the bottom border; a session can be recorded to FLAC or Ogg Vorbis. Windows, Linux, macOS; the interface is in English or Russian.
 
 ## Installation
 
@@ -60,12 +60,6 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | F8 | Rescan MIDI ports |
 | F9 / Space | Panic: all notes off + all sound off |
 | F10 / Ctrl+C | Quit |
-| Tab | Next panel |
-| Shift+Tab | Previous panel |
-| ↑ | Scroll up (monitor, dialogs) |
-| ↓ | Scroll down (monitor, dialogs) |
-| PgUp | Page up |
-| PgDn | Page down |
 | Ctrl+↓ | Text keyboard octave −1 |
 | Ctrl+↑ | Text keyboard octave +1 |
 | Ctrl+← | Text keyboard velocity −10 |
@@ -75,23 +69,16 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | ] | Transpose +1 semitone (up to +12) |
 | Alt+R | Reverb on / off (level: F6 or config synth.reverb_level) |
 | Alt+C | Chorus on / off (level: F6 or config synth.chorus_level) |
-| Ctrl+L | Clear the MIDI monitor |
-| Ctrl+F | Pause / resume the MIDI monitor |
 | + / = | Master volume +1 % |
 | - | Master volume −1 % |
 | Shift++ | Master volume +5 % |
 | Shift+_ / _ | Master volume −5 % |
 | Ctrl+U | Mute master |
-| 1–9, 0, Alt+1–6 | Select mixer channel 1–16 (mixer) |
-| ← | Channel volume −5 (mixer) |
-| → | Channel volume +5 (mixer) |
-| Ctrl+X | Mute channel (mixer) |
-| Ctrl+O | Solo channel (mixer) |
 | Z X C V B N M , . / | White keys C–E from the base octave (text keyboard) |
 | S D G H J L ; | Black keys C# D# F# G# A# C# D# (text keyboard) |
 <!-- keys:end -->
 
-Keys marked "(mixer)" work when the focus (Tab) is on the mixer panel; scrolling, Ctrl+L and Ctrl+F — when the focus is on the monitor. While a dialog is open, input goes to the dialog.
+While a dialog is open, input goes to the dialog: ↑↓, PgUp/PgDn, Home/End move through lists and fields there, Enter applies, Esc cancels. On the main screen Home and End start and stop recording.
 
 ### Text keyboard
 
@@ -100,7 +87,7 @@ Keys marked "(mixer)" work when the focus (Tab) is on the mixer panel; scrolling
  Z  X  C  V  B  N  M  ,  .  /     ← white keys (C4 D4 E4 F4 G4 A4 B4 C5 D5 E5)
 ```
 
-Notes play on the current mixer channel. How a note is released depends on the terminal:
+Notes play on MIDI channel 1 with the F5 preset. How a note is released depends on the terminal:
 
 - **release** — the terminal reports key release: the Windows console (including Windows Terminal) and terminals with the kitty keyboard protocol (kitty, WezTerm, foot, Ghostty). The note sounds while the key is held.
 - **gate** — other terminals: the note sounds for `keyboard.gate_ms` milliseconds (300 by default) or until the same key is pressed again.
@@ -155,7 +142,7 @@ velocity_down = "Alt+Down"
 [keys]                     # command = chord; several — comma-separated
 quit = "F10, Ctrl+Q"
 panic = "F9"
-select_channel_3 = "Alt+F3"
+rescan = "Alt+F3"
 
 [ui]
 lang = "en"                # "ru" | "en"; remove — system language
@@ -167,7 +154,7 @@ format = "flac"            # "flac" | "ogg_vorbis"
 vorbis_quality = 0.5       # 0.0–1.0
 ```
 
-Command names for `[keys]`: `help`, `quit`, `focus_next`, `focus_previous`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `effects_dialog`, `record_dialog`, `rescan`, `record_start`, `record_stop`, `panic`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `monitor_clear`, `monitor_pause`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`, `select_channel_1` … `select_channel_16`, `channel_up`, `channel_down`, `channel_mute`, `channel_solo`, `scroll_up`, `scroll_down`, `page_up`, `page_down`. Chords: `Ctrl`, `Alt`, `Shift`, then `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` or a single character. A bare letter is rejected (letters belong to the notes); two commands on the same key is a startup error that names the key.
+Command names for `[keys]`: `help`, `quit`, `focus_next`, `focus_previous`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `effects_dialog`, `record_dialog`, `rescan`, `record_start`, `record_stop`, `panic`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`. Chords: `Ctrl`, `Alt`, `Shift`, then `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` or a single character. A bare letter is rejected (letters belong to the notes); two commands on the same key is a startup error that names the key.
 
 ## Recording
 
@@ -175,9 +162,9 @@ F7 opens the recording settings: the folder (Tab completes directory names; empt
 
 ## Indicators
 
-- MIDI monitor: the last 200 messages with time, channel, type, data and note name. Ctrl+F freezes scrolling (messages keep accumulating), Ctrl+L clears.
+- Settings lines `[F2]`–`[F7]`: the chosen MIDI input, audio output (green `OK` while the stream runs), bank file, preset, effects and recording folder/format. A problem is shown in red in the line it belongs to (no device, disconnected port, open error, missing bank); messages that belong to no line (device fallback, recording saved, config not saved) appear in yellow under the list.
 - Meter: peak and RMS of the left and right channels in dBFS, updated 30 times per second; a red `CLIP` stays for 1 s after clipping.
-- Status: `voices 7/64` — the number of held notes and the engine's polyphony limit (rustysynth does not publish the active voice count, so release tails and layered presets are not counted); `cpu 3%` — audio callback time relative to the block duration; `xruns` — buffer underruns.
+- Status in the bottom border, fixed width so the fields never move: `voices 7/64` — the number of held notes and the engine's polyphony limit (rustysynth does not publish the active voice count, so release tails and layered presets are not counted); `cpu 3%` — audio callback time relative to the block duration; `xrun` — buffer underruns; `kbd:` — text keyboard mode, octave and velocity. Transposition, the omni channel and dropped-event counters appear on the right side of the border when active and fit.
 - `--ascii` (or `ui.ascii = true`) replaces block characters with `#`, `-`, `*` for terminals without Unicode; the legacy Windows console and `TERM=linux`/`dumb` are detected automatically.
 
 ## Latency
@@ -187,7 +174,7 @@ Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How t
 ## Limitations
 
 - MIDI file playback and recording, SF3 and a custom synthesizer are not part of version 1.0.
-- Incoming CC 7 from a MIDI keyboard changes the volume in the engine but is not reflected in the mixer until the next action in it.
+- The MIDI monitor and per-channel mixer strips of version 1.0 are not part of this screen; channel volume follows incoming CC 7 only.
 - The F5 preset applies to every channel except 10 (percussion); a Program Change from the MIDI keyboard still switches its own channel until the next F5 choice, and the header keeps showing the F5 choice.
 - Toggling effects on or off (F6, Alt+R, Alt+C) recreates the synthesizer: sounding notes are cut off. Changing a send level in F6 does not.
 

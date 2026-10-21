@@ -1,4 +1,4 @@
-//! Command hotkeys (spec §6, ADR 0004): one table drives key handling, the F1 help and the README.
+//! Command hotkeys (spec §6 / v1.1 §3, ADR 0004, 0010): one table drives key handling, the F1 help and the README.
 //! No plain letters here — the two bottom rows belong to the text keyboard (F-16).
 //! Defaults live in `BINDINGS`; `[keys]` and `[keyboard]` in the config override them (ADR 0007).
 
@@ -13,8 +13,6 @@ use crate::config::KeyboardConfig;
 pub enum Action {
 	Help,
 	Quit,
-	FocusNext,
-	FocusPrevious,
 	MidiDialog,
 	AudioDialog,
 	Sf2Dialog,
@@ -35,23 +33,11 @@ pub enum Action {
 	TransposeDown,
 	ToggleReverb,
 	ToggleChorus,
-	MonitorClear,
-	MonitorPause,
 	MasterUp,
 	MasterDown,
 	MasterUpFast,
 	MasterDownFast,
 	MasterMute,
-	/// 0-based channel; shown as one grouped help row.
-	SelectChannel(u8),
-	ChannelUp,
-	ChannelDown,
-	ChannelMute,
-	ChannelSolo,
-	ScrollUp,
-	ScrollDown,
-	PageUp,
-	PageDown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,13 +67,6 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::Panic, KeyCode::Char(' '), KeyModifiers::NONE),
 	bind(Action::Quit, KeyCode::F(10), KeyModifiers::NONE),
 	bind(Action::Quit, KeyCode::Char('c'), KeyModifiers::CONTROL),
-	bind(Action::FocusNext, KeyCode::Tab, KeyModifiers::NONE),
-	bind(Action::FocusPrevious, KeyCode::BackTab, KeyModifiers::SHIFT),
-	bind(Action::FocusPrevious, KeyCode::BackTab, KeyModifiers::NONE),
-	bind(Action::ScrollUp, KeyCode::Up, KeyModifiers::NONE),
-	bind(Action::ScrollDown, KeyCode::Down, KeyModifiers::NONE),
-	bind(Action::PageUp, KeyCode::PageUp, KeyModifiers::NONE),
-	bind(Action::PageDown, KeyCode::PageDown, KeyModifiers::NONE),
 	bind(Action::OctaveDown, KeyCode::Down, KeyModifiers::CONTROL),
 	bind(Action::OctaveUp, KeyCode::Up, KeyModifiers::CONTROL),
 	bind(Action::VelocityDown, KeyCode::Left, KeyModifiers::CONTROL),
@@ -97,8 +76,6 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::TransposeUp, KeyCode::Char(']'), KeyModifiers::NONE),
 	bind(Action::ToggleReverb, KeyCode::Char('r'), KeyModifiers::ALT),
 	bind(Action::ToggleChorus, KeyCode::Char('c'), KeyModifiers::ALT),
-	bind(Action::MonitorClear, KeyCode::Char('l'), KeyModifiers::CONTROL),
-	bind(Action::MonitorPause, KeyCode::Char('f'), KeyModifiers::CONTROL),
 	bind(Action::MasterUp, KeyCode::Char('+'), KeyModifiers::NONE),
 	bind(Action::MasterUp, KeyCode::Char('='), KeyModifiers::NONE),
 	bind(Action::MasterDown, KeyCode::Char('-'), KeyModifiers::NONE),
@@ -106,34 +83,12 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::MasterDownFast, KeyCode::Char('_'), KeyModifiers::SHIFT),
 	bind(Action::MasterDownFast, KeyCode::Char('_'), KeyModifiers::NONE),
 	bind(Action::MasterMute, KeyCode::Char('u'), KeyModifiers::CONTROL),
-	bind(Action::SelectChannel(0), KeyCode::Char('1'), KeyModifiers::NONE),
-	bind(Action::SelectChannel(1), KeyCode::Char('2'), KeyModifiers::NONE),
-	bind(Action::SelectChannel(2), KeyCode::Char('3'), KeyModifiers::NONE),
-	bind(Action::SelectChannel(3), KeyCode::Char('4'), KeyModifiers::NONE),
-	bind(Action::SelectChannel(4), KeyCode::Char('5'), KeyModifiers::NONE),
-	bind(Action::SelectChannel(5), KeyCode::Char('6'), KeyModifiers::NONE),
-	bind(Action::SelectChannel(6), KeyCode::Char('7'), KeyModifiers::NONE),
-	bind(Action::SelectChannel(7), KeyCode::Char('8'), KeyModifiers::NONE),
-	bind(Action::SelectChannel(8), KeyCode::Char('9'), KeyModifiers::NONE),
-	bind(Action::SelectChannel(9), KeyCode::Char('0'), KeyModifiers::NONE),
-	bind(Action::SelectChannel(10), KeyCode::Char('1'), KeyModifiers::ALT),
-	bind(Action::SelectChannel(11), KeyCode::Char('2'), KeyModifiers::ALT),
-	bind(Action::SelectChannel(12), KeyCode::Char('3'), KeyModifiers::ALT),
-	bind(Action::SelectChannel(13), KeyCode::Char('4'), KeyModifiers::ALT),
-	bind(Action::SelectChannel(14), KeyCode::Char('5'), KeyModifiers::ALT),
-	bind(Action::SelectChannel(15), KeyCode::Char('6'), KeyModifiers::ALT),
-	bind(Action::ChannelDown, KeyCode::Left, KeyModifiers::NONE),
-	bind(Action::ChannelUp, KeyCode::Right, KeyModifiers::NONE),
-	bind(Action::ChannelMute, KeyCode::Char('x'), KeyModifiers::CONTROL),
-	bind(Action::ChannelSolo, KeyCode::Char('o'), KeyModifiers::CONTROL),
 ];
 
-/// Command names accepted in `[keys]` (snake_case of the action; channels are `select_channel_1`..`16`).
+/// Command names accepted in `[keys]` (snake_case of the action).
 const COMMAND_NAMES: &[(&str, Action)] = &[
 	("help", Action::Help),
 	("quit", Action::Quit),
-	("focus_next", Action::FocusNext),
-	("focus_previous", Action::FocusPrevious),
 	("midi_dialog", Action::MidiDialog),
 	("audio_dialog", Action::AudioDialog),
 	("sf2_dialog", Action::Sf2Dialog),
@@ -153,32 +108,15 @@ const COMMAND_NAMES: &[(&str, Action)] = &[
 	("transpose_down", Action::TransposeDown),
 	("toggle_reverb", Action::ToggleReverb),
 	("toggle_chorus", Action::ToggleChorus),
-	("monitor_clear", Action::MonitorClear),
-	("monitor_pause", Action::MonitorPause),
 	("master_up", Action::MasterUp),
 	("master_down", Action::MasterDown),
 	("master_up_fast", Action::MasterUpFast),
 	("master_down_fast", Action::MasterDownFast),
 	("master_mute", Action::MasterMute),
-	("channel_up", Action::ChannelUp),
-	("channel_down", Action::ChannelDown),
-	("channel_mute", Action::ChannelMute),
-	("channel_solo", Action::ChannelSolo),
-	("scroll_up", Action::ScrollUp),
-	("scroll_down", Action::ScrollDown),
-	("page_up", Action::PageUp),
-	("page_down", Action::PageDown),
 ];
 
 /// Parses a `[keys]` command name.
 pub fn action_by_name(name: &str) -> Option<Action> {
-	if let Some(number) = name.strip_prefix("select_channel_") {
-		return number
-			.parse::<u8>()
-			.ok()
-			.filter(|n| (1..=16).contains(n))
-			.map(|n| Action::SelectChannel(n - 1));
-	}
 	COMMAND_NAMES.iter().find(|(known, _)| *known == name).map(|(_, action)| *action)
 }
 
@@ -349,10 +287,7 @@ impl Bindings {
 		let mut rows: Vec<(&'static str, Vec<String>)> = Vec::new();
 		for binding in &self.bindings {
 			let key = binding.action.description_key();
-			let label = match binding.action {
-				Action::SelectChannel(_) => t!("help.chord.select_channel", locale = locale).into_owned(),
-				_ => key_label(binding),
-			};
+			let label = key_label(binding);
 			match rows.iter_mut().find(|(existing, _)| *existing == key) {
 				Some((_, labels)) if !labels.contains(&label) => labels.push(label),
 				Some(_) => {}
@@ -378,9 +313,6 @@ impl Bindings {
 
 /// `[keys]` name of an action (for messages and the README).
 pub fn command_name(action: Action) -> String {
-	if let Action::SelectChannel(channel) = action {
-		return format!("select_channel_{}", channel + 1);
-	}
 	COMMAND_NAMES
 		.iter()
 		.find(|(_, known)| *known == action)
@@ -393,8 +325,6 @@ impl Action {
 		match self {
 			Self::Help => "help.action.help",
 			Self::Quit => "help.action.quit",
-			Self::FocusNext => "help.action.focus_next",
-			Self::FocusPrevious => "help.action.focus_previous",
 			Self::MidiDialog => "help.action.midi_dialog",
 			Self::AudioDialog => "help.action.audio_dialog",
 			Self::Sf2Dialog => "help.action.sf2_dialog",
@@ -414,22 +344,11 @@ impl Action {
 			Self::TransposeDown => "help.action.transpose_down",
 			Self::ToggleReverb => "help.action.toggle_reverb",
 			Self::ToggleChorus => "help.action.toggle_chorus",
-			Self::MonitorClear => "help.action.monitor_clear",
-			Self::MonitorPause => "help.action.monitor_pause",
 			Self::MasterUp => "help.action.master_up",
 			Self::MasterDown => "help.action.master_down",
 			Self::MasterUpFast => "help.action.master_up_fast",
 			Self::MasterDownFast => "help.action.master_down_fast",
 			Self::MasterMute => "help.action.master_mute",
-			Self::SelectChannel(_) => "help.action.select_channel",
-			Self::ChannelUp => "help.action.channel_up",
-			Self::ChannelDown => "help.action.channel_down",
-			Self::ChannelMute => "help.action.channel_mute",
-			Self::ChannelSolo => "help.action.channel_solo",
-			Self::ScrollUp => "help.action.scroll_up",
-			Self::ScrollDown => "help.action.scroll_down",
-			Self::PageUp => "help.action.page_up",
-			Self::PageDown => "help.action.page_down",
 		}
 	}
 }

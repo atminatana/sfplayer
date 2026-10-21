@@ -8,7 +8,7 @@ use ringbuf::traits::Producer;
 
 use super::{MIDI_CHANNELS, Notice, Session};
 use crate::audio::Command;
-use crate::audio::mixer::{CHANNEL_STEP, MASTER_STEP, MASTER_STEP_FAST};
+use crate::audio::mixer::{MASTER_STEP, MASTER_STEP_FAST};
 use crate::config::{RecordFormat, SynthConfig};
 use crate::midi::{MidiEvent, controller};
 use crate::synth::PresetInfo;
@@ -48,7 +48,7 @@ impl EffectsSettings {
 	}
 }
 
-/// What the mixer keys do (spec F-10, §6).
+/// What the master keys do (spec F-10, master part; channel strips left in v1.1 — ADR 0010).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MixerAction {
 	MasterUp,
@@ -56,40 +56,20 @@ pub enum MixerAction {
 	MasterUpFast,
 	MasterDownFast,
 	MasterMute,
-	/// 0-based channel.
-	SelectChannel(u8),
-	ChannelUp,
-	ChannelDown,
-	ChannelMute,
-	ChannelSolo,
 }
 
 impl Session {
-	/// Applies a mixer key (F-10): master through the gain atomic, channels through CC 7 on the command ring.
+	/// Applies a master key (F-10): the gain atomic the audio thread reads, remembered in the config.
 	pub fn apply_mixer(&mut self, action: MixerAction) {
-		let channel = usize::from(self.current_channel);
 		match action {
 			MixerAction::MasterUp => self.mixer.adjust_master(MASTER_STEP),
 			MixerAction::MasterDown => self.mixer.adjust_master(-MASTER_STEP),
 			MixerAction::MasterUpFast => self.mixer.adjust_master(MASTER_STEP_FAST),
 			MixerAction::MasterDownFast => self.mixer.adjust_master(-MASTER_STEP_FAST),
 			MixerAction::MasterMute => self.mixer.toggle_master_mute(),
-			MixerAction::SelectChannel(index) => {
-				if usize::from(index) < MIDI_CHANNELS {
-					self.current_channel = index;
-				}
-				return;
-			}
-			MixerAction::ChannelUp => self.mixer.adjust_channel(channel, CHANNEL_STEP),
-			MixerAction::ChannelDown => self.mixer.adjust_channel(channel, -CHANNEL_STEP),
-			MixerAction::ChannelMute => self.mixer.toggle_mute(channel),
-			MixerAction::ChannelSolo => self.mixer.toggle_solo(channel),
 		}
 		self.shared.set_master_gain(self.mixer.master_gain());
 		self.config.mixer.master = self.mixer.master;
-		if let Some(commands) = self.commands.as_mut() {
-			push_channel_volumes(commands, &self.mixer.effective_volumes());
-		}
 	}
 
 	/// Changes the effects (F-13). Turning the last effect off or the first one on rebuilds the engine,
@@ -220,17 +200,6 @@ pub(super) fn push_effect_sends(commands: &mut HeapProd<Command>, synth: &SynthC
 			channel,
 			controller: controller::CHORUS_SEND,
 			value: chorus,
-		}));
-	}
-}
-
-/// CC 7 for all 16 channels; cheap enough to resend on every mixer change (16 ring pushes).
-pub(super) fn push_channel_volumes(commands: &mut HeapProd<Command>, volumes: &[u8; MIDI_CHANNELS]) {
-	for (channel, volume) in volumes.iter().enumerate() {
-		let _ = commands.try_push(Command::Midi(MidiEvent::ControlChange {
-			channel: channel as u8,
-			controller: controller::VOLUME,
-			value: *volume,
 		}));
 	}
 }

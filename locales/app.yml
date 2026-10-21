@@ -4,6 +4,9 @@ app.title:
   en: "sf2_player %{version}"
   ru: "sf2_player %{version}"
 
+header.help:
+  en: "Help"
+  ru: "Справка"
 header.midi:
   en: "MIDI:"
   ru: "MIDI:"
@@ -16,18 +19,30 @@ header.sf2:
 header.preset:
   en: "Preset:"
   ru: "Пресет:"
-header.none:
-  en: "none"
-  ru: "нет"
+header.effects:
+  en: "Effects:"
+  ru: "Эффекты:"
+header.record:
+  en: "Recording:"
+  ru: "Запись:"
+header.record_keys:
+  en: "[Home] start recording   [End] stop"
+  ru: "[Home] начать запись   [End] остановить"
+header.no_device:
+  en: "no device"
+  ru: "нет устройства"
 header.disconnected:
   en: "%{port} (disconnected)"
   ru: "%{port} (отключено)"
-header.presets:
-  en: "(%{count} presets)"
-  ru: "(%{count} пресетов)"
-header.no_sf2:
-  en: "no bank loaded, press F4"
-  ru: "банк не загружен, нажмите F4"
+header.audio_ok:
+  en: "OK"
+  ru: "OK"
+header.sf2_missing:
+  en: "not set, press F4"
+  ru: "не указан, нажмите F4"
+header.no_bank:
+  en: "no bank"
+  ru: "нет банка"
 header.buffer:
   en: "%{frames} frames"
   ru: "%{frames} кадров"
@@ -35,15 +50,9 @@ header.buffer_default:
   en: "default buffer"
   ru: "буфер по умолчанию"
 
-panel.monitor:
-  en: "MIDI monitor"
-  ru: "Монитор MIDI"
 panel.mixer:
   en: "Mixer"
   ru: "Микшер"
-panel.status:
-  en: "Status"
-  ru: "Статус"
 
 status.voices:
   en: "voices %{voices}"
@@ -52,30 +61,11 @@ status.cpu:
   en: "cpu %{percent}%"
   ru: "cpu %{percent}%"
 status.xruns:
-  en: "xruns %{count}"
+  en: "xrun %{count}"
   ru: "xrun %{count}"
 status.dropped:
   en: "dropped %{count}"
   ru: "потеряно %{count}"
-
-hint.help:
-  en: "F1 help"
-  ru: "F1 справка"
-hint.midi:
-  en: "F2 MIDI"
-  ru: "F2 MIDI"
-hint.audio:
-  en: "F3 audio"
-  ru: "F3 аудио"
-hint.sf2:
-  en: "F4 sf2"
-  ru: "F4 sf2"
-hint.record:
-  en: "Home/End rec"
-  ru: "Home/End запись"
-hint.quit:
-  en: "F10 quit"
-  ru: "F10 выход"
 
 notice.no_audio_device:
   en: "No audio output device: %{error}"
@@ -178,12 +168,6 @@ help.action.help:
 help.action.quit:
   en: "Quit"
   ru: "Выход"
-help.action.focus_next:
-  en: "Next panel"
-  ru: "Следующая панель"
-help.action.focus_previous:
-  en: "Previous panel"
-  ru: "Предыдущая панель"
 help.action.midi_dialog:
   en: "Choose MIDI input"
   ru: "Выбрать MIDI-вход"
@@ -212,31 +196,6 @@ help.action.rescan:
   en: "Rescan MIDI ports"
   ru: "Пересканировать MIDI-порты"
 
-panel.monitor_paused:
-  en: "[paused]"
-  ru: "[пауза]"
-panel.monitor_scrolled:
-  en: "[-%{rows}]"
-  ru: "[-%{rows}]"
-help.action.monitor_clear:
-  en: "Clear the MIDI monitor"
-  ru: "Очистить монитор MIDI"
-help.action.monitor_pause:
-  en: "Pause / resume the MIDI monitor"
-  ru: "Пауза / продолжить монитор MIDI"
-help.action.scroll_up:
-  en: "Scroll up (monitor, dialogs)"
-  ru: "Прокрутка вверх (монитор, диалоги)"
-help.action.scroll_down:
-  en: "Scroll down (monitor, dialogs)"
-  ru: "Прокрутка вниз (монитор, диалоги)"
-help.action.page_up:
-  en: "Page up"
-  ru: "Страница вверх"
-help.action.page_down:
-  en: "Page down"
-  ru: "Страница вниз"
-
 meter.clip:
   en: "CLIP"
   ru: "CLIP"
@@ -250,12 +209,6 @@ mixer.master:
 mixer.mute:
   en: "mute"
   ru: "тихо"
-mixer.solo:
-  en: "solo"
-  ru: "соло"
-help.chord.select_channel:
-  en: "1–9, 0, Alt+1–6"
-  ru: "1–9, 0, Alt+1–6"
 help.action.master_up:
   en: "Master volume +1 %"
   ru: "Мастер-громкость +1 %"
@@ -271,21 +224,6 @@ help.action.master_down_fast:
 help.action.master_mute:
   en: "Mute master"
   ru: "Заглушить мастер"
-help.action.select_channel:
-  en: "Select mixer channel 1–16 (mixer)"
-  ru: "Выбрать канал микшера 1–16 (микшер)"
-help.action.channel_up:
-  en: "Channel volume +5 (mixer)"
-  ru: "Громкость канала +5 (микшер)"
-help.action.channel_down:
-  en: "Channel volume −5 (mixer)"
-  ru: "Громкость канала −5 (микшер)"
-help.action.channel_mute:
-  en: "Mute channel (mixer)"
-  ru: "Заглушить канал (микшер)"
-help.action.channel_solo:
-  en: "Solo channel (mixer)"
-  ru: "Соло канала (микшер)"
 
 help.action.panic:
   en: "Panic: all notes off + all sound off"
@@ -341,9 +279,6 @@ help.action.transpose_down:
   en: "Transpose −1 semitone (down to −12)"
   ru: "Транспонирование −1 полутон (до −12)"
 
-mixer.fx:
-  en: "FX"
-  ru: "FX"
 mixer.reverb:
   en: "rev"
   ru: "рев"

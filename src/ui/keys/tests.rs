@@ -45,11 +45,35 @@ fn function_keys_and_ctrl_c_map_to_actions() {
 		Some(Action::ToggleChorus)
 	);
 	assert_eq!(action_for(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
-	assert_eq!(action_for(&press(KeyCode::Tab, KeyModifiers::NONE)), Some(Action::FocusNext));
-	assert_eq!(
-		action_for(&press(KeyCode::BackTab, KeyModifiers::SHIFT)),
-		Some(Action::FocusPrevious)
-	);
+}
+
+#[test]
+fn panel_monitor_and_channel_keys_are_gone() {
+	for key in [
+		press(KeyCode::Tab, KeyModifiers::NONE),
+		press(KeyCode::BackTab, KeyModifiers::SHIFT),
+		press(KeyCode::Up, KeyModifiers::NONE),
+		press(KeyCode::PageDown, KeyModifiers::NONE),
+		press(KeyCode::Left, KeyModifiers::NONE),
+		press(KeyCode::Char('3'), KeyModifiers::NONE),
+		press(KeyCode::Char('6'), KeyModifiers::ALT),
+		press(KeyCode::Char('l'), KeyModifiers::CONTROL),
+		press(KeyCode::Char('f'), KeyModifiers::CONTROL),
+		press(KeyCode::Char('x'), KeyModifiers::CONTROL),
+		press(KeyCode::Char('o'), KeyModifiers::CONTROL),
+	] {
+		assert_eq!(action_for(&key), None, "{key:?}");
+	}
+	for name in [
+		"focus_next",
+		"select_channel_3",
+		"channel_mute",
+		"monitor_clear",
+		"scroll_up",
+		"page_down",
+	] {
+		assert_eq!(action_by_name(name), None, "{name}");
+	}
 }
 
 #[test]
@@ -91,23 +115,6 @@ fn mixer_keys_map_to_actions() {
 		action_for(&press(KeyCode::Char('u'), KeyModifiers::CONTROL)),
 		Some(Action::MasterMute)
 	);
-	assert_eq!(
-		action_for(&press(KeyCode::Char('0'), KeyModifiers::NONE)),
-		Some(Action::SelectChannel(9))
-	);
-	assert_eq!(
-		action_for(&press(KeyCode::Char('6'), KeyModifiers::ALT)),
-		Some(Action::SelectChannel(15))
-	);
-	assert_eq!(action_for(&press(KeyCode::Right, KeyModifiers::NONE)), Some(Action::ChannelUp));
-	assert_eq!(
-		action_for(&press(KeyCode::Char('x'), KeyModifiers::CONTROL)),
-		Some(Action::ChannelMute)
-	);
-	assert_eq!(
-		action_for(&press(KeyCode::Char('o'), KeyModifiers::CONTROL)),
-		Some(Action::ChannelSolo)
-	);
 }
 
 #[test]
@@ -115,20 +122,12 @@ fn help_lists_every_bound_action_with_its_chords() {
 	let bindings = Bindings::default();
 	let rows = bindings.help_rows("en");
 	for binding in BINDINGS {
-		if matches!(binding.action, Action::SelectChannel(_)) {
-			continue;
-		}
 		let label = key_label(binding);
 		assert!(
 			rows.iter().any(|(keys, _)| keys.split(" / ").any(|chord| chord == label)),
 			"{label} missing from help"
 		);
 	}
-	assert!(
-		rows.iter()
-			.any(|(keys, description)| keys.contains("Alt+1") && description.contains("channel")),
-		"grouped channel row"
-	);
 	let quit = rows.iter().find(|(keys, _)| keys.contains("F10")).expect("quit row");
 	assert_eq!(quit.0, "F10 / Ctrl+C");
 	assert!(
@@ -143,10 +142,7 @@ fn help_lists_every_bound_action_with_its_chords() {
 #[test]
 fn key_labels_are_readable() {
 	assert_eq!(key_label(&bind(Action::Quit, KeyCode::Char('c'), KeyModifiers::CONTROL)), "Ctrl+C");
-	assert_eq!(
-		key_label(&bind(Action::FocusPrevious, KeyCode::BackTab, KeyModifiers::SHIFT)),
-		"Shift+Tab"
-	);
+	assert_eq!(key_label(&bind(Action::Quit, KeyCode::BackTab, KeyModifiers::SHIFT)), "Shift+Tab");
 	assert_eq!(key_label(&bind(Action::Help, KeyCode::F(1), KeyModifiers::NONE)), "F1");
 	assert_eq!(key_label(&bind(Action::Help, KeyCode::Up, KeyModifiers::CONTROL)), "Ctrl+\u{2191}");
 }
@@ -182,7 +178,7 @@ fn chords_parse_in_any_case_and_label_round_trips() {
 fn config_overrides_replace_default_chords() {
 	let mut keys = BTreeMap::new();
 	keys.insert("quit".to_owned(), "Ctrl+Q, F12".to_owned());
-	keys.insert("select_channel_3".to_owned(), "Alt+F3".to_owned());
+	keys.insert("rescan".to_owned(), "Alt+F3".to_owned());
 	let bindings = Bindings::from_config(&keys, &KeyboardConfig::default()).expect("valid overrides");
 	assert_eq!(
 		bindings.action_for(&press(KeyCode::Char('q'), KeyModifiers::CONTROL)),
@@ -195,11 +191,8 @@ fn config_overrides_replace_default_chords() {
 		"default chord dropped"
 	);
 	assert_eq!(bindings.action_for(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)), None);
-	assert_eq!(
-		bindings.action_for(&press(KeyCode::F(3), KeyModifiers::ALT)),
-		Some(Action::SelectChannel(2))
-	);
-	assert_eq!(bindings.action_for(&press(KeyCode::Char('3'), KeyModifiers::NONE)), None);
+	assert_eq!(bindings.action_for(&press(KeyCode::F(3), KeyModifiers::ALT)), Some(Action::Rescan));
+	assert_eq!(bindings.action_for(&press(KeyCode::F(8), KeyModifiers::NONE)), None);
 	let quit_row = bindings
 		.help_rows("en")
 		.into_iter()
@@ -267,6 +260,6 @@ fn bad_overrides_are_rejected_with_the_offending_key() {
 			other: "help".into()
 		})
 	);
-	assert_eq!(command_name(Action::SelectChannel(15)), "select_channel_16");
-	assert_eq!(action_by_name("select_channel_17"), None);
+	assert_eq!(command_name(Action::RecordStart), "record_start");
+	assert_eq!(action_by_name("record"), None, "the v1 toggle command no longer exists");
 }

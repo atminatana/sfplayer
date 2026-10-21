@@ -14,7 +14,6 @@ use super::effects_dialog::{EffectsDialog, EffectsOutcome};
 use super::glyphs::Glyphs;
 use super::keys::{Action, Bindings};
 use super::meter::ClipHold;
-use super::monitor::Monitor;
 use super::path_input::{self, PathInput, PathOutcome};
 use super::record_dialog::{RecordDialog, RecordOutcome};
 use super::screen;
@@ -22,28 +21,13 @@ use super::selector::SelectorOutcome;
 use super::text_keyboard::{NoteOffMode, TextKeyboard};
 use crate::audio;
 use crate::config::KeyboardConfig;
-use crate::midi::{MidiEvent, MonitorEntry};
+use crate::midi::MidiEvent;
 use crate::session::{EffectsAction, EffectsSettings, MixerAction, Notice, Session};
 
 /// Spec §6: redraw at most 30 frames per second.
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(33);
-/// Rows moved by PgUp / PgDn in the monitor.
-const MONITOR_PAGE: usize = 10;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Panel {
-	Monitor,
-	Mixer,
-}
-
-impl Panel {
-	fn next(self) -> Self {
-		match self {
-			Self::Monitor => Self::Mixer,
-			Self::Mixer => Self::Monitor,
-		}
-	}
-}
+/// MIDI channel the text keyboard plays on (0-based): channel 1, where the F5 preset applies (ADR 0011).
+const KEYBOARD_CHANNEL: u8 = 0;
 
 /// What the UI wants the session to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,7 +46,7 @@ pub enum Request {
 	StopRecord,
 	/// Quit confirmed while recording: stop the take, then quit.
 	StopRecordingAndQuit,
-	/// Text keyboard output: goes to the engine and to the monitor.
+	/// Text keyboard output: goes to the engine through the command ring (ADR 0009).
 	Notes(Vec<MidiEvent>),
 	/// Semitone delta for `[` / `]`.
 	Transpose(i8),
@@ -86,17 +70,13 @@ pub enum Modal {
 
 pub struct App {
 	pub locale: &'static str,
-	pub focus: Panel,
 	pub should_quit: bool,
 	pub modal: Option<Modal>,
-	pub monitor: Monitor,
 	pub keyboard: TextKeyboard,
 	pub bindings: Bindings,
 	pub glyphs: Glyphs,
 	/// Elapsed time of the running recording, refreshed every frame; `None` when not recording.
 	pub recording: Option<Duration>,
-	/// MIDI channel the text keyboard plays on (0-based); follows the mixer's current channel.
-	pub keyboard_channel: u8,
 	clip_hold: ClipHold,
 	/// Whether the CLIP mark is lit for the frame being drawn.
 	pub clipping: bool,
@@ -114,15 +94,12 @@ impl App {
 	pub fn with_keyboard(locale: &'static str, keyboard: TextKeyboard) -> Self {
 		Self {
 			locale,
-			focus: Panel::Monitor,
 			should_quit: false,
 			modal: None,
-			monitor: Monitor::default(),
 			keyboard,
 			bindings: Bindings::default(),
 			glyphs: Glyphs::UNICODE,
 			recording: None,
-			keyboard_channel: 0,
 			clip_hold: ClipHold::new(0),
 			clipping: false,
 			dirty: true,
@@ -158,10 +135,6 @@ impl App {
 			Action::Quit => unreachable!("handled above"),
 			Action::Help => {
 				self.modal = Some(Modal::Help(0));
-				None
-			}
-			Action::FocusNext | Action::FocusPrevious => {
-				self.focus = self.focus.next();
 				None
 			}
 			Action::MidiDialog => Some(Request::OpenDialog(DialogKind::MidiInput)),
@@ -206,37 +179,7 @@ impl App {
 			Action::MasterUpFast => Some(Request::Mixer(MixerAction::MasterUpFast)),
 			Action::MasterDownFast => Some(Request::Mixer(MixerAction::MasterDownFast)),
 			Action::MasterMute => Some(Request::Mixer(MixerAction::MasterMute)),
-			Action::SelectChannel(_)
-			| Action::ChannelUp
-			| Action::ChannelDown
-			| Action::ChannelMute
-			| Action::ChannelSolo
-			| Action::MonitorClear
-			| Action::MonitorPause
-			| Action::ScrollUp
-			| Action::ScrollDown
-			| Action::PageUp
-			| Action::PageDown => self.handle_panel_action(action),
 		}
-	}
-
-	/// Keys whose meaning depends on the focused panel (spec §6 "контекст").
-	fn handle_panel_action(&mut self, action: Action) -> Option<Request> {
-		match (self.focus, action) {
-			(Panel::Monitor, Action::MonitorClear) => self.monitor.clear(),
-			(Panel::Monitor, Action::MonitorPause) => self.monitor.toggle_pause(),
-			(Panel::Monitor, Action::ScrollUp) => self.monitor.scroll_up(1),
-			(Panel::Monitor, Action::ScrollDown) => self.monitor.scroll_down(1),
-			(Panel::Monitor, Action::PageUp) => self.monitor.scroll_up(MONITOR_PAGE),
-			(Panel::Monitor, Action::PageDown) => self.monitor.scroll_down(MONITOR_PAGE),
-			(Panel::Mixer, Action::SelectChannel(channel)) => return Some(Request::Mixer(MixerAction::SelectChannel(channel))),
-			(Panel::Mixer, Action::ChannelUp) => return Some(Request::Mixer(MixerAction::ChannelUp)),
-			(Panel::Mixer, Action::ChannelDown) => return Some(Request::Mixer(MixerAction::ChannelDown)),
-			(Panel::Mixer, Action::ChannelMute) => return Some(Request::Mixer(MixerAction::ChannelMute)),
-			(Panel::Mixer, Action::ChannelSolo) => return Some(Request::Mixer(MixerAction::ChannelSolo)),
-			_ => {}
-		}
-		None
 	}
 
 	/// A key that is not a command: a note on the text keyboard when it is a plain (or shifted) character.
@@ -247,7 +190,7 @@ impl App {
 		if key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) || key.kind == KeyEventKind::Repeat {
 			return None;
 		}
-		let events = self.keyboard.press(c, self.keyboard_channel, Instant::now());
+		let events = self.keyboard.press(c, KEYBOARD_CHANNEL, Instant::now());
 		self.notes(events)
 	}
 
@@ -451,10 +394,7 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 			session.apply_effects(EffectsAction::Set(settings));
 			session.save_config();
 		}
-		Request::Notes(events) => {
-			session.send_notes(&events);
-			app.monitor.extend(events.into_iter().map(MonitorEntry::now));
-		}
+		Request::Notes(events) => session.send_notes(&events),
 	}
 }
 
@@ -463,13 +403,7 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 	let mut next_frame = Instant::now();
 	loop {
 		session.poll();
-		let before = app.monitor.total();
-		app.monitor.extend(session.drain_monitor());
-		if app.monitor.total() != before {
-			app.mark_dirty();
-		}
 		let now = Instant::now();
-		app.keyboard_channel = session.current_channel;
 		app.recording = session.recording_elapsed();
 		if let Some(request) = app.tick_keyboard(now) {
 			fulfil(request, app, session);

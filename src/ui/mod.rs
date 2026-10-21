@@ -8,7 +8,6 @@ pub mod i18n;
 pub mod keys;
 pub mod meter;
 pub mod modals;
-pub mod monitor;
 pub mod path_input;
 pub mod record_dialog;
 pub mod screen;

@@ -2,6 +2,7 @@
 
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
+use ratatui::buffer::Buffer;
 
 use super::*;
 use crate::ui::dialog::Dialog;
@@ -9,7 +10,6 @@ use crate::ui::path_input::PathInput;
 
 fn view() -> View {
 	View {
-		channel: 1,
 		midi: MidiStatus::Connected("Arturia KeyStep".into()),
 		audio: Some(AudioView {
 			device: "Speakers".into(),
@@ -17,10 +17,13 @@ fn view() -> View {
 			buffer: BufferSize::Fixed(256),
 		}),
 		bank: Some(BankView {
-			name: "GeneralUser GS".into(),
-			presets: 268,
+			file_name: "GeneralUser GS.sf2".into(),
 			preset_label: "000:000 Grand Piano".into(),
 		}),
+		reverb: Some(40),
+		chorus: None,
+		record_dir: "D:/Music/sf2_player".into(),
+		record_format: RecordFormat::Flac,
 		xruns: 0,
 		dropped: 0,
 		transpose: 0,
@@ -31,8 +34,6 @@ fn view() -> View {
 		load_percent: 0,
 		levels: Levels::default(),
 		mixer: Mixer::new(80),
-		reverb: Some(40),
-		chorus: None,
 		notice: None,
 	}
 }
@@ -42,11 +43,19 @@ fn draw(locale: &'static str, view: &View, width: u16, height: u16) -> Vec<Strin
 }
 
 fn draw_app(app: &App, view: &View, width: u16, height: u16) -> Vec<String> {
+	lines_of(&render_to_buffer(app, view, width, height))
+}
+
+fn render_to_buffer(app: &App, view: &View, width: u16, height: u16) -> Buffer {
 	let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
 	terminal.draw(|frame| render(frame, app, view)).expect("draw");
-	let buffer = terminal.backend().buffer();
-	(0..height)
-		.map(|y| (0..width).map(|x| buffer[(x, y)].symbol().to_owned()).collect::<String>())
+	terminal.backend().buffer().clone()
+}
+
+fn lines_of(buffer: &Buffer) -> Vec<String> {
+	let area = buffer.area;
+	(0..area.height)
+		.map(|y| (0..area.width).map(|x| buffer[(x, y)].symbol().to_owned()).collect::<String>())
 		.collect()
 }
 
@@ -54,141 +63,289 @@ fn contains(lines: &[String], needle: &str) -> bool {
 	lines.iter().any(|line| line.contains(needle))
 }
 
-/// Golden frame for the spec §6 mock-up: pins the whole 80×24 layout (symbols only; styles are checked separately).
+/// Row index of the first line containing `needle`.
+fn row_of(lines: &[String], needle: &str) -> usize {
+	lines
+		.iter()
+		.position(|line| line.contains(needle))
+		.unwrap_or_else(|| panic!("{needle:?} not on screen:\n{}", lines.join("\n")))
+}
+
+/// Column (in cells) of `needle` within `line`.
+fn column_of(line: &str, needle: &str) -> usize {
+	let byte = line.find(needle).unwrap_or_else(|| panic!("{needle:?} not in {line:?}"));
+	line[..byte].chars().count()
+}
+
+/// Foreground colour of the first cell of `needle`.
+fn colour_of(buffer: &Buffer, needle: &str) -> Color {
+	let lines = lines_of(buffer);
+	let row = row_of(&lines, needle);
+	let column = column_of(&lines[row], needle);
+	buffer[(column as u16, row as u16)].fg
+}
+
+/// Golden frame for the spec v1.1 §2 mock-up: pins the whole 80×24 layout (symbols only; styles are checked separately).
 #[test]
 fn full_frame_matches_the_layout_mockup() {
 	let expected: Vec<&str> = vec![
-		"┌ sf2_player 0.1.0 ────────────────────────────────────────────────────────────┐",
-		"│MIDI: Arturia KeyStep ●   Audio: Speakers 48000 Hz / 256 frames               │",
-		"│SF2: GeneralUser GS (268 presets)   Preset: 000:000 Grand Piano               │",
-		"│┌ MIDI monitor ──────────────────────────┐┌ Mixer ───────────────────────────┐│",
-		"││                                        ││L ▐░░░░░░░░░░░░▌   -inf dBFS      ││",
-		"││                                        ││R ▐░░░░░░░░░░░░▌   -inf dBFS      ││",
-		"││                                        ││MASTER ████████░░  80%            ││",
-		"││                                        ││FX rev 40 cho off                 ││",
-		"││                                        ││ch01 █████░ 100 ch02 █████░ 100   ││",
-		"││                                        ││ch03 █████░ 100 ch04 █████░ 100   ││",
-		"││                                        ││ch05 █████░ 100 ch06 █████░ 100   ││",
-		"││                                        ││ch07 █████░ 100 ch08 █████░ 100   ││",
-		"││                                        ││ch09 █████░ 100 ch10 █████░ 100   ││",
-		"││                                        ││ch11 █████░ 100 ch12 █████░ 100   ││",
-		"││                                        ││ch13 █████░ 100 ch14 █████░ 100   ││",
-		"││                                        ││ch15 █████░ 100 ch16 █████░ 100   ││",
-		"││                                        ││                                  ││",
-		"││                                        ││                                  ││",
-		"│└────────────────────────────────────────┘└──────────────────────────────────┘│",
-		"│┌ Status ────────────────────────────────────────────────────────────────────┐│",
-		"││voices -/- cpu 0% xruns 0 kbd: gate 300ms oct 4 vel 100                     ││",
-		"││F1 help F2 MIDI F3 audio F4 sf2 Home/End rec F10 quit                       ││",
-		"│└────────────────────────────────────────────────────────────────────────────┘│",
-		"└──────────────────────────────────────────────────────────────────────────────┘",
+		"┌────────────────────────────── sf2_player 0.1.0 ──────────────────────────────┐",
+		"│[F1] Help                                                                     │",
+		"│[F2] MIDI:      Arturia KeyStep                                               │",
+		"│[F3] Audio:     Speakers 48000 Hz / 256 frames  OK                            │",
+		"│[F4] SF2:       GeneralUser GS.sf2                                            │",
+		"│[F5] Preset:    000:000 Grand Piano                                           │",
+		"│[F6] Effects:   rev 40  cho off                                               │",
+		"│[F7] Recording: D:/Music/sf2_player  FLAC                                     │",
+		"│     [Home] start recording   [End] stop                                      │",
+		"│                                                                              │",
+		"│                                                                              │",
+		"│Mixer                                                                         │",
+		"│  L  ▐░░░░░░░░░░░░▌    -inf dBFS                                              │",
+		"│  R  ▐░░░░░░░░░░░░▌    -inf dBFS                                              │",
+		"│  MASTER ████████░░   80%                                                     │",
+		"│                                                                              │",
+		"│                                                                              │",
+		"│                                                                              │",
+		"│                                                                              │",
+		"│                                                                              │",
+		"│                                                                              │",
+		"│                                                                              │",
+		"│                                                                              │",
+		"└ voices   -/-   cpu   0% xrun     0 kbd: gate 300ms  oct 4 vel 100 ───────────┘",
 	];
 	assert_eq!(draw("en", &view(), 80, 24), expected);
 }
 
 #[test]
-fn focused_panel_border_is_highlighted() {
-	let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
-	let mut app = App::new("en");
-	app.focus = Panel::Mixer;
-	terminal.draw(|frame| render(frame, &app, &view())).expect("draw");
-	let buffer = terminal.backend().buffer();
-	assert_eq!(buffer[(43, 3)].fg, Color::Cyan, "mixer border focused");
-	assert_eq!(buffer[(1, 3)].fg, Color::Reset, "monitor border unfocused");
-}
-
-#[test]
-fn english_screen_shows_devices_bank_and_hints() {
-	let lines = draw("en", &view(), 80, 24);
-	assert!(contains(&lines, "sf2_player 0.1.0"));
-	assert!(contains(&lines, "MIDI: Arturia KeyStep ●"));
-	assert!(contains(&lines, "Audio: Speakers 48000 Hz / 256 frames"));
-	assert!(contains(&lines, "SF2: GeneralUser GS (268 presets)"));
-	assert!(contains(&lines, "Preset: 000:000 Grand Piano"));
-	assert!(contains(&lines, "MIDI monitor"));
-	assert!(contains(&lines, "Mixer"));
-	assert!(contains(&lines, "xruns 0"));
-	assert!(contains(&lines, "F1 help F2 MIDI F3 audio F4 sf2 Home/End rec F10 quit"));
-}
-
-#[test]
-fn effects_dialog_overlay_shows_switches_levels_and_the_highlighted_row() {
-	use crate::session::EffectsSettings;
-	use crate::ui::effects_dialog::EffectsDialog;
-	let mut app = App::new("en");
-	app.open_modal(Modal::Effects(EffectsDialog::new(EffectsSettings {
-		reverb: true,
-		chorus: false,
-		reverb_level: 40,
-		chorus_level: 7,
-	})));
-	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, " Effects "));
-	assert!(contains(&lines, "Reverb   [x]  level  40"), "{lines:#?}");
-	assert!(contains(&lines, "Chorus   [ ]  level   7"));
-	assert!(contains(&lines, "Space on/off"));
-	let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
-	terminal.draw(|frame| render(frame, &app, &view())).expect("draw");
-	let buffer = terminal.backend().buffer();
-	let row = lines.iter().position(|line| line.contains("Reverb   [x]")).expect("reverb row");
-	let column = lines[row].find("Reverb").expect("column");
-	assert!(
-		buffer[(column as u16, row as u16)].modifier.contains(Modifier::REVERSED),
-		"current row is highlighted"
-	);
-	let mut app = App::new("ru");
-	app.open_modal(Modal::Effects(EffectsDialog::new(EffectsSettings {
-		reverb: false,
-		chorus: true,
-		reverb_level: 0,
-		chorus_level: 127,
-	})));
-	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, " Эффекты "));
-	assert!(contains(&lines, "Хорус    [x]  уровень 127"), "{lines:#?}");
-}
-
-#[test]
 fn russian_screen_uses_the_russian_dictionary() {
 	let lines = draw("ru", &view(), 80, 24);
-	assert!(contains(&lines, "Аудио: Speakers 48000 Hz / 256 кадров"));
-	assert!(contains(&lines, "(268 пресетов)"));
-	assert!(contains(&lines, "Монитор MIDI"));
+	assert!(contains(&lines, "[F1] Справка"));
+	assert!(contains(&lines, "[F3] Аудио:   Speakers 48000 Hz / 256 кадров  OK"));
+	assert!(contains(&lines, "[F5] Пресет:  000:000 Grand Piano"));
+	assert!(contains(&lines, "[F6] Эффекты: рев 40  хор выкл"));
+	assert!(contains(&lines, "[Home] начать запись   [End] остановить"));
 	assert!(contains(&lines, "Микшер"));
-	assert!(contains(&lines, "F1 справка"));
-	assert!(contains(&lines, "F10 выход"));
+	assert!(contains(&lines, "МАСТЕР"));
+	assert!(contains(&lines, "−∞ dBFS"), "silence symbol from the dictionary");
+	assert!(
+		contains(&lines, "└ голоса   -/-   cpu   0% xrun     0 клав: gate 300мс окт 4 vel 100 "),
+		"{lines:#?}"
+	);
 }
 
 #[test]
-fn missing_devices_and_bank_are_reported() {
-	let mut view = view();
-	view.midi = MidiStatus::Disconnected("KeyStep".into());
-	view.audio = None;
-	view.bank = None;
-	let lines = draw("en", &view, 80, 24);
-	assert!(contains(&lines, "MIDI: KeyStep (disconnected)"));
-	assert!(contains(&lines, "Audio: none"));
-	assert!(contains(&lines, "SF2: no bank loaded, press F4"));
+fn missing_devices_and_bank_are_red_and_audio_ok_is_green() {
+	let app = App::new("en");
+	let ok = render_to_buffer(&app, &view(), 80, 24);
+	assert_eq!(colour_of(&ok, "OK"), Color::Green);
+	assert_eq!(colour_of(&ok, "Arturia KeyStep"), Color::Reset, "a connected port is not an error");
+
+	let mut missing = view();
+	missing.midi = MidiStatus::NoPort;
+	missing.audio = None;
+	missing.bank = None;
+	let buffer = render_to_buffer(&app, &missing, 80, 24);
+	let lines = lines_of(&buffer);
+	assert!(contains(&lines, "[F2] MIDI:      no device"), "{lines:#?}");
+	assert!(contains(&lines, "[F3] Audio:     no device"));
+	assert!(contains(&lines, "[F4] SF2:       not set, press F4"));
+	assert!(contains(&lines, "[F5] Preset:    no bank"));
+	assert_eq!(colour_of(&buffer, "no device"), Color::Red);
+	assert_eq!(colour_of(&buffer, "not set, press F4"), Color::Red);
+	assert_eq!(colour_of(&buffer, "no bank"), Color::DarkGray);
+	assert!(!contains(&lines, "OK"), "no green OK without a stream");
+
+	let mut disconnected = view();
+	disconnected.midi = MidiStatus::Disconnected("KeyStep".into());
+	let buffer = render_to_buffer(&app, &disconnected, 80, 24);
+	assert!(contains(&lines_of(&buffer), "[F2] MIDI:      KeyStep (disconnected)"));
+	assert_eq!(colour_of(&buffer, "KeyStep (disconnected)"), Color::Red);
 }
 
 #[test]
-fn notice_replaces_the_counters_but_keeps_the_hints() {
-	let mut view = view();
-	view.notice = Some(Notice::AudioFallback);
-	let lines = draw("ru", &view, 80, 24);
-	assert!(contains(&lines, "Аудиовыход не найден"));
-	assert!(!contains(&lines, "xrun 0"));
-	assert!(contains(&lines, "F10 выход"));
+fn notices_land_in_the_line_they_belong_to_or_in_the_message_line() {
+	let app = App::new("en");
+	// (notice, expected row, the whole line fragment, the coloured part of it, its colour)
+	let cases: [(Notice, usize, &str, &str, Color); 6] = [
+		(
+			Notice::MidiError("port busy".into()),
+			2,
+			"Arturia KeyStep  port busy",
+			"port busy",
+			Color::Red,
+		),
+		(
+			Notice::AudioError("stream lost".into()),
+			3,
+			"256 frames  stream lost",
+			"stream lost",
+			Color::Red,
+		),
+		(
+			Notice::Sf2Error("not a SoundFont".into()),
+			4,
+			"GeneralUser GS.sf2  not a SoundFont",
+			"not a SoundFont",
+			Color::Red,
+		),
+		(
+			Notice::RecordError("disk full".into()),
+			7,
+			"FLAC  disk full",
+			"disk full",
+			Color::Red,
+		),
+		(
+			Notice::RecordSaved("take.flac".into()),
+			9,
+			"Recording saved: take.flac",
+			"Recording saved",
+			Color::Yellow,
+		),
+		(
+			Notice::ConfigError("read-only".into()),
+			9,
+			"Config not saved: read-only",
+			"Config not saved",
+			Color::Yellow,
+		),
+	];
+	for (notice, row, text, coloured, colour) in cases {
+		let mut with_notice = view();
+		with_notice.notice = Some(notice.clone());
+		let buffer = render_to_buffer(&app, &with_notice, 80, 24);
+		let lines = lines_of(&buffer);
+		assert_eq!(row_of(&lines, text), row, "{notice:?}\n{lines:#?}");
+		assert_eq!(colour_of(&buffer, coloured), colour, "{notice:?}");
+	}
+	let mut no_audio = view();
+	no_audio.audio = None;
+	no_audio.notice = Some(Notice::NoAudioDevice("no output".into()));
+	let lines = draw("en", &no_audio, 80, 24);
+	assert!(contains(&lines, "[F3] Audio:     no output"), "the error replaces the device text");
+	assert!(!contains(&lines, "OK"));
+	let mut fallback = view();
+	fallback.notice = Some(Notice::AudioFallback);
+	let lines = draw("ru", &fallback, 80, 24);
+	assert_eq!(row_of(&lines, "Аудиовыход не найден"), 9);
+	assert!(contains(&lines, "OK"), "a fallback notice is not an error of the line");
 }
 
 #[test]
-fn dropped_events_appear_only_when_non_zero() {
+fn status_fields_keep_their_columns_whatever_the_values() {
+	let app = App::new("en");
+	let reference = draw_app(&app, &view(), 80, 24);
+	let status = &reference[23];
+	let columns = |line: &str| ["cpu", "xrun", "kbd:", "oct", "vel"].map(|token| column_of(line, token));
+	let mut loud = view();
+	loud.held_notes = 999;
+	loud.max_voices = 256;
+	loud.load_percent = 100;
+	loud.xruns = 99_999;
+	let busy = draw_app(&app, &loud, 80, 24);
+	assert!(busy[23].contains("voices 999/256 cpu 100% xrun 99999 "), "{}", busy[23]);
+	assert_eq!(columns(&busy[23]), columns(status));
+	let mut overflow = view();
+	overflow.xruns = 100_000;
+	let line = &draw_app(&app, &overflow, 80, 24)[23];
+	assert!(line.contains("xrun 9999+ "), "{line}");
+	assert_eq!(columns(line), columns(status));
+
+	use crate::ui::text_keyboard::{NoteOffMode, TextKeyboard};
+	let release = App::with_keyboard(
+		"ru",
+		TextKeyboard::new(&crate::config::KeyboardConfig::default(), NoteOffMode::Release),
+	);
+	let gate = App::new("ru");
+	let release_line = &draw_app(&release, &view(), 80, 24)[23];
+	let gate_line = &draw_app(&gate, &view(), 80, 24)[23];
+	assert!(release_line.contains("клав: отпускание"), "{release_line}");
+	assert_eq!(column_of(release_line, "окт"), column_of(gate_line, "окт"));
+	assert_eq!(column_of(release_line, "vel"), column_of(gate_line, "vel"));
+}
+
+#[test]
+fn optional_status_fields_sit_on_the_right_and_never_push_the_fixed_ones() {
 	let lines = draw("en", &view(), 80, 24);
-	assert!(!contains(&lines, "dropped"));
-	let mut view = view();
-	view.dropped = 3;
-	let lines = draw("en", &view, 80, 24);
-	assert!(contains(&lines, "dropped 3"));
+	assert!(!lines[23].contains("tr ") && !lines[23].contains("omni") && !lines[23].contains("dropped"));
+	let mut shifted = view();
+	shifted.transpose = -3;
+	shifted.omni_channel = Some(9);
+	shifted.dropped = 3;
+	let wide = &draw("en", &shifted, 100, 24)[23];
+	assert!(wide.ends_with("─ tr -3 omni ch10 dropped 3 ┘"), "{wide}");
+	assert!(
+		wide.starts_with("└ voices   -/-   cpu   0% xrun     0 kbd: gate 300ms  oct 4 vel 100 ─"),
+		"{wide}"
+	);
+	let narrow = &draw("en", &shifted, 80, 24)[23];
+	assert!(
+		narrow.starts_with("└ voices   -/-   cpu   0% xrun     0 kbd: gate 300ms  oct 4 vel 100 "),
+		"fixed fields win at 80 columns: {narrow}"
+	);
+	assert!(!narrow.contains("omni"), "no room for all three at 80 columns: {narrow}");
+	assert_eq!(column_of(narrow, "cpu"), column_of(&lines[23], "cpu"));
+	let mut transposed = view();
+	transposed.transpose = 12;
+	let line = &draw("en", &transposed, 80, 24)[23];
+	assert!(
+		line.ends_with("─ tr +12 ┘"),
+		"a short optional field still fits at 80 columns: {line}"
+	);
+}
+
+#[test]
+fn recording_indicator_blinks_in_the_recording_line_and_quit_asks_for_confirmation() {
+	let mut app = App::new("en");
+	app.recording = Some(std::time::Duration::from_millis(72_000));
+	let lit = draw_app(&app, &view(), 80, 24);
+	assert_eq!(row_of(&lit, "FLAC  ● REC 01:12"), 7, "{lit:#?}");
+	app.recording = Some(std::time::Duration::from_millis(72_600));
+	let dark = draw_app(&app, &view(), 80, 24);
+	assert_eq!(row_of(&dark, "FLAC    REC 01:12"), 7, "{dark:#?}");
+	assert_eq!(record_blink(std::time::Duration::from_millis(499), &app.glyphs), "●");
+	assert_eq!(record_blink(std::time::Duration::from_millis(500), &app.glyphs), " ");
+	assert_eq!(
+		record_blink(std::time::Duration::from_millis(1_000), &app.glyphs),
+		"●",
+		"period is one second"
+	);
+	assert_eq!(colour_of(&render_to_buffer(&app, &view(), 80, 24), "REC 01:12"), Color::Red);
+	app.open_modal(Modal::ConfirmQuit);
+	let lines = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&lines, " Recording in progress "));
+	assert!(contains(&lines, "Enter"));
+	let mut ru = view();
+	ru.record_format = RecordFormat::OggVorbis;
+	let app = App::new("ru");
+	let lines = draw_app(&app, &ru, 80, 24);
+	assert!(contains(&lines, "[F7] Запись:  D:/Music/sf2_player  Ogg Vorbis"), "{lines:#?}");
+}
+
+#[test]
+fn mixer_shows_meters_clip_mark_and_master_mute() {
+	let mut loud = view();
+	loud.levels = Levels {
+		peak_left: 0.5,
+		peak_right: 0.25,
+		rms_left: 0.25,
+		rms_right: 0.125,
+	};
+	loud.mixer.toggle_master_mute();
+	loud.mixer.adjust_master(-30);
+	let lines = draw("en", &loud, 80, 24);
+	assert!(contains(&lines, "  L  ▐"), "left meter");
+	assert!(contains(&lines, "-6.0 dBFS"), "left peak in dBFS");
+	assert!(contains(&lines, "-12.0 dBFS"), "right peak in dBFS");
+	assert!(!contains(&lines, "CLIP"));
+	assert!(contains(&lines, "  MASTER █████░░░░░   50%  mute"), "{lines:#?}");
+	let mut app = App::new("ru");
+	app.clipping = true;
+	let lines = draw_app(&app, &loud, 80, 24);
+	assert!(contains(&lines, "dBFS  CLIP"));
+	assert!(contains(&lines, "тихо"));
+	assert!(!contains(&lines, "ch01"), "channel strips are gone (ADR 0010)");
 }
 
 #[test]
@@ -200,8 +357,12 @@ fn small_terminal_shows_only_the_size_warning() {
 
 #[test]
 fn every_line_fits_eighty_columns() {
-	for line in draw("ru", &view(), 80, 24) {
-		assert_eq!(line.chars().count(), 80);
+	let mut long = view();
+	long.record_dir = "C:/Users/Somebody With A Long Name/Music/sf2_player/recordings/2026".into();
+	long.transpose = 12;
+	long.omni_channel = Some(15);
+	for line in draw("ru", &long, 80, 24) {
+		assert_eq!(line.chars().count(), 80, "{line}");
 	}
 }
 
@@ -236,7 +397,7 @@ fn dialog_overlay_shows_title_items_marker_and_detail() {
 		"detail of the highlighted (current) item"
 	);
 	assert!(contains(&lines, "Enter apply"));
-	assert!(contains(&lines, "MIDI monitor"), "main screen still visible around the modal");
+	assert!(contains(&lines, "[F1] Help"), "main screen still visible around the modal");
 }
 
 #[test]
@@ -260,31 +421,18 @@ fn sf2_path_dialog_shows_field_error_recent_and_cursor() {
 	app.open_modal(Modal::Sf2Path(input));
 	let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
 	terminal.draw(|frame| render(frame, &app, &view())).expect("draw");
-	let buffer = terminal.backend().buffer();
-	let lines: Vec<String> = (0..24)
-		.map(|y| (0..80).map(|x| buffer[(x, y)].symbol().to_owned()).collect())
-		.collect();
+	let lines = lines_of(terminal.backend().buffer());
 	assert!(contains(&lines, " SoundFont file "));
 	assert!(contains(&lines, "Path: assets/sin_wave.sf2"));
 	assert!(contains(&lines, "not a valid SoundFont 2 file"));
 	assert!(contains(&lines, "  C:/banks/GeneralUser.sf2"));
 	assert!(contains(&lines, "Tab complete"));
-	let (cursor_x, cursor_y) = {
-		let mut backend_terminal = terminal;
-		let position = backend_terminal.get_cursor_position().expect("cursor");
-		(position.x, position.y)
-	};
-	let field_row = lines.iter().position(|line| line.contains("Path: assets")).unwrap();
-	assert_eq!(usize::from(cursor_y), field_row);
-	let row: Vec<char> = lines[field_row].chars().collect();
-	let needle: Vec<char> = "assets/sin_wave.sf2".chars().collect();
-	let path_col = row
-		.windows(needle.len())
-		.position(|window| window == needle.as_slice())
-		.expect("path in row");
+	let position = terminal.get_cursor_position().expect("cursor");
+	let field_row = row_of(&lines, "Path: assets");
+	assert_eq!(usize::from(position.y), field_row);
 	assert_eq!(
-		usize::from(cursor_x),
-		path_col + "assets/sin_wave.sf2".chars().count(),
+		usize::from(position.x),
+		column_of(&lines[field_row], "assets/sin_wave.sf2") + "assets/sin_wave.sf2".chars().count(),
 		"cursor after the last character"
 	);
 }
@@ -297,171 +445,56 @@ fn help_overlay_lists_the_bindings_in_both_languages() {
 	assert!(contains(&lines, " Справка "));
 	assert!(contains(&lines, "F10 / Ctrl+C"));
 	assert!(contains(&lines, "Выход"));
+	assert!(!contains(&lines, "Tab "), "panel focus is gone (ADR 0010)");
 	let mut app = App::new("en");
 	app.open_modal(Modal::Help(0));
 	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, "Shift+Tab"));
+	assert!(contains(&lines, "Home"));
+	assert!(contains(&lines, "Start recording"));
 	assert!(contains(&lines, "Rescan MIDI"));
-	assert!(!contains(&lines, "Ctrl+F"), "last rows need scrolling at 80x24");
+	assert!(!contains(&lines, "S D G H J L ;"), "last rows need scrolling at 80x24");
 	app.open_modal(Modal::Help(100));
 	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, "Ctrl+F"), "scroll is clamped to show the last row");
+	assert!(contains(&lines, "S D G H J L ;"), "scroll is clamped to show the last row");
 }
 
 #[test]
-fn monitor_panel_shows_formatted_entries_and_pause_marker() {
-	use crate::midi::{MidiEvent, MonitorEntry};
+fn effects_dialog_overlay_shows_switches_levels_and_the_highlighted_row() {
+	use crate::session::EffectsSettings;
+	use crate::ui::effects_dialog::EffectsDialog;
 	let mut app = App::new("en");
-	app.monitor.push(MonitorEntry::now(MidiEvent::NoteOn {
-		channel: 0,
-		key: 60,
-		velocity: 92,
-	}));
-	app.monitor.push(MonitorEntry::now(MidiEvent::ControlChange {
-		channel: 0,
-		controller: 64,
-		value: 127,
-	}));
-	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, "ch01 NoteOn   C4   vel 92"));
-	assert!(contains(&lines, "ch01 CC 64    127"));
-	app.monitor.toggle_pause();
-	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, " MIDI monitor [paused] "));
-}
-
-#[test]
-fn mixer_panel_shows_level_meters_and_clip_mark() {
-	let mut loud = view();
-	loud.levels = Levels {
-		peak_left: 0.5,
-		peak_right: 0.25,
-		rms_left: 0.25,
-		rms_right: 0.125,
-	};
-	let lines = draw("en", &loud, 80, 24);
-	assert!(contains(&lines, "L ▐"), "left meter");
-	assert!(contains(&lines, "-6.0 dBFS"), "left peak in dBFS");
-	assert!(contains(&lines, "-12.0 dBFS"), "right peak in dBFS");
-	assert!(!contains(&lines, "CLIP"));
-	let mut app = App::new("ru");
-	app.clipping = true;
-	let lines = draw_app(&app, &loud, 80, 24);
-	assert!(contains(&lines, "CLIP"));
-	let silent = draw("ru", &view(), 80, 24);
-	assert!(contains(&silent, "−∞ dBFS"), "silence symbol from the dictionary");
-}
-
-#[test]
-fn mixer_panel_shows_master_and_channel_strips() {
-	let mut mixed = view();
-	mixed.mixer.toggle_master_mute();
-	mixed.mixer.toggle_mute(2);
-	mixed.mixer.toggle_solo(0);
-	mixed.mixer.adjust_channel(1, -60);
-	mixed.channel = 2;
-	let lines = draw("en", &mixed, 80, 24);
-	assert!(contains(&lines, "MASTER ████████░░  80%  mute"), "{lines:#?}");
-	assert!(contains(&lines, "ch01 █████░ solo"));
-	assert!(contains(&lines, "ch02 ██░░░░  40"));
-	assert!(contains(&lines, "ch03 ────── mute"));
-	assert!(contains(&lines, "ch16 █████░ 100"));
-	let ru = draw("ru", &mixed, 80, 24);
-	assert!(contains(&ru, "МАСТЕР"));
-	assert!(contains(&ru, "тихо"));
-}
-
-#[test]
-fn status_counters_show_held_notes_polyphony_and_load() {
-	let lines = draw("en", &view(), 80, 24);
+	app.open_modal(Modal::Effects(EffectsDialog::new(EffectsSettings {
+		reverb: true,
+		chorus: false,
+		reverb_level: 40,
+		chorus_level: 7,
+	})));
+	let buffer = render_to_buffer(&app, &view(), 80, 24);
+	let lines = lines_of(&buffer);
+	assert!(contains(&lines, " Effects "));
+	assert!(contains(&lines, "Reverb   [x]  level  40"), "{lines:#?}");
+	assert!(contains(&lines, "Chorus   [ ]  level   7"));
+	assert!(contains(&lines, "Space on/off"));
+	let row = row_of(&lines, "Reverb   [x]");
+	let column = column_of(&lines[row], "Reverb");
 	assert!(
-		contains(&lines, "voices -/- cpu 0% xruns 0 kbd: gate 300ms oct 4 vel 100"),
-		"no engine installed"
+		buffer[(column as u16, row as u16)].modifier.contains(Modifier::REVERSED),
+		"current row is highlighted"
 	);
-	let mut playing = view();
-	playing.held_notes = 7;
-	playing.max_voices = 64;
-	playing.load_percent = 3;
-	playing.xruns = 2;
-	let lines = draw("ru", &playing, 80, 24);
-	assert!(contains(&lines, "голоса 7/64 cpu 3% xrun 2"));
-}
-
-#[test]
-fn status_shows_release_mode_in_russian() {
-	use crate::ui::text_keyboard::{NoteOffMode, TextKeyboard};
-	let app = App::with_keyboard(
-		"ru",
-		TextKeyboard::new(&crate::config::KeyboardConfig::default(), NoteOffMode::Release),
-	);
+	let mut app = App::new("ru");
+	app.open_modal(Modal::Effects(EffectsDialog::new(EffectsSettings {
+		reverb: false,
+		chorus: true,
+		reverb_level: 0,
+		chorus_level: 127,
+	})));
 	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, "клав: отпускание окт 4 vel 100"));
-}
-
-#[test]
-fn status_shows_transpose_and_omni_only_when_active() {
-	let lines = draw("en", &view(), 80, 24);
-	assert!(!contains(&lines, "tr "));
-	assert!(!contains(&lines, "omni"));
-	let mut shifted = view();
-	shifted.transpose = -3;
-	shifted.omni_channel = Some(9);
-	let lines = draw("en", &shifted, 80, 24);
-	assert!(contains(&lines, "tr -3 omni ch10"));
-}
-
-#[test]
-fn mixer_panel_shows_effect_sends() {
-	let lines = draw("en", &view(), 80, 24);
-	assert!(contains(&lines, "FX rev 40 cho off"));
-	let mut both = view();
-	both.chorus = Some(20);
-	both.reverb = None;
-	let lines = draw("ru", &both, 80, 24);
-	assert!(contains(&lines, "FX рев выкл хор 20"));
-}
-
-#[test]
-fn recording_indicator_and_quit_confirmation() {
-	let mut app = App::new("en");
-	app.recording = Some(std::time::Duration::from_secs(72));
-	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, "● REC 01:12 voices -/-"), "{lines:#?}");
-	app.open_modal(Modal::ConfirmQuit);
-	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, " Recording in progress "));
-	assert!(contains(&lines, "Enter"));
-	let mut view_with_notice = view();
-	view_with_notice.notice = Some(Notice::RecordSaved("2026-10-20_12-03-41.flac".into()));
-	let lines = draw("ru", &view_with_notice, 80, 24);
-	assert!(contains(&lines, "Запись сохранена: 2026-10-20_12-03-41.flac"));
-}
-
-#[test]
-fn recording_dot_blinks_with_a_one_second_period_without_changing_the_width() {
-	let mut app = App::new("en");
-	app.recording = Some(std::time::Duration::from_millis(72_000));
-	let lit = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lit, "● REC 01:12 voices"), "{lit:#?}");
-	app.recording = Some(std::time::Duration::from_millis(72_600));
-	let dark = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&dark, "  REC 01:12 voices"), "{dark:#?}");
-	assert_eq!(
-		lit.iter().position(|line| line.contains("REC 01:12")),
-		dark.iter().position(|line| line.contains("REC 01:12"))
-	);
-	assert_eq!(record_blink(std::time::Duration::from_millis(499), &app.glyphs), "●");
-	assert_eq!(record_blink(std::time::Duration::from_millis(500), &app.glyphs), " ");
-	assert_eq!(
-		record_blink(std::time::Duration::from_millis(1_000), &app.glyphs),
-		"●",
-		"period is one second"
-	);
+	assert!(contains(&lines, " Эффекты "));
+	assert!(contains(&lines, "Хорус    [x]  уровень 127"), "{lines:#?}");
 }
 
 #[test]
 fn record_dialog_overlay_shows_folder_format_radio_and_description() {
-	use crate::config::RecordFormat;
 	use crate::ui::record_dialog::RecordDialog;
 	let mut app = App::new("en");
 	app.open_modal(Modal::Record(RecordDialog::new(None, RecordFormat::Flac, 0.5)));
@@ -494,11 +527,9 @@ fn ascii_mode_replaces_block_glyphs() {
 	app.glyphs = crate::ui::glyphs::Glyphs::ASCII;
 	app.recording = Some(std::time::Duration::from_secs(5));
 	let lines = draw_app(&app, &view(), 80, 24);
-	assert!(contains(&lines, "MIDI: Arturia KeyStep *"));
-	assert!(contains(&lines, "L [------------]"));
-	assert!(contains(&lines, "MASTER ########--  80%"));
-	assert!(contains(&lines, "ch01 #####- 100"));
-	assert!(contains(&lines, "* REC 00:05"));
+	assert!(contains(&lines, "  L  [------------]"));
+	assert!(contains(&lines, "  MASTER ########--   80%"));
+	assert!(contains(&lines, "FLAC  * REC 00:05"));
 	for line in &lines {
 		assert!(
 			!line.contains('█') && !line.contains('░') && !line.contains('●') && !line.contains('▐'),

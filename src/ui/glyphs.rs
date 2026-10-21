@@ -12,8 +12,6 @@ pub struct Glyphs {
 	/// Meter bar brackets.
 	pub bar_open: &'static str,
 	pub bar_close: &'static str,
-	/// Muted channel strip.
-	pub dash: &'static str,
 }
 
 impl Glyphs {
@@ -23,7 +21,6 @@ impl Glyphs {
 		dot: "●",
 		bar_open: "▐",
 		bar_close: "▌",
-		dash: "─",
 	};
 	pub const ASCII: Self = Self {
 		full: "#",
@@ -31,7 +28,6 @@ impl Glyphs {
 		dot: "*",
 		bar_open: "[",
 		bar_close: "]",
-		dash: "-",
 	};
 
 	pub fn select(ascii: bool) -> Self {
