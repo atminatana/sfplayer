@@ -35,7 +35,7 @@ sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
 
 - `--list-devices` prints MIDI inputs and audio outputs with their indices and exits.
 - Devices whose configuration cannot be read (an unsupported ALSA hint, a busy device) are skipped with a warning in the log instead of breaking the whole list.
-- Devices are selected by index or by a case-insensitive substring of the name; if a device is not found, the system default is used (the first port for MIDI) and a warning appears in the status line.
+- Devices are selected by index or by a case-insensitive substring of the name; if a device is not found, the system default is used (the first port for MIDI) and a warning appears in the status line. If a device is found but cannot be opened (busy, unsupported configuration), the program runs without sound, the status line shows the cause, and another device is chosen with F3.
 - The default buffer is 256 frames; if the device does not accept it, the device default is used.
 - Command-line values take precedence over the config file.
 

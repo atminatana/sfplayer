@@ -111,7 +111,10 @@ pub fn open_output_stream(
 		}
 		Err(other) => return Err(other),
 	};
-	stream.play().map_err(AudioError::Play)?;
+	stream.play().map_err(|source| AudioError::Play {
+		device: device_name.clone(),
+		source,
+	})?;
 	tracing::info!(device = %device_name, sample_rate, ?buffer_size, "audio stream started");
 	Ok((
 		AudioStream {
