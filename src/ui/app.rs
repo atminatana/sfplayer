@@ -202,7 +202,7 @@ impl App {
 		let KeyCode::Char(c) = key.code else {
 			return None;
 		};
-		let events = self.keyboard.release(c);
+		let events = self.keyboard.release(c, Instant::now());
 		self.notes(events)
 	}
 
@@ -394,7 +394,10 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 			session.apply_effects(EffectsAction::Set(settings));
 			session.save_config();
 		}
-		Request::Notes(events) => session.send_notes(&events),
+		Request::Notes(events) => {
+			tracing::debug!(?events, "notes to the command ring");
+			session.send_notes(&events);
+		}
 	}
 }
 
@@ -416,13 +419,15 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 		let timeout = next_frame.saturating_duration_since(Instant::now());
 		if event::poll(timeout)? {
 			match event::read()? {
-				Event::Key(key) if key.kind == KeyEventKind::Release => {
-					if let Some(request) = app.handle_release(key) {
-						fulfil(request, app, session);
-					}
-				}
 				Event::Key(key) => {
-					if let Some(request) = app.handle_key(key) {
+					// Raw key stream for diagnosing terminal behaviour (auto-repeat, release events); spec N-07.
+					tracing::debug!(code = ?key.code, kind = ?key.kind, modifiers = ?key.modifiers, "key event");
+					let request = if key.kind == KeyEventKind::Release {
+						app.handle_release(key)
+					} else {
+						app.handle_key(key)
+					};
+					if let Some(request) = request {
 						fulfil(request, app, session);
 					}
 				}

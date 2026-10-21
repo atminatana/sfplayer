@@ -2,8 +2,11 @@
 //!
 //! Pure state machine: keys in, `MidiEvent`s out. Two note-off strategies: `Release` when the terminal
 //! reports key releases (kitty keyboard protocol or the Windows console), otherwise `Gate` — a note lasts
-//! `gate` or until the same key is pressed again. Key auto-repeat never retriggers a note.
+//! `gate` or until the same key is pressed again. Key auto-repeat never retriggers a note: terminals that
+//! repeat by pairing Release+Press are debounced in release mode, and gate mode ignores presses that come
+//! too soon after the previous one.
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::config::KeyboardConfig;
@@ -16,6 +19,15 @@ const BLACK_OFFSETS: [u8; 7] = [1, 3, 6, 8, 10, 13, 15];
 pub const MIN_OCTAVE: u8 = 1;
 pub const MAX_OCTAVE: u8 = 7;
 pub const VELOCITY_STEP: i16 = 10;
+
+/// Terminals that auto-repeat by pairing Release+Press (X11, ~2 ms apart) must not cut the note:
+/// a release only takes effect after this window, and a press inside it cancels the note off.
+const RELEASE_DEBOUNCE: Duration = Duration::from_millis(20);
+/// Gate mode: a same-key press closer than this to the previous press is auto-repeat (X11 repeats
+/// every ~30–40 ms). The anchor moves on every seen press, so a sustained stream stays swallowed;
+/// the first repeat after the initial delay still plays — with no release events it is
+/// indistinguishable from a deliberate re-press.
+const GATE_REPEAT_GUARD: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoteOffMode {
@@ -32,6 +44,8 @@ struct HeldNote {
 	note: u8,
 	/// Gate mode only.
 	off_at: Option<Instant>,
+	/// Release mode only: the key went up, but the note off waits out `RELEASE_DEBOUNCE`.
+	release_pending_at: Option<Instant>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +56,8 @@ pub struct TextKeyboard {
 	velocity: u8,
 	mode: NoteOffMode,
 	held: Vec<HeldNote>,
+	/// Gate mode only: the last seen press of each note key, for the repeat guard.
+	last_press: HashMap<char, Instant>,
 }
 
 impl TextKeyboard {
@@ -53,6 +69,7 @@ impl TextKeyboard {
 			velocity: config.velocity.clamp(1, 127),
 			mode,
 			held: Vec::with_capacity(16),
+			last_press: HashMap::new(),
 		}
 	}
 
@@ -85,23 +102,43 @@ impl TextKeyboard {
 		u8::try_from(note).ok().filter(|note| *note <= 127)
 	}
 
-	/// Key pressed (not auto-repeated). Returns the events to send.
+	/// Key pressed; auto-repeat is swallowed (by the held check in release mode, by the cadence
+	/// guard in gate mode). Returns the events to send.
 	pub fn press(&mut self, key_char: char, channel: u8, now: Instant) -> Vec<MidiEvent> {
 		let Some(note) = self.note_for(key_char) else {
 			return Vec::new();
 		};
 		let lower = key_char.to_ascii_lowercase();
+		if matches!(self.mode, NoteOffMode::Gate(_)) {
+			// The anchor moves on every seen press — swallowed ones included — so the ~37 ms
+			// repeat stream never gets further than the guard from its own previous press.
+			let fresh = self
+				.last_press
+				.get(&lower)
+				.is_none_or(|previous| now.saturating_duration_since(*previous) >= GATE_REPEAT_GUARD);
+			self.last_press.insert(lower, now);
+			if !fresh {
+				return Vec::new();
+			}
+		}
+		let mut events = self.flush_expired(now);
 		if let Some(position) = self.held.iter().position(|held| held.key_char == lower) {
+			// flush_expired removed notes whose pending release outlived the window, so a
+			// pending mark left here is auto-repeat: Release+Press of a still held key.
+			if self.held[position].release_pending_at.take().is_some() {
+				return events;
+			}
 			return match self.mode {
-				// Still held: the terminal is auto-repeating.
-				NoteOffMode::Release => Vec::new(),
+				// Still held without a pending release: the terminal is auto-repeating.
+				NoteOffMode::Release => events,
 				// Second press ends the gated note early.
 				NoteOffMode::Gate(_) => {
 					let held = self.held.remove(position);
-					vec![MidiEvent::NoteOff {
+					events.push(MidiEvent::NoteOff {
 						channel: held.channel,
 						key: held.note,
-					}]
+					});
+					events
 				}
 			};
 		}
@@ -114,44 +151,56 @@ impl TextKeyboard {
 			channel,
 			note,
 			off_at,
+			release_pending_at: None,
 		});
-		vec![MidiEvent::NoteOn {
+		events.push(MidiEvent::NoteOn {
 			channel,
 			key: note,
 			velocity: self.velocity,
-		}]
+		});
+		events
 	}
 
-	/// Key released (release mode only; ignored in gate mode).
-	pub fn release(&mut self, key_char: char) -> Vec<MidiEvent> {
+	/// Key released (release mode only; ignored in gate mode). The note off is deferred by
+	/// `RELEASE_DEBOUNCE` so that the terminal's Release+Press auto-repeat pairs do not cut the
+	/// note; `tick` emits the off when the window closes without a press. A second release keeps
+	/// the original mark — only a press cancels it.
+	pub fn release(&mut self, key_char: char, now: Instant) -> Vec<MidiEvent> {
 		if self.mode != NoteOffMode::Release {
 			return Vec::new();
 		}
 		let lower = key_char.to_ascii_lowercase();
-		match self.held.iter().position(|held| held.key_char == lower) {
-			Some(position) => {
-				let held = self.held.remove(position);
-				vec![MidiEvent::NoteOff {
-					channel: held.channel,
-					key: held.note,
-				}]
-			}
-			None => Vec::new(),
+		if let Some(held) = self.held.iter_mut().find(|held| held.key_char == lower)
+			&& held.release_pending_at.is_none()
+		{
+			held.release_pending_at = Some(now);
 		}
+		Vec::new()
 	}
 
-	/// Gate timer: note offs whose time has come.
+	/// Gate timer and release debounce: note offs whose time has come.
 	pub fn tick(&mut self, now: Instant) -> Vec<MidiEvent> {
+		self.flush_expired(now)
+	}
+
+	/// Note offs whose time has come: the gate deadline and the release debounce window.
+	fn flush_expired(&mut self, now: Instant) -> Vec<MidiEvent> {
 		let mut events = Vec::new();
-		self.held.retain(|held| match held.off_at {
-			Some(off_at) if now >= off_at => {
+		self.held.retain(|held| {
+			let gate_expired = matches!(held.off_at, Some(off_at) if now >= off_at);
+			let release_expired = matches!(
+				held.release_pending_at,
+				Some(pending_at) if now.saturating_duration_since(pending_at) >= RELEASE_DEBOUNCE
+			);
+			if gate_expired || release_expired {
 				events.push(MidiEvent::NoteOff {
 					channel: held.channel,
 					key: held.note,
 				});
 				false
+			} else {
+				true
 			}
-			_ => true,
 		});
 		events
 	}
@@ -239,9 +288,10 @@ mod tests {
 	}
 
 	#[test]
-	fn release_mode_sends_note_off_on_release_and_ignores_autorepeat() {
+	fn release_mode_defers_note_off_and_cancels_it_on_autorepeat() {
 		let mut keyboard = release_keyboard();
 		let now = Instant::now();
+		let ms = |value: u64| now + Duration::from_millis(value);
 		assert_eq!(
 			keyboard.press('z', 0, now),
 			vec![MidiEvent::NoteOn {
@@ -250,17 +300,74 @@ mod tests {
 				velocity: 100
 			}]
 		);
-		assert!(keyboard.press('z', 0, now).is_empty(), "auto-repeat");
+		assert!(keyboard.press('z', 0, now).is_empty(), "still held without a pending release");
 		assert!(keyboard.press('Z', 0, now).is_empty(), "shifted repeat of the same key");
 		assert!(keyboard.tick(now + Duration::from_secs(10)).is_empty(), "no gate in release mode");
-		assert_eq!(keyboard.release('z'), vec![MidiEvent::NoteOff { channel: 0, key: 60 }]);
-		assert!(keyboard.release('z').is_empty());
+		// X11 auto-repeat: a Release+Press pair ~2 ms apart — the note-off is cancelled.
+		assert!(keyboard.release('z', ms(570)).is_empty(), "note-off is deferred");
+		assert!(keyboard.press('z', 0, ms(572)).is_empty(), "the pair cancels the pending note-off");
+		assert!(keyboard.tick(ms(580)).is_empty(), "the note keeps sounding");
+		// A real release: the window expires with no press following.
+		assert!(keyboard.release('z', ms(2000)).is_empty());
+		assert!(keyboard.tick(ms(2010)).is_empty(), "still inside the debounce window");
+		assert_eq!(keyboard.tick(ms(2025)), vec![MidiEvent::NoteOff { channel: 0, key: 60 }]);
+		assert_eq!(keyboard.held_count(), 0);
+		assert_eq!(
+			keyboard.press('z', 0, ms(3000)),
+			vec![MidiEvent::NoteOn {
+				channel: 0,
+				key: 60,
+				velocity: 100
+			}],
+			"a later press plays again"
+		);
+	}
+
+	#[test]
+	fn release_mode_repress_past_the_window_flushes_the_old_note_first() {
+		let mut keyboard = release_keyboard();
+		let now = Instant::now();
+		let ms = |value: u64| now + Duration::from_millis(value);
+		keyboard.press('z', 0, now);
+		keyboard.release('z', ms(500));
+		assert_eq!(
+			keyboard.press('z', 0, ms(540)),
+			vec![
+				MidiEvent::NoteOff { channel: 0, key: 60 },
+				MidiEvent::NoteOn {
+					channel: 0,
+					key: 60,
+					velocity: 100
+				}
+			],
+			"a re-press past the window re-attacks: off the old note, on the new"
+		);
+	}
+
+	#[test]
+	fn release_mode_pending_note_off_is_flushed_by_escalation() {
+		let mut keyboard = release_keyboard();
+		let now = Instant::now();
+		let ms = |value: u64| now + Duration::from_millis(value);
+		keyboard.press('z', 0, now);
+		keyboard.press('s', 0, ms(100));
+		keyboard.release('z', ms(200));
+		assert_eq!(
+			keyboard.all_notes_off(),
+			vec![
+				MidiEvent::NoteOff { channel: 0, key: 60 },
+				MidiEvent::NoteOff { channel: 0, key: 61 }
+			],
+			"Esc stops a note whose note-off is still waiting out the window"
+		);
+		assert_eq!(keyboard.held_count(), 0);
 	}
 
 	#[test]
 	fn gate_mode_times_out_or_ends_on_second_press() {
 		let mut keyboard = gate_keyboard();
 		let now = Instant::now();
+		let ms = |value: u64| now + Duration::from_millis(value);
 		assert_eq!(
 			keyboard.press('x', 3, now),
 			vec![MidiEvent::NoteOn {
@@ -269,15 +376,70 @@ mod tests {
 				velocity: 100
 			}]
 		);
-		assert!(keyboard.release('x').is_empty(), "releases are ignored in gate mode");
-		assert!(keyboard.tick(now + Duration::from_millis(299)).is_empty());
+		assert!(keyboard.release('x', now).is_empty(), "releases are ignored in gate mode");
+		assert!(keyboard.tick(ms(299)).is_empty());
 		assert_eq!(keyboard.tick(now + GATE), vec![MidiEvent::NoteOff { channel: 3, key: 62 }]);
 		assert_eq!(keyboard.held_count(), 0);
-		keyboard.press('x', 3, now);
 		assert_eq!(
-			keyboard.press('x', 3, now + Duration::from_millis(50)),
+			keyboard.press('x', 3, ms(450)),
+			vec![MidiEvent::NoteOn {
+				channel: 3,
+				key: 62,
+				velocity: 100
+			}],
+			"a press past the guard plays again"
+		);
+		assert_eq!(
+			keyboard.press('x', 3, ms(600)),
 			vec![MidiEvent::NoteOff { channel: 3, key: 62 }],
 			"second press ends the note"
+		);
+	}
+
+	#[test]
+	fn gate_mode_swallows_a_sustained_autorepeat_but_allows_a_later_repress() {
+		let mut keyboard = gate_keyboard();
+		let now = Instant::now();
+		let ms = |value: u64| now + Duration::from_millis(value);
+		assert_eq!(
+			keyboard.press('z', 0, now),
+			vec![MidiEvent::NoteOn {
+				channel: 0,
+				key: 60,
+				velocity: 100
+			}]
+		);
+		assert_eq!(keyboard.tick(now + GATE), vec![MidiEvent::NoteOff { channel: 0, key: 60 }]);
+		// X11 starts repeating after its initial delay: the first repeat is indistinguishable
+		// from a deliberate re-press and plays…
+		assert_eq!(
+			keyboard.press('z', 0, ms(570)),
+			vec![MidiEvent::NoteOn {
+				channel: 0,
+				key: 60,
+				velocity: 100
+			}]
+		);
+		for offset in (607..=800).step_by(37) {
+			assert!(keyboard.press('z', 0, ms(offset)).is_empty(), "repeat at {offset} ms");
+		}
+		assert_eq!(keyboard.tick(ms(900)), vec![MidiEvent::NoteOff { channel: 0, key: 60 }]);
+		assert_eq!(keyboard.held_count(), 0);
+		// …but the stream after it never passes the guard, gate deadline or not.
+		for offset in (837..=1800).step_by(37) {
+			assert!(
+				keyboard.press('z', 0, ms(offset)).is_empty(),
+				"repeat at {offset} ms after the gate"
+			);
+		}
+		assert_eq!(
+			keyboard.press('z', 0, ms(2000)),
+			vec![MidiEvent::NoteOn {
+				channel: 0,
+				key: 60,
+				velocity: 100
+			}],
+			"the key was really released and pressed again"
 		);
 	}
 
@@ -302,7 +464,7 @@ mod tests {
 		keyboard.press('z', 0, now);
 		keyboard.clear();
 		assert_eq!(keyboard.held_count(), 0);
-		assert!(keyboard.release('z').is_empty());
+		assert!(keyboard.release('z', now).is_empty());
 	}
 
 	#[test]

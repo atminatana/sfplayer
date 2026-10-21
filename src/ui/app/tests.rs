@@ -234,7 +234,13 @@ fn text_keyboard_plays_notes_on_channel_one_and_stops_on_release_or_esc() {
 	);
 	assert_eq!(
 		app.handle_release(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Release)),
-		Some(Request::Notes(vec![MidiEvent::NoteOff { channel: 0, key: 60 }]))
+		None,
+		"the note-off waits out the debounce window"
+	);
+	assert_eq!(
+		app.tick_keyboard(Instant::now() + Duration::from_millis(50)),
+		Some(Request::Notes(vec![MidiEvent::NoteOff { channel: 0, key: 60 }])),
+		"the tick releases it once the window closes"
 	);
 	assert_eq!(
 		app.handle_key(plain(KeyCode::Esc)),

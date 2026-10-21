@@ -104,7 +104,7 @@ sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
 | Linux | `~/.config/sf2_player/config.toml` |
 | macOS | `~/Library/Application Support/sf2_player/config.toml` |
 
-Лог пишется в локальный каталог данных (`%LOCALAPPDATA%\sf2_player\data\sf2_player.log`, `~/.local/share/sf2_player/`, `~/Library/Application Support/sf2_player/`); уровень задаёт `--log-level`.
+Лог пишется в локальный каталог данных (`%LOCALAPPDATA%\sf2_player\data\sf2_player.log`, `~/.local/share/sf2_player/`, `~/Library/Application Support/sf2_player/`); уровень задаёт `--log-level`. При каждом запуске удаляется лог предыдущего запуска, поэтому файл всегда описывает один сеанс.
 
 Все поля необязательны; неизвестные ключи игнорируются.
 

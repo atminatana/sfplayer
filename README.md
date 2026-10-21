@@ -104,7 +104,7 @@ A TOML file is created on the first exit and stores the selected devices, the ba
 | Linux | `~/.config/sf2_player/config.toml` |
 | macOS | `~/Library/Application Support/sf2_player/config.toml` |
 
-The log is written to the local data directory (`%LOCALAPPDATA%\sf2_player\data\sf2_player.log`, `~/.local/share/sf2_player/`, `~/Library/Application Support/sf2_player/`); the level is set by `--log-level`.
+The log is written to the local data directory (`%LOCALAPPDATA%\sf2_player\data\sf2_player.log`, `~/.local/share/sf2_player/`, `~/Library/Application Support/sf2_player/`); the level is set by `--log-level`. Each start removes the previous run's log, so the file always covers a single session.
 
 All fields are optional; unknown keys are ignored.
 

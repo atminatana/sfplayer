@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use anyhow::Context;
@@ -24,6 +25,10 @@ fn main() -> anyhow::Result<()> {
 
 	if cli.list_devices {
 		return print_devices();
+	}
+	// Fail fast before touching config, audio and MIDI: the TUI needs a real terminal on stdin/stdout.
+	if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+		anyhow::bail!("no interactive terminal: launch sf2_player from a terminal emulator (--list-devices works anywhere)");
 	}
 	let config_path = resolve_config_path(&cli)?;
 	let config = match &cli.config {
