@@ -1,6 +1,6 @@
 # PROJECT_MAP — sf2_player
 
-Консольный SoundFont-синтезатор на Rust. ТЗ: `docs/spec/2026-10-20-sf2-player-v1.md`. План: `docs/plans/2026-10-20-sf2-player-v1.md`. Архитектурные решения и их обоснования: `docs/adr/README.md`.
+Консольный SoundFont-синтезатор на Rust. ТЗ: `docs/spec/2026-10-20-sf2-player-v1.md` (v1.0) и `docs/spec/2026-10-21-ui-redesign.md` (v1.1 — главный экран, F5/F6/F7, Home/End; меняет §6, F-06, F-20, выводит F-08). Планы: `docs/plans/2026-10-20-sf2-player-v1.md`, `docs/plans/2026-10-21-ui-redesign.md`. Архитектурные решения и их обоснования: `docs/adr/README.md`.
 
 ## Структура
 
@@ -8,16 +8,16 @@
 |------|-----------|--------|
 | `src/lib.rs` | Корень библиотеки: объявляет модули для бинарника и тестов | шаг 1.2 |
 | `src/main.rs` | Запуск: CLI → конфиг → `Settings` → локаль → `Session` → TUI; `--list-devices` | шаг 3.1 |
-| `src/session.rs` | `Session`: аудиопоток и его смена, кольца, MIDI, hot-plug, банк, пресеты каналов, `save_config`, `Notice`; применение запросов (микшер → гейн/CC7, эффекты, пресеты, panic, ноты, транспонирование) — `session/control.rs` | шаг 5.2 |
+| `src/session.rs` | `Session`: аудиопоток и его смена, кольца, MIDI, hot-plug, банк, глобальный пресет (ADR 0011), запись (`start_recording`/`stop_recording`, `record_dir`), `save_config`, `Notice`; применение запросов (мастер → гейн, эффекты `EffectsSettings`, пресет на все каналы кроме 10, panic, ноты, транспонирование, настройки записи) — `session/control.rs` | v1.1 шаг 4 |
 | `src/cli.rs` | Аргументы командной строки (ТЗ §5), `DeviceSelector` имя/индекс + `find` | шаг 1.1, 1.5 |
 | `src/logging.rs` | `tracing` в файл в локальном каталоге данных ОС (N-07) | шаг 1.1 |
 | `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` с флагом эффектов (rusty.rs) (ADR 0001) | шаг 5.1 |
-| `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs), `HotplugWatcher` + `MidiStatus` (hotplug.rs), `MonitorEntry` + имена нот (monitor.rs) | шаг 1.3–4.1 |
-| `src/audio/` | `AudioShared` атомики: гейн, xrun, уровни, клипы (shared.rs), `measure` peak/RMS/клипы (meter.rs), `Mixer` мастер/каналы/mute/solo (mixer.rs), `BlockRenderer` + `Command` ядро коллбэка с учётом нот, нагрузки, транспонирования и omni (render.rs, тесты в render/tests.rs), устройства и `select_output_device` с fallback, пропуск устройств с нечитаемой конфигурацией (device.rs), `open_output_stream` (stream.rs) и тексты ошибок открытия с причиной (mod.rs) (ADR 0002); | шаг 4.3 |
+| `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs), `HotplugWatcher` + `MidiStatus` (hotplug.rs); монитор MIDI удалён в v1.1 (ADR 0010) | v1.1 шаг 4 |
+| `src/audio/` | `AudioShared` атомики: гейн, xrun, уровни, клипы (shared.rs), `measure` peak/RMS/клипы (meter.rs), `Mixer` мастер с mute (mixer.rs; полосы каналов удалены в v1.1, ADR 0010), `BlockRenderer` + `Command` ядро коллбэка с учётом нот, нагрузки, транспонирования и omni (render.rs, тесты в render/tests.rs), устройства и `select_output_device` с fallback, пропуск устройств с нечитаемой конфигурацией (device.rs), `open_output_stream` (stream.rs) и тексты ошибок открытия с причиной (mod.rs) (ADR 0002); | шаг 4.3 |
 | `src/config.rs` | `Config` (все секции, ADR 0007), load/save, `Settings::resolve` CLI > конфиг > умолчания, `project_dirs` | шаг 2.1 |
-| `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil` (тесты в `app/tests.rs`), `screen.rs` `View` + экран (тесты в `screen/tests.rs`), `monitor.rs` буфер монитора, `meter.rs` CLIP-удержание и полосы, `text_keyboard.rs` ноты с клавиатуры (release/gate), `modals.rs` отрисовка модальных окон, `selector.rs` модальный список, `dialog.rs` диалоги F2/F3/F5/F6, `path_input.rs` поле пути F4, `keys.rs` таблица умолчаний + `Bindings` из конфига + справка (тесты в `keys/tests.rs`), `glyphs.rs` Unicode/ASCII-глифы, `i18n.rs` локаль (ADR 0004, 0008, 0009) | шаг 3.5 |
+| `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil` (тесты в `app/tests.rs`), `screen.rs` `View` + экран v1.1: список `[F1]…[F7]`, строка сообщений, микшер, статус в нижней рамке (тесты в `screen/tests.rs`), `meter.rs` CLIP-удержание и полосы, `text_keyboard.rs` ноты с клавиатуры (release/gate), `modals.rs` отрисовка модальных окон, `selector.rs` модальный список, `dialog.rs` селекторы F2/F3/F5, `effects_dialog.rs` диалог F6, `record_dialog.rs` диалог F7 (каталог + формат), `path_input.rs` поле пути F4, `keys.rs` таблица умолчаний + `Bindings` из конфига + справка (тесты в `keys/tests.rs`), `glyphs.rs` Unicode/ASCII-глифы, `i18n.rs` локаль (ADR 0004, 0008, 0009, 0010) | v1.1 шаг 4 |
 | `src/record/` | `Recorder` поток + кольцо, `flac.rs` потоковый FLAC 24 бит, `vorbis.rs` Ogg Vorbis (ADR 0005) | шаг 5.3 |
-| `locales/app.yml` | Словарь rust-i18n v2, en и ru рядом для каждого ключа | шаг 3.1 |
+| `locales/app.yml` | Словарь rust-i18n v2, en и ru рядом для каждого ключа | v1.1 шаг 4 |
 | `tests/i18n_completeness.rs` | Полнота словаря: обе локали, все ключи из кода существуют, нет кириллицы в коде | шаг 5.5 |
 | `tests/readme_keys.rs` | README.md (en) и README.ru.md (ru): таблицы клавиш совпадают с `Bindings::help_rows` | шаг 6.3 |
 | `README.md`, `README.ru.md` | Установка, запуск, клавиши, конфиг, запись, задержка, лицензия — английская и русская версии с взаимными ссылками (конвенция GitHub) | шаг 6.3 |
@@ -56,13 +56,19 @@
 - Этап 6, шаг 6.3: README с генерируемой таблицей клавиш и тестом синхронизации.
 - Этап 6, шаг 6.4: верификация по ТЗ (`docs/verify/`), актуализация документов. План v1.0 выполнен.
 - После плана: README разделён на `README.md` (en) и `README.ru.md` (ru); тест `readme_keys` проверяет обе таблицы клавиш; оба файла попадают в релизные архивы.
+- v1.1, шаг 1: диалог эффектов F6 (вкл/выкл, уровни ±5, Esc — откат, Enter — сохранить), F7 → диалог записи, Home/End — старт/стоп записи.
+- v1.1, шаг 2: диалог записи F7 — поле каталога (дополнение только каталогов, пусто = каталог музыки ОС) и формат; индикатор `● ЗАП` мигает раз в секунду.
+- v1.1, шаг 3: пресет F5 для всех каналов, кроме 10 (ADR 0011); `synth.preset = [bank, program]` в конфиге, восстановление для того же банка.
+- v1.1, шаг 4: главный экран — список настроек с ошибками в своих строках, микшер L/R + мастер, статус в нижней рамке постоянной ширины (ADR 0010); монитор MIDI, фокус панелей, полосы каналов и их клавиши удалены.
+- v1.1, шаг 5: README ×2, PROJECT_MAP, AGENTS.md, верификация `docs/verify/2026-10-21-ui-redesign.md`. План v1.1 выполнен.
 
 ## Дальше (открытые пункты для владельца)
 
 - Живая приёмка на оборудовании: MIDI-клавиатура (звук, hot-plug), замер задержки N-02, 10 минут без xrun, Linux и macOS.
 - Первый прогон CI на GitHub; публикация релиза по тегу `v*`.
 - Решения: зависимость `option-ext` (MPL-2.0); клавиши эффектов и omni; смысл «voices»; держатель прав в лицензиях.
-- Бэклог ТЗ: F-17 собственный движок за `SynthEngine`, F-18 SF3 через feature `synth-oxi`.
+- Живая проверка экрана v1.1 в терминале (диалоги F6/F7, запись Home/End, цвета строк) — снэпшоты есть, живой прогон не выполнялся.
+- Бэклог ТЗ: F-17 собственный движок за `SynthEngine`, F-18 SF3 через feature `synth-oxi`; монитор MIDI (F-08) и полосы каналов — выведены в v1.1, возврат отдельной задачей (ADR 0010).
 
 ## Проверка
 
