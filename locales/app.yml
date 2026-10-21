@@ -106,8 +106,20 @@ dialog.preset_title:
   en: "Preset (channel %{channel})"
   ru: "Пресет (канал %{channel})"
 dialog.record_title:
-  en: "Recording format"
-  ru: "Формат записи"
+  en: "Recording"
+  ru: "Запись"
+dialog.record_dir:
+  en: "Folder:"
+  ru: "Каталог:"
+dialog.record_dir_default:
+  en: "(empty: Music folder/sf2_player)"
+  ru: "(пусто: папка «Музыка»/sf2_player)"
+dialog.record_format:
+  en: "Format:"
+  ru: "Формат:"
+dialog.record_hint:
+  en: "↑↓ field · Tab complete · ←→ format · Enter save · Esc cancel"
+  ru: "↑↓ — поле · Tab — дополнить · ←→ — формат · Enter — сохранить · Esc — отмена"
 dialog.filter:
   en: "Filter:"
   ru: "Фильтр:"
@@ -188,8 +200,8 @@ help.action.effects_dialog:
   en: "Effects: reverb / chorus on, off and send levels"
   ru: "Эффекты: реверб и хорус — вкл/выкл и уровни посыла"
 help.action.record_dialog:
-  en: "Recording settings: format"
-  ru: "Настройки записи: формат"
+  en: "Recording settings: folder and format"
+  ru: "Настройки записи: каталог и формат"
 help.action.record_start:
   en: "Start recording"
   ru: "Начать запись"

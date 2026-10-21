@@ -30,3 +30,28 @@
 - Диалог F7 на этом шаге — только формат (селектор v1); каталог записи — шаг 2.
 - `Session::apply_effects(Set)` не покрыт тестом с живой сессией (нужны устройства cpal); покрыты `EffectsSettings` и путь UI → `Request`.
 - Подсказка в строке статуса «Home/End rec» временная — строка подсказок исчезает на шаге 4.
+
+## Шаг 2 — диалог записи F7: каталог и формат, мигающий индикатор (2026-10-21)
+
+**Сделано**
+
+- `src/ui/record_dialog.rs` (новый): поле каталога на `PathInput` без списка недавних (Tab дополняет только каталоги), строка формата; ↑↓ — фокус, ←→/Space на строке формата — переключение FLAC ↔ Ogg Vorbis, Enter → `Accepted { dir, format }` (`dir = None` при пустом поле), Esc → `Cancelled`; вставка из терминала всегда идёт в поле.
+- `src/ui/dialog.rs`: селектор формата v1 удалён (`DialogKind::RecordFormat`, `Dialog::record_format`, `RECORD_FORMATS`, `Choice::SetRecordFormat`); добавлен `Choice::SetRecording { dir, format }`.
+- `src/session/control.rs`: `set_record_format` → `set_recording(dir, format)`.
+- `src/ui/app.rs`: `Modal::Record`, `Request::OpenRecordDialog`; Enter в диалоге → `Apply(SetRecording)` → конфиг + `save_config`; `handle_paste` обслуживает и диалог записи.
+- `src/ui/modals.rs`: `render_record_dialog` — «Folder:» с курсором (серая подсказка при пустом поле), «Format: (●) FLAC   ( ) Ogg Vorbis» (инверсия при фокусе), описание формата из v1, подсказка.
+- `src/ui/screen.rs`: `record_blink` — точка индикатора горит чётные полупериоды по времени записи (период 1 с), в тёмной фазе — пробел той же ширины.
+- `locales/app.yml`: `dialog.record_title` → «Recording/Запись», новые `dialog.record_dir|record_dir_default|record_format|record_hint`; `help.action.record_dialog` → «каталог и формат».
+- README.md / README.ru.md: раздел «Запись» (каталог в F7, мигающий индикатор), таблицы клавиш перегенерированы.
+
+**COMPLETENESS** — ТЗ §4.3: диалог (код + 3 unit-теста состояния + тест потока в `app` + снэпшот en/ru), сохранение в конфиг (`SetRecording` → `set_recording` + `save_config`), мигание (код + тест фаз и постоянной ширины). Создание каталога при старте записи — существующий `create_dir_all` в `start_recording`.
+
+**CORRECTNESS** — Home внутри диалога двигает курсор поля, а не запускает запись (диалог получает клавиши первым — тест); пустое поле даёт `None`, что сохраняет поведение «каталог музыки ОС»; дополнение по Tab не предлагает файлы; фаза мигания: 0–499 мс горит, 500–999 мс темно, 1000 мс снова горит.
+
+**EVIDENCE** — `cargo fmt --check` ok; `cargo clippy --all-targets -- -D warnings` чисто; `cargo test`: 182 unit + 3 i18n + 2 readme = 187 passed, 0 failed. LOC: record_dialog.rs 193, modals.rs 341, dialog.rs 201, screen.rs 454, **app.rs 508** — порог 500 превышен на 8 строк двумя ветками `Modal::Record`; файл остаётся одним циклом событий + диспетчером запросов; шаг 4 удаляет из него фокус панелей и монитор (≈ 40 строк), после чего порог соблюдён — при невыполнении будет выделен обработчик модальных окон.
+
+**⚠ WARNINGS**
+
+- `app.rs` 508 LOC > 500 (см. EVIDENCE) — закрывается на шаге 4.
+- Тест блинка первой версии был написан с неверной фазой (999 мс ожидалась горящей); исправлен тест, не код: по ТЗ период 1 с — 0–499 горит, 500–999 темно.
+- Ошибка создания каталога записи пока показывается в строке статуса (notice), как в v1; перенос в строку F7 — шаг 4.

@@ -10,6 +10,7 @@ pub mod meter;
 pub mod modals;
 pub mod monitor;
 pub mod path_input;
+pub mod record_dialog;
 pub mod screen;
 pub mod selector;
 pub mod text_keyboard;

@@ -75,11 +75,35 @@ fn function_keys_request_dialogs_and_rescan() {
 	assert_eq!(app.handle_key(plain(KeyCode::F(4))), Some(Request::OpenSf2Dialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(5))), Some(Request::OpenDialog(DialogKind::Preset)));
 	assert_eq!(app.handle_key(plain(KeyCode::F(6))), Some(Request::OpenEffectsDialog));
-	assert_eq!(
-		app.handle_key(plain(KeyCode::F(7))),
-		Some(Request::OpenDialog(DialogKind::RecordFormat))
-	);
+	assert_eq!(app.handle_key(plain(KeyCode::F(7))), Some(Request::OpenRecordDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(8))), Some(Request::Rescan));
+}
+
+#[test]
+fn f7_dialog_takes_paste_into_the_folder_and_reports_folder_and_format_on_enter() {
+	use crate::config::RecordFormat;
+	use crate::ui::record_dialog::RecordDialog;
+	let mut app = App::new("en");
+	app.open_modal(Modal::Record(RecordDialog::new(None, RecordFormat::Flac, 0.5)));
+	app.handle_paste("D:/takes");
+	assert_eq!(
+		app.handle_key(plain(KeyCode::Home)),
+		None,
+		"Home edits the field, no recording starts"
+	);
+	app.handle_key(plain(KeyCode::Down));
+	app.handle_key(plain(KeyCode::Right));
+	assert_eq!(
+		app.handle_key(plain(KeyCode::Enter)),
+		Some(Request::Apply(Choice::SetRecording {
+			dir: Some(PathBuf::from("D:/takes")),
+			format: RecordFormat::OggVorbis
+		}))
+	);
+	assert!(app.modal.is_none());
+	app.open_modal(Modal::Record(RecordDialog::new(None, RecordFormat::Flac, 0.5)));
+	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None);
+	assert!(app.modal.is_none());
 }
 
 #[test]

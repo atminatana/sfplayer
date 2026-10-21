@@ -1,6 +1,8 @@
 //! Applying UI requests to the running session: mixer, effects, presets, panic, text-keyboard notes.
 //! Mechanically split from `session.rs`; everything here talks to the audio thread through the command ring.
 
+use std::path::PathBuf;
+
 use ringbuf::HeapProd;
 use ringbuf::traits::Producer;
 
@@ -164,7 +166,9 @@ impl Session {
 		self.shared.omni_channel()
 	}
 
-	pub fn set_record_format(&mut self, format: RecordFormat) {
+	/// F7 dialog result: `None` folder means the OS music directory (spec v1.1 §4.3).
+	pub fn set_recording(&mut self, dir: Option<PathBuf>, format: RecordFormat) {
+		self.config.record.dir = dir;
 		self.config.record.format = format;
 	}
 

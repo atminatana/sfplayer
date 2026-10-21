@@ -126,6 +126,7 @@ pub fn render(frame: &mut Frame, app: &App, view: &View) {
 		Some(Modal::Select(dialog)) => modals::render_dialog(frame, area, dialog, &app.glyphs, locale, view.channel),
 		Some(Modal::Sf2Path(input)) => modals::render_path_dialog(frame, area, input, locale),
 		Some(Modal::Effects(dialog)) => modals::render_effects_dialog(frame, area, dialog, locale),
+		Some(Modal::Record(dialog)) => modals::render_record_dialog(frame, area, dialog, &app.glyphs, locale),
 		Some(Modal::Help(scroll)) => modals::render_help(frame, area, &app.bindings, *scroll, locale),
 		Some(Modal::ConfirmQuit) => modals::render_confirm_quit(frame, area, locale),
 		None => {}
@@ -331,7 +332,7 @@ fn render_status(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &
 		Span::styled(
 			format!(
 				"{} {} ",
-				app.glyphs.dot,
+				record_blink(elapsed, &app.glyphs),
 				t!(
 					"status.rec",
 					locale = locale,
@@ -376,6 +377,18 @@ fn render_status(frame: &mut Frame, area: Rect, app: &App, locale: &str, view: &
 		.collect::<Vec<_>>()
 		.join(" ");
 	frame.render_widget(Paragraph::new(vec![first, Line::from(hints)]), inner);
+}
+
+/// Half of the blink period of the recording dot (spec v1.1 §4.3: period 1 s).
+const RECORD_BLINK_HALF_PERIOD_MS: u128 = 500;
+
+/// The recording dot, lit on even half-periods of the take's elapsed time; a space keeps the width constant.
+pub(super) fn record_blink(elapsed: std::time::Duration, glyphs: &Glyphs) -> &'static str {
+	if (elapsed.as_millis() / RECORD_BLINK_HALF_PERIOD_MS).is_multiple_of(2) {
+		glyphs.dot
+	} else {
+		" "
+	}
 }
 
 /// "kbd: gate 300ms  oct 4 vel 100" — note-off mode, octave and velocity of the text keyboard (F-16).

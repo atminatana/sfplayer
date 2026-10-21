@@ -54,7 +54,7 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | F4 | Open SoundFont file |
 | F5 | Choose preset for the current channel |
 | F6 | Effects: reverb / chorus on, off and send levels |
-| F7 | Recording settings: format |
+| F7 | Recording settings: folder and format |
 | Home | Start recording |
 | End | Stop recording |
 | F8 | Rescan MIDI ports |
@@ -170,7 +170,7 @@ Command names for `[keys]`: `help`, `quit`, `focus_next`, `focus_previous`, `mid
 
 ## Recording
 
-F7 opens the recording settings (format), Home starts and End stops recording. The file `YYYY-MM-DD_HH-MM-SS.flac` or `.ogg` appears in `record.dir` (by default the Music folder/sf2_player). FLAC is lossless 24-bit; Ogg Vorbis uses the `record.vorbis_quality` setting. Encoding runs in a separate thread; the audio callback only copies samples into a ring buffer, and an overflow is shown in the status line as `rec lost N`. Quitting while recording asks for confirmation.
+F7 opens the recording settings: the folder (Tab completes directory names; empty = the default folder) and the format. Home starts and End stops recording; the red `● REC mm:ss` indicator blinks once a second while a take runs. The file `YYYY-MM-DD_HH-MM-SS.flac` or `.ogg` appears in `record.dir` (by default the Music folder/sf2_player). FLAC is lossless 24-bit; Ogg Vorbis uses the `record.vorbis_quality` setting. Encoding runs in a separate thread; the audio callback only copies samples into a ring buffer, and an overflow is shown in the status line as `rec lost N`. Quitting while recording asks for confirmation.
 
 ## Indicators
 

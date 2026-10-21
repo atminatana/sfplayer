@@ -16,6 +16,7 @@ use super::keys::{Action, Bindings};
 use super::meter::ClipHold;
 use super::monitor::Monitor;
 use super::path_input::{self, PathInput, PathOutcome};
+use super::record_dialog::{RecordDialog, RecordOutcome};
 use super::screen;
 use super::selector::SelectorOutcome;
 use super::text_keyboard::{NoteOffMode, TextKeyboard};
@@ -51,6 +52,7 @@ pub enum Request {
 	OpenDialog(DialogKind),
 	OpenSf2Dialog,
 	OpenEffectsDialog,
+	OpenRecordDialog,
 	Apply(Choice),
 	LoadBank(PathBuf),
 	Rescan,
@@ -75,6 +77,7 @@ pub enum Modal {
 	Select(Dialog),
 	Sf2Path(PathInput),
 	Effects(EffectsDialog),
+	Record(RecordDialog),
 	/// F1: scroll offset in rows.
 	Help(usize),
 	/// F10 / Ctrl+C while recording (spec §6): Enter stops and quits, Esc stays.
@@ -166,7 +169,7 @@ impl App {
 			Action::Sf2Dialog => Some(Request::OpenSf2Dialog),
 			Action::PresetDialog => Some(Request::OpenDialog(DialogKind::Preset)),
 			Action::EffectsDialog => Some(Request::OpenEffectsDialog),
-			Action::RecordDialog => Some(Request::OpenDialog(DialogKind::RecordFormat)),
+			Action::RecordDialog => Some(Request::OpenRecordDialog),
 			Action::Rescan => Some(Request::Rescan),
 			Action::RecordStart => Some(Request::StartRecord),
 			Action::RecordStop => Some(Request::StopRecord),
@@ -324,6 +327,17 @@ impl App {
 					rollback.map(|settings| Request::Effects(EffectsAction::Set(settings)))
 				}
 			},
+			Modal::Record(dialog) => match dialog.handle_key(key, path_input::list_dir) {
+				RecordOutcome::Pending => None,
+				RecordOutcome::Cancelled => {
+					self.modal = None;
+					None
+				}
+				RecordOutcome::Accepted { dir, format } => {
+					self.modal = None;
+					Some(Request::Apply(Choice::SetRecording { dir, format }))
+				}
+			},
 			Modal::Sf2Path(input) => match input.handle_key(key, path_input::list_dir) {
 				PathOutcome::Pending => None,
 				PathOutcome::Cancelled => {
@@ -338,10 +352,12 @@ impl App {
 
 	/// Terminal paste (bracketed paste) goes into the path field; elsewhere it is ignored.
 	pub fn handle_paste(&mut self, text: &str) {
-		if let Some(Modal::Sf2Path(input)) = self.modal.as_mut() {
-			input.insert_str(text);
-			self.dirty = true;
+		match self.modal.as_mut() {
+			Some(Modal::Sf2Path(input)) => input.insert_str(text),
+			Some(Modal::Record(dialog)) => dialog.insert_str(text),
+			_ => return,
 		}
+		self.dirty = true;
 	}
 
 	pub fn open_modal(&mut self, modal: Modal) {
@@ -385,13 +401,11 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 				app.open_dialog(Dialog::preset(loaded.bank.presets(), session.preset_for(channel)));
 			}
 		}
-		Request::OpenDialog(DialogKind::RecordFormat) => {
-			app.open_dialog(Dialog::record_format(
-				session.config.record.format,
-				session.config.record.vorbis_quality,
-				app.locale,
-			));
-		}
+		Request::OpenRecordDialog => app.open_modal(Modal::Record(RecordDialog::new(
+			session.config.record.dir.as_deref(),
+			session.config.record.format,
+			session.config.record.vorbis_quality,
+		))),
 		Request::OpenEffectsDialog => app.open_modal(Modal::Effects(EffectsDialog::new(session.effects()))),
 		Request::OpenSf2Dialog => {
 			let initial = session
@@ -413,8 +427,8 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 			let channel = session.current_channel;
 			session.select_preset(channel, bank, program);
 		}
-		Request::Apply(Choice::SetRecordFormat(format)) => {
-			session.set_record_format(format);
+		Request::Apply(Choice::SetRecording { dir, format }) => {
+			session.set_recording(dir, format);
 			session.save_config();
 		}
 		Request::LoadBank(path) => match session.load_bank(&path) {

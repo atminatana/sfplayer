@@ -12,7 +12,9 @@ use super::effects_dialog::{EffectRow, EffectsDialog};
 use super::glyphs::Glyphs;
 use super::keys::Bindings;
 use super::path_input::PathInput;
+use super::record_dialog::{RECORD_FORMATS, RecordDialog, RecordField};
 use super::screen::{label, padded};
+use crate::config::RecordFormat;
 
 /// Rows of the list visible at once in a dialog.
 const DIALOG_LIST_ROWS: u16 = 10;
@@ -193,6 +195,82 @@ pub(super) fn render_effects_dialog(frame: &mut Frame, screen: Rect, dialog: &Ef
 		)),
 	];
 	frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// F7 (spec v1.1 §4.3): folder field with cursor, format radio row, description of the chosen format.
+pub(super) fn render_record_dialog(frame: &mut Frame, screen: Rect, dialog: &RecordDialog, glyphs: &Glyphs, locale: &str) {
+	let width = screen.width.saturating_sub(8).clamp(40, 76);
+	let height = 8.min(screen.height);
+	let area = Rect {
+		x: screen.x + (screen.width - width) / 2,
+		y: screen.y + (screen.height - height) / 2,
+		width,
+		height,
+	};
+	frame.render_widget(Clear, area);
+	let block = Block::default()
+		.borders(Borders::ALL)
+		.border_style(Style::default().fg(Color::Cyan))
+		.title(padded(&t!("dialog.record_title", locale = locale)));
+	let inner = block.inner(area);
+	frame.render_widget(block, area);
+
+	let field_label = t!("dialog.record_dir", locale = locale);
+	let field = dialog.directory();
+	let field_text = if field.text().is_empty() {
+		Span::styled(
+			format!(" {}", t!("dialog.record_dir_default", locale = locale)),
+			Style::default().fg(Color::DarkGray),
+		)
+	} else {
+		Span::raw(format!(" {}", field.text()))
+	};
+	let radios = RECORD_FORMATS
+		.iter()
+		.map(|format| {
+			let mark = if *format == dialog.format() { glyphs.dot } else { " " };
+			format!("({mark}) {}", format_name(*format))
+		})
+		.collect::<Vec<_>>()
+		.join("   ");
+	let format_style = if dialog.focus() == RecordField::Format {
+		Style::default().add_modifier(Modifier::REVERSED)
+	} else {
+		Style::default()
+	};
+	let description = match dialog.format() {
+		RecordFormat::Flac => t!("dialog.record_flac", locale = locale).into_owned(),
+		RecordFormat::OggVorbis => t!("dialog.record_vorbis", locale = locale, quality = dialog.vorbis_quality()).into_owned(),
+	};
+	let lines = vec![
+		Line::from(vec![label(field_label.clone()), field_text]),
+		Line::from(""),
+		Line::from(vec![
+			label(t!("dialog.record_format", locale = locale)),
+			Span::raw(" "),
+			Span::styled(radios, format_style),
+		]),
+		Line::from(Span::styled(description, Style::default().fg(Color::Gray))),
+		Line::from(""),
+		Line::from(Span::styled(
+			t!("dialog.record_hint", locale = locale).into_owned(),
+			Style::default().fg(Color::DarkGray),
+		)),
+	];
+	frame.render_widget(Paragraph::new(lines), inner);
+
+	if dialog.focus() == RecordField::Directory {
+		let cursor_x = inner.x + u16::try_from(field_label.chars().count() + 1 + field.cursor()).unwrap_or(u16::MAX);
+		frame.set_cursor_position((cursor_x.min(inner.x + inner.width.saturating_sub(1)), inner.y));
+	}
+}
+
+/// Format names are proper nouns, the same in every language.
+fn format_name(format: RecordFormat) -> &'static str {
+	match format {
+		RecordFormat::Flac => "FLAC",
+		RecordFormat::OggVorbis => "Ogg Vorbis",
+	}
 }
 
 /// Spec §6: quitting while a recording runs asks first. Enter stops the take and quits, Esc stays.

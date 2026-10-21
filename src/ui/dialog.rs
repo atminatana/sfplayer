@@ -1,4 +1,6 @@
-//! The modal dialogs built on `Selector` (spec F-01, F-03, F-06, F-20 format) and what a choice means.
+//! The modal dialogs built on `Selector` (spec F-01, F-03, F-06) and what a choice means.
+
+use std::path::PathBuf;
 
 use rust_i18n::t;
 
@@ -13,7 +15,6 @@ pub enum DialogKind {
 	MidiInput,
 	AudioOutput,
 	Preset,
-	RecordFormat,
 }
 
 impl DialogKind {
@@ -22,7 +23,6 @@ impl DialogKind {
 			Self::MidiInput => "dialog.midi_title",
 			Self::AudioOutput => "dialog.audio_title",
 			Self::Preset => "dialog.preset_title",
-			Self::RecordFormat => "dialog.record_title",
 		}
 	}
 }
@@ -40,19 +40,23 @@ enum Choices {
 	MidiPorts(Vec<usize>),
 	AudioDevices(Vec<usize>),
 	Presets(Vec<(u16, u8)>),
-	RecordFormats(Vec<RecordFormat>),
 }
 
-/// What the UI asks the session to do after a dialog closes with Enter.
+/// What the UI asks the session to do after a dialog closes with Enter (the F7 dialog reports here too).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Choice {
 	ConnectMidi(usize),
 	OpenAudio(usize),
-	SelectPreset { bank: u16, program: u8 },
-	SetRecordFormat(RecordFormat),
+	SelectPreset {
+		bank: u16,
+		program: u8,
+	},
+	/// `dir` `None` = the OS music folder (spec v1.1 §4.3).
+	SetRecording {
+		dir: Option<PathBuf>,
+		format: RecordFormat,
+	},
 }
-
-pub const RECORD_FORMATS: [RecordFormat; 2] = [RecordFormat::Flac, RecordFormat::OggVorbis];
 
 impl Dialog {
 	pub fn midi(ports: &[MidiPortInfo], connected: Option<&str>) -> Self {
@@ -110,28 +114,6 @@ impl Dialog {
 		}
 	}
 
-	pub fn record_format(current: RecordFormat, vorbis_quality: f32, locale: &str) -> Self {
-		let items = RECORD_FORMATS
-			.iter()
-			.map(|format| match format {
-				RecordFormat::Flac => SelectorItem {
-					label: "FLAC".to_owned(),
-					detail: Some(t!("dialog.record_flac", locale = locale).into_owned()),
-				},
-				RecordFormat::OggVorbis => SelectorItem {
-					label: "Ogg Vorbis".to_owned(),
-					detail: Some(t!("dialog.record_vorbis", locale = locale, quality = format!("{vorbis_quality:.1}")).into_owned()),
-				},
-			})
-			.collect();
-		let current = RECORD_FORMATS.iter().position(|format| *format == current);
-		Self {
-			kind: DialogKind::RecordFormat,
-			selector: Selector::new(items, current),
-			choices: Choices::RecordFormats(RECORD_FORMATS.to_vec()),
-		}
-	}
-
 	/// Translates the chosen row (original index) into a request.
 	pub fn choice(&self, row: usize) -> Option<Choice> {
 		match &self.choices {
@@ -141,7 +123,6 @@ impl Dialog {
 				bank: *bank,
 				program: *program,
 			}),
-			Choices::RecordFormats(formats) => formats.get(row).map(|format| Choice::SetRecordFormat(*format)),
 		}
 	}
 }
@@ -216,14 +197,5 @@ mod tests {
 		assert_eq!(dialog.selector.item(0).label, "000:000 Grand Piano");
 		assert_eq!(dialog.selector.current(), Some(1));
 		assert_eq!(dialog.choice(1), Some(Choice::SelectPreset { bank: 128, program: 0 }));
-	}
-
-	#[test]
-	fn record_dialog_lists_both_formats_with_descriptions() {
-		let dialog = Dialog::record_format(RecordFormat::OggVorbis, 0.5, "en");
-		assert_eq!(dialog.selector.current(), Some(1));
-		assert!(dialog.selector.item(0).detail.as_deref().unwrap().contains("lossless"));
-		assert!(dialog.selector.item(1).detail.as_deref().unwrap().contains("0.5"));
-		assert_eq!(dialog.choice(0), Some(Choice::SetRecordFormat(RecordFormat::Flac)));
 	}
 }

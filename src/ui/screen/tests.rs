@@ -438,6 +438,57 @@ fn recording_indicator_and_quit_confirmation() {
 }
 
 #[test]
+fn recording_dot_blinks_with_a_one_second_period_without_changing_the_width() {
+	let mut app = App::new("en");
+	app.recording = Some(std::time::Duration::from_millis(72_000));
+	let lit = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&lit, "● REC 01:12 voices"), "{lit:#?}");
+	app.recording = Some(std::time::Duration::from_millis(72_600));
+	let dark = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&dark, "  REC 01:12 voices"), "{dark:#?}");
+	assert_eq!(
+		lit.iter().position(|line| line.contains("REC 01:12")),
+		dark.iter().position(|line| line.contains("REC 01:12"))
+	);
+	assert_eq!(record_blink(std::time::Duration::from_millis(499), &app.glyphs), "●");
+	assert_eq!(record_blink(std::time::Duration::from_millis(500), &app.glyphs), " ");
+	assert_eq!(
+		record_blink(std::time::Duration::from_millis(1_000), &app.glyphs),
+		"●",
+		"period is one second"
+	);
+}
+
+#[test]
+fn record_dialog_overlay_shows_folder_format_radio_and_description() {
+	use crate::config::RecordFormat;
+	use crate::ui::record_dialog::RecordDialog;
+	let mut app = App::new("en");
+	app.open_modal(Modal::Record(RecordDialog::new(None, RecordFormat::Flac, 0.5)));
+	let lines = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&lines, " Recording "));
+	assert!(contains(&lines, "Folder: (empty: Music folder/sf2_player)"), "{lines:#?}");
+	assert!(contains(&lines, "Format: (●) FLAC   ( ) Ogg Vorbis"));
+	assert!(contains(&lines, "lossless, about 3–5 MB/min"));
+	assert!(contains(&lines, "Tab complete"));
+	let mut dialog = RecordDialog::new(Some(std::path::Path::new("D:/takes")), RecordFormat::OggVorbis, 0.5);
+	dialog.handle_key(
+		ratatui::crossterm::event::KeyEvent::new(
+			ratatui::crossterm::event::KeyCode::Down,
+			ratatui::crossterm::event::KeyModifiers::NONE,
+		),
+		|_| Vec::new(),
+	);
+	let mut app = App::new("ru");
+	app.open_modal(Modal::Record(dialog));
+	let lines = draw_app(&app, &view(), 80, 24);
+	assert!(contains(&lines, " Запись "));
+	assert!(contains(&lines, "Каталог: D:/takes"));
+	assert!(contains(&lines, "Формат: ( ) FLAC   (●) Ogg Vorbis"));
+	assert!(contains(&lines, "качество 0.5"));
+}
+
+#[test]
 fn ascii_mode_replaces_block_glyphs() {
 	let mut app = App::new("en");
 	app.glyphs = crate::ui::glyphs::Glyphs::ASCII;

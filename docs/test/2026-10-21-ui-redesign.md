@@ -26,3 +26,22 @@
 **Результат** — 177 unit + 3 i18n + 2 readme = 182 passed, 0 failed; unit-прогон 0.80 s.
 
 **Ограничения** — применение `EffectsAction::Set` к живой сессии (пересоздание движка / CC 91, 93) не покрыто: `Session` требует устройств cpal; путь проверен до границы `Request` и в `EffectsSettings`.
+
+## Шаг 2 (2026-10-21)
+
+**Состав**
+
+| Тест | Файл | Что проверяет |
+|------|------|---------------|
+| `enter_reports_the_folder_or_none_when_empty_and_esc_cancels` | `ui/record_dialog.rs` | пустое поле → `dir: None`, текст → `Some(path)`, формат из состояния, Esc |
+| `arrows_move_the_focus_and_switch_the_format_only_on_the_format_row` | `ui/record_dialog.rs` | ↑↓ фокус; ←→/Space меняют формат только на строке формата; набор текста на строке формата не попадает в поле |
+| `the_field_types_pastes_and_completes_directories_only` | `ui/record_dialog.rs` | Tab дополняет каталог, игнорируя файл с тем же префиксом; вставка идёт в поле при любом фокусе |
+| `f7_dialog_takes_paste_into_the_folder_and_reports_folder_and_format_on_enter` | `ui/app/tests.rs` | модальный поток: вставка, Home не запускает запись, Enter → `Apply(SetRecording)`, Esc закрывает |
+| `function_keys_request_dialogs_and_rescan` (обновлён) | `ui/app/tests.rs` | F7 → `OpenRecordDialog` |
+| `record_dialog_overlay_shows_folder_format_radio_and_description` | `ui/screen/tests.rs` | снэпшот en (пустое поле, FLAC) и ru (каталог, Ogg Vorbis, качество) |
+| `recording_dot_blinks_with_a_one_second_period_without_changing_the_width` | `ui/screen/tests.rs` | точка горит/гаснет по фазе, строка не сдвигается; `record_blink` на 499/500/1000 мс |
+| `record_dialog_lists_both_formats_with_descriptions` (удалён) | `ui/dialog.rs` | селектор формата v1 больше не существует |
+
+**Результат** — 182 unit + 3 i18n + 2 readme = 187 passed, 0 failed; unit-прогон 0.78 s.
+
+**Ограничения** — `Session::set_recording` и создание каталога при старте записи не покрыты автотестом (нужна живая сессия с аудиоустройством); покрыт путь UI → `Request`.
