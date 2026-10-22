@@ -157,7 +157,7 @@ impl Session {
 		session
 	}
 
-	fn open_audio(&mut self, device: &cpal::Device) {
+	fn open_audio(&mut self, device: &audio::OutputDevice) {
 		match audio::open_output_stream(device, self.params, &self.shared) {
 			Ok((
 				stream,

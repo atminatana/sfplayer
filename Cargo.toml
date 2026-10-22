@@ -26,6 +26,10 @@ tracing-appender = "0.2"
 tracing-subscriber = "0.3"
 vorbis_rs = "0.5"
 
+[features]
+# ASIO on Windows (ADR 0012): the build needs LLVM (libclang), MSVC and the Steinberg ASIO SDK; see README.
+asio = ["cpal/asio"]
+
 [dev-dependencies]
 claxon = "0.4.3"
 lewton = "0.10.2"

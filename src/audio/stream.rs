@@ -1,13 +1,14 @@
-//! Opening the cpal output stream (spec F-04): stereo f32, requested buffer size with fallback to the device default.
+//! Opening the cpal output stream (spec F-04): stereo in the device's sample format (f32 render converted per
+//! sample, ADR 0012), requested buffer size with fallback to the device default.
 
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cpal::{BufferSize, Device, ErrorKind, Stream, StreamConfig};
+use cpal::{BufferSize, Device, ErrorKind, FromSample, I24, SampleFormat, SizedSample, Stream, StreamConfig};
 use ringbuf::traits::Split;
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 
-use super::device::device_name;
+use super::device::OutputDevice;
 use super::render::Command;
 use super::{AudioError, AudioShared, BlockRenderer};
 use crate::midi::MidiEvent;
@@ -53,24 +54,25 @@ pub struct AudioLinks {
 /// The requested fixed buffer is tried first; if the backend refuses it, the device default is used (F-04).
 /// Each attempt owns fresh rings because cpal consumes the callbacks even when it fails.
 pub fn open_output_stream(
-	device: &Device,
+	device: &OutputDevice,
 	params: StreamParams,
 	shared: &Arc<AudioShared>,
 ) -> Result<(AudioStream, AudioLinks), AudioError> {
-	let device_name = device_name(device).unwrap_or_else(|| "unknown".to_owned());
-	let default_config = device.default_output_config().map_err(|source| AudioError::DeviceConfig {
+	let device_name = device.name.clone();
+	let default_config = device.device.default_output_config().map_err(|source| AudioError::DeviceConfig {
 		device: device_name.clone(),
 		source,
 	})?;
 	let sample_rate = params.sample_rate.unwrap_or_else(|| default_config.sample_rate());
+	// ASIO drivers speak their own format (mostly Int32) and cpal does not convert; WASAPI shared is f32.
+	let sample_format = default_config.sample_format();
 
 	let attempt = |buffer_size: BufferSize| -> Result<(Stream, AudioLinks), AudioError> {
 		let (events, events_rx) = HeapRb::<MidiEvent>::new(EVENT_RING_CAPACITY).split();
 		let (commands, commands_rx) = HeapRb::<Command>::new(COMMAND_RING_CAPACITY).split();
 		let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(RETIRED_RING_CAPACITY).split();
 		let (recording_tx, recording) = HeapRb::<f32>::new((sample_rate * 2 * RECORD_RING_SECONDS) as usize).split();
-		let mut renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, recording_tx, Arc::clone(shared), sample_rate);
-		let data_callback = move |output: &mut [f32], _: &cpal::OutputCallbackInfo| renderer.fill(output, OUTPUT_CHANNELS as usize);
+		let renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, recording_tx, Arc::clone(shared), sample_rate);
 		let xrun_counter = Arc::clone(shared);
 		let error_callback = move |error: cpal::Error| {
 			if error.kind() == ErrorKind::Xrun {
@@ -84,12 +86,21 @@ pub fn open_output_stream(
 			sample_rate,
 			buffer_size,
 		};
-		let stream = device
-			.build_output_stream(config, data_callback, error_callback, None)
-			.map_err(|source| AudioError::BuildStream {
-				device: device_name.clone(),
-				source,
-			})?;
+		let stream = match sample_format {
+			SampleFormat::F32 => build_stream::<f32>(&device.device, config, renderer, error_callback),
+			SampleFormat::I16 => build_stream::<i16>(&device.device, config, renderer, error_callback),
+			SampleFormat::I32 => build_stream::<i32>(&device.device, config, renderer, error_callback),
+			SampleFormat::I24 => build_stream::<I24>(&device.device, config, renderer, error_callback),
+			SampleFormat::F64 => build_stream::<f64>(&device.device, config, renderer, error_callback),
+			other => Err(cpal::Error::with_message(
+				ErrorKind::UnsupportedConfig,
+				format!("sample format {other} is not supported"),
+			)),
+		}
+		.map_err(|source| AudioError::BuildStream {
+			device: device_name.clone(),
+			source,
+		})?;
 		Ok((
 			stream,
 			AudioLinks {
@@ -115,7 +126,14 @@ pub fn open_output_stream(
 		device: device_name.clone(),
 		source,
 	})?;
-	tracing::info!(device = %device_name, sample_rate, ?buffer_size, "audio stream started");
+	tracing::info!(
+		device = %device_name,
+		backend = device.backend.label(),
+		%sample_format,
+		sample_rate,
+		?buffer_size,
+		"audio stream started"
+	);
 	Ok((
 		AudioStream {
 			_stream: stream,
@@ -125,4 +143,19 @@ pub fn open_output_stream(
 		},
 		links,
 	))
+}
+
+/// Builds the stream for the device's own sample type; the callback converts from the f32 render (ADR 0012).
+fn build_stream<T: SizedSample + FromSample<f32>>(
+	device: &Device,
+	config: StreamConfig,
+	mut renderer: BlockRenderer,
+	error_callback: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<Stream, cpal::Error> {
+	device.build_output_stream(
+		config,
+		move |output: &mut [T], _: &cpal::OutputCallbackInfo| renderer.fill(output, OUTPUT_CHANNELS as usize),
+		error_callback,
+		None,
+	)
 }

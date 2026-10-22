@@ -6,7 +6,7 @@
 |---|------|--------|
 | [0001](0001-synth-engine-rustysynth.md) | Движок синтеза: rustysynth за трейтом SynthEngine | Accepted |
 | [0002](0002-threading-lock-free.md) | Потоковая модель: аудио-поток без блокировок, SPSC-кольца и атомики | Accepted |
-| [0003](0003-windows-wasapi-shared.md) | Аудио на Windows: только WASAPI shared, без ASIO | Accepted |
+| [0003](0003-windows-wasapi-shared.md) | Аудио на Windows: только WASAPI shared, без ASIO | Superseded by 0012 (сборки с feature `asio`) |
 | [0004](0004-hotkeys-no-letters.md) | Горячие клавиши без букв: F-клавиши и Ctrl/Alt | Accepted |
 | [0005](0005-recording-flac-vorbis.md) | Запись в FLAC / Ogg Vorbis, кодирование в отдельном потоке | Accepted |
 | [0006](0006-package-name-sf2-player.md) | Имя пакета и бинарника: sf2_player | Accepted |
@@ -15,3 +15,4 @@
 | [0009](0009-text-keyboard-via-command-ring.md) | События текстовой клавиатуры через кольцо команд UI→audio | Accepted |
 | [0010](0010-settings-list-screen.md) | Главный экран — список настроек; монитор MIDI и полосы каналов убраны (v1.1) | Accepted |
 | [0011](0011-global-preset.md) | Пресет F5 — один на все каналы, кроме ударных (v1.1) | Accepted |
+| [0012](0012-asio-optional-feature.md) | ASIO как опциональный feature: единый список устройств, поток в формате драйвера (v1.2) | Accepted |

@@ -135,6 +135,7 @@ pub fn preset_label(preset: &PresetInfo) -> String {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::audio::Backend;
 
 	#[test]
 	fn midi_dialog_marks_the_connected_port_and_maps_rows_to_port_indices() {
@@ -160,6 +161,7 @@ mod tests {
 			AudioDeviceInfo {
 				index: 0,
 				name: "Speakers".into(),
+				backend: Backend::Default,
 				is_default: true,
 				default_sample_rate: 48_000,
 				buffer_range: Some((128, 2048)),
@@ -167,6 +169,7 @@ mod tests {
 			AudioDeviceInfo {
 				index: 1,
 				name: "HDMI".into(),
+				backend: Backend::Default,
 				is_default: false,
 				default_sample_rate: 44_100,
 				buffer_range: None,

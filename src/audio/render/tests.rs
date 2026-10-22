@@ -322,3 +322,65 @@ fn recording_ring_gets_the_output_only_while_recording_and_counts_overflow() {
 	h.renderer.fill(&mut output, 2);
 	assert!(h.shared.record_dropped() > 0, "a full ring is counted, not blocked on");
 }
+
+#[test]
+fn integer_and_f64_outputs_are_silent_without_an_engine() {
+	let mut h = empty_harness();
+	let mut i16_out = vec![1i16; 64];
+	h.renderer.fill(&mut i16_out, 2);
+	assert!(i16_out.iter().all(|sample| *sample == 0));
+	let mut i32_out = vec![1i32; 64];
+	h.renderer.fill(&mut i32_out, 2);
+	assert!(i32_out.iter().all(|sample| *sample == 0));
+	let mut i24_out = vec![cpal::I24::new(1).unwrap(); 64];
+	h.renderer.fill(&mut i24_out, 2);
+	assert!(i24_out.iter().all(|sample| *sample == cpal::I24::new(0).unwrap()));
+	let mut f64_out = vec![1.0f64; 64];
+	h.renderer.fill(&mut f64_out, 2);
+	assert!(f64_out.iter().all(|sample| *sample == 0.0));
+}
+
+#[test]
+fn interleave_converts_the_f32_render_to_the_output_sample_type() {
+	let left = [1.0, -1.0, 0.5, 0.0];
+	let right = [0.0, 0.5, -0.5, 0.25];
+	let mut i16_out = vec![0i16; 8];
+	interleave(&left, &right, 1.0, &mut i16_out, 2);
+	assert_eq!(
+		i16_out,
+		[32_767, 0, -32_768, 16_384, 16_384, -16_384, 0, 8_192],
+		"full scale saturates, not wraps"
+	);
+	let mut i32_out = vec![0i32; 8];
+	interleave(&left, &right, 1.0, &mut i32_out, 2);
+	assert_eq!(i32_out, [i32::MAX, 0, i32::MIN, 1 << 30, 1 << 30, -(1 << 30), 0, 1 << 29]);
+	let mut f64_out = vec![0.0f64; 8];
+	interleave(&left, &right, 1.0, &mut f64_out, 2);
+	assert_eq!(f64_out, [1.0, 0.0, -1.0, 0.5, 0.5, -0.5, 0.0, 0.25]);
+	let mut gained = vec![0i16; 8];
+	interleave(&left, &right, 0.5, &mut gained, 2);
+	assert_eq!(
+		gained,
+		[16_384, 0, -16_384, 8_192, 8_192, -8_192, 0, 4_096],
+		"gain applies before conversion"
+	);
+	let mut mono = vec![0i16; 4];
+	interleave(&left, &right, 1.0, &mut mono, 1);
+	assert_eq!(mono, [16_384, -8_192, 0, 4_096], "mono is the mean of both channels");
+	let mut quad = vec![1i16; 8];
+	interleave(&left[..2], &right[..2], 1.0, &mut quad, 4);
+	assert_eq!(quad, [32_767, 0, 0, 0, -32_768, 16_384, 0, 0], "extra channels are silent");
+}
+
+#[test]
+fn a_note_reaches_an_i32_output() {
+	let mut h = harness();
+	h.events.try_push(NOTE_ON).unwrap();
+	let mut output = vec![0i32; FRAMES * 2];
+	h.renderer.fill(&mut output, 2);
+	assert!(
+		output.iter().any(|sample| *sample != 0),
+		"the note is audible in the integer stream"
+	);
+	assert!(h.shared.levels().peak_left > 0.0, "the meter still reads the f32 render");
+}

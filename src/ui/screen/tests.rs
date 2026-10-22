@@ -368,11 +368,12 @@ fn every_line_fits_eighty_columns() {
 
 #[test]
 fn dialog_overlay_shows_title_items_marker_and_detail() {
-	use crate::audio::AudioDeviceInfo;
+	use crate::audio::{AudioDeviceInfo, Backend};
 	let devices = vec![
 		AudioDeviceInfo {
 			index: 0,
 			name: "Speakers".into(),
+			backend: Backend::Default,
 			is_default: true,
 			default_sample_rate: 48_000,
 			buffer_range: Some((128, 2048)),
@@ -380,6 +381,7 @@ fn dialog_overlay_shows_title_items_marker_and_detail() {
 		AudioDeviceInfo {
 			index: 1,
 			name: "HDMI Monitor".into(),
+			backend: Backend::Default,
 			is_default: false,
 			default_sample_rate: 44_100,
 			buffer_range: None,
