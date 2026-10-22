@@ -239,6 +239,11 @@ fn text_keyboard_plays_notes_on_channel_one_and_stops_on_release_or_esc() {
 	);
 	assert_eq!(
 		app.tick_keyboard(Instant::now() + Duration::from_millis(50)),
+		None,
+		"a release right after the press is a synthesized pair: the longer window applies"
+	);
+	assert_eq!(
+		app.tick_keyboard(Instant::now() + Duration::from_millis(150)),
 		Some(Request::Notes(vec![MidiEvent::NoteOff { channel: 0, key: 60 }])),
 		"the tick releases it once the window closes"
 	);

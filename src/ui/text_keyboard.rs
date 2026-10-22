@@ -3,8 +3,8 @@
 //! Pure state machine: keys in, `MidiEvent`s out. Two note-off strategies: `Release` when the terminal
 //! reports key releases (kitty keyboard protocol or the Windows console), otherwise `Gate` — a note lasts
 //! `gate` or until the same key is pressed again. Key auto-repeat never retriggers a note: terminals that
-//! repeat by pairing Release+Press are debounced in release mode, and gate mode ignores presses that come
-//! too soon after the previous one.
+//! repeat by pairing Release+Press (X11) or Press+Release (Windows ConPTY) are debounced in release mode,
+//! and gate mode ignores presses that come too soon after the previous one.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -23,6 +23,13 @@ pub const VELOCITY_STEP: i16 = 10;
 /// Terminals that auto-repeat by pairing Release+Press (X11, ~2 ms apart) must not cut the note:
 /// a release only takes effect after this window, and a press inside it cancels the note off.
 const RELEASE_DEBOUNCE: Duration = Duration::from_millis(20);
+/// A release this soon after its own press is not a human one: ConPTY-hosted terminals on Windows
+/// (VS Code, mintty, ...) synthesize a Press+Release pair ~3 ms apart for every character.
+const SYNTHESIZED_RELEASE_GAP: Duration = Duration::from_millis(15);
+/// Debounce for a synthesized release: the key is still down until the auto-repeat pairs stop, and
+/// the next pair follows the previous one by the repeat period (Windows fastest rate: ~31 ms, with
+/// ~47 ms hiccups), so the window must outlast that gap. Real releases keep `RELEASE_DEBOUNCE`.
+const PAIRED_RELEASE_DEBOUNCE: Duration = Duration::from_millis(100);
 /// Gate mode: a same-key press closer than this to the previous press is auto-repeat (X11 repeats
 /// every ~30–40 ms). The anchor moves on every seen press, so a sustained stream stays swallowed;
 /// the first repeat after the initial delay still plays — with no release events it is
@@ -42,10 +49,11 @@ struct HeldNote {
 	key_char: char,
 	channel: u8,
 	note: u8,
-	/// Gate mode only.
+	/// When the note goes off by itself: the gate deadline, or in release mode the end of the debounce
+	/// window after the key went up (`None` while the key is down).
 	off_at: Option<Instant>,
-	/// Release mode only: the key went up, but the note off waits out `RELEASE_DEBOUNCE`.
-	release_pending_at: Option<Instant>,
+	/// The last seen press, to tell a synthesized release from a real one.
+	pressed_at: Instant,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,14 +131,15 @@ impl TextKeyboard {
 		}
 		let mut events = self.flush_expired(now);
 		if let Some(position) = self.held.iter().position(|held| held.key_char == lower) {
-			// flush_expired removed notes whose pending release outlived the window, so a
-			// pending mark left here is auto-repeat: Release+Press of a still held key.
-			if self.held[position].release_pending_at.take().is_some() {
-				return events;
-			}
+			self.held[position].pressed_at = now;
 			return match self.mode {
-				// Still held without a pending release: the terminal is auto-repeating.
-				NoteOffMode::Release => events,
+				// The terminal is auto-repeating: either the key never went up, or flush_expired
+				// kept the note because its release is still inside the debounce window - that
+				// release was part of a repeat pair, so the note off is cancelled.
+				NoteOffMode::Release => {
+					self.held[position].off_at = None;
+					events
+				}
 				// Second press ends the gated note early.
 				NoteOffMode::Gate(_) => {
 					let held = self.held.remove(position);
@@ -151,7 +160,7 @@ impl TextKeyboard {
 			channel,
 			note,
 			off_at,
-			release_pending_at: None,
+			pressed_at: now,
 		});
 		events.push(MidiEvent::NoteOn {
 			channel,
@@ -161,19 +170,26 @@ impl TextKeyboard {
 		events
 	}
 
-	/// Key released (release mode only; ignored in gate mode). The note off is deferred by
-	/// `RELEASE_DEBOUNCE` so that the terminal's Release+Press auto-repeat pairs do not cut the
-	/// note; `tick` emits the off when the window closes without a press. A second release keeps
-	/// the original mark — only a press cancels it.
+	/// Key released (release mode only; ignored in gate mode). The note off is deferred by a debounce
+	/// window so that the terminal's auto-repeat pairs do not cut the note: `RELEASE_DEBOUNCE` for a
+	/// real release, `PAIRED_RELEASE_DEBOUNCE` for one synthesized right after its press; `tick` emits
+	/// the off when the window closes without a press. A second release keeps the original deadline -
+	/// only a press cancels it.
 	pub fn release(&mut self, key_char: char, now: Instant) -> Vec<MidiEvent> {
 		if self.mode != NoteOffMode::Release {
 			return Vec::new();
 		}
 		let lower = key_char.to_ascii_lowercase();
 		if let Some(held) = self.held.iter_mut().find(|held| held.key_char == lower)
-			&& held.release_pending_at.is_none()
+			&& held.off_at.is_none()
 		{
-			held.release_pending_at = Some(now);
+			let is_synthesized = now.saturating_duration_since(held.pressed_at) < SYNTHESIZED_RELEASE_GAP;
+			let window = if is_synthesized {
+				PAIRED_RELEASE_DEBOUNCE
+			} else {
+				RELEASE_DEBOUNCE
+			};
+			held.off_at = Some(now + window);
 		}
 		Vec::new()
 	}
@@ -183,24 +199,18 @@ impl TextKeyboard {
 		self.flush_expired(now)
 	}
 
-	/// Note offs whose time has come: the gate deadline and the release debounce window.
+	/// Note offs whose time has come: the gate deadline or the release debounce window.
 	fn flush_expired(&mut self, now: Instant) -> Vec<MidiEvent> {
 		let mut events = Vec::new();
-		self.held.retain(|held| {
-			let gate_expired = matches!(held.off_at, Some(off_at) if now >= off_at);
-			let release_expired = matches!(
-				held.release_pending_at,
-				Some(pending_at) if now.saturating_duration_since(pending_at) >= RELEASE_DEBOUNCE
-			);
-			if gate_expired || release_expired {
+		self.held.retain(|held| match held.off_at {
+			Some(off_at) if now >= off_at => {
 				events.push(MidiEvent::NoteOff {
 					channel: held.channel,
 					key: held.note,
 				});
 				false
-			} else {
-				true
 			}
+			_ => true,
 		});
 		events
 	}
@@ -342,6 +352,46 @@ mod tests {
 			],
 			"a re-press past the window re-attacks: off the old note, on the new"
 		);
+	}
+
+	#[test]
+	fn release_mode_bridges_windows_conpty_press_release_pairs() {
+		// Timing from a Windows log: every character is a Press+Release pair ~3 ms apart; after the
+		// 500 ms initial delay the held key repeats every ~31 ms with occasional ~47 ms gaps.
+		let mut keyboard = release_keyboard();
+		let now = Instant::now();
+		let ms = |value: u64| now + Duration::from_millis(value);
+		let on = vec![MidiEvent::NoteOn {
+			channel: 0,
+			key: 65,
+			velocity: 100,
+		}];
+		let off = vec![MidiEvent::NoteOff { channel: 0, key: 65 }];
+		assert_eq!(keyboard.press('v', 0, now), on);
+		assert!(keyboard.release('v', ms(3)).is_empty(), "synthesized release is deferred");
+		assert!(
+			keyboard.tick(ms(50)).is_empty(),
+			"the paired window is longer than the real-release one"
+		);
+		assert_eq!(keyboard.tick(ms(103)), off, "a tap ends when the paired window closes");
+		// The hold: the initial delay has passed and the pairs stream in.
+		assert_eq!(keyboard.press('v', 0, ms(500)), on);
+		let mut press_at = 500;
+		for gap in [31, 31, 31, 47, 31, 31, 31, 31, 31, 47, 31, 31] {
+			assert!(keyboard.release('v', ms(press_at + 3)).is_empty());
+			assert!(
+				keyboard.tick(ms(press_at + gap - 1)).is_empty(),
+				"tick before the pair at {press_at} + {gap}"
+			);
+			press_at += gap;
+			assert!(keyboard.press('v', 0, ms(press_at)).is_empty(), "repeat pair at {press_at} ms");
+		}
+		assert_eq!(keyboard.held_count(), 1, "one note for the whole hold");
+		// The key goes up: the last pair is not followed by another one.
+		assert!(keyboard.release('v', ms(press_at + 3)).is_empty());
+		assert!(keyboard.tick(ms(press_at + 90)).is_empty(), "still inside the paired window");
+		assert_eq!(keyboard.tick(ms(press_at + 103)), off, "note off once the stream has stopped");
+		assert_eq!(keyboard.held_count(), 0);
 	}
 
 	#[test]

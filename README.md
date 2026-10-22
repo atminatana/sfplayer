@@ -89,7 +89,7 @@ While a dialog is open, input goes to the dialog: ↑↓, PgUp/PgDn, Home/End mo
 
 Notes play on MIDI channel 1 with the F5 preset. How a note is released depends on the terminal:
 
-- **release** — the terminal reports key release: the Windows console (including Windows Terminal) and terminals with the kitty keyboard protocol (kitty, WezTerm, foot, Ghostty). The note sounds while the key is held.
+- **release** — the terminal reports key release: the Windows console (including Windows Terminal) and terminals with the kitty keyboard protocol (kitty, WezTerm, foot, Ghostty). The note sounds while the key is held. Terminals hosted through ConPTY on Windows (VS Code, mintty) do not pass the real release: the note stops about 0.1 s after the key-repeat stream ends, and a held key falls silent during the system's repeat delay before sounding again.
 - **gate** — other terminals: the note sounds for `keyboard.gate_ms` milliseconds (300 by default) or until the same key is pressed again.
 
 The mode is detected at startup and shown in the status line as `kbd: release` or `kbd: gate 300ms`. If notes "stick" in your terminal, set `force_gate = true` in the `[keyboard]` section.
