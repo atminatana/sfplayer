@@ -4,13 +4,15 @@
 //! `asio` feature — the ASIO drivers, tagged `[ASIO]` in their names (ADR 0012).
 
 use cpal::traits::{DeviceTrait, HostTrait};
-use cpal::{Device, SupportedBufferSize};
+use cpal::{Device, SupportedBufferSize, SupportedStreamConfig};
 
 use super::AudioError;
 use crate::cli::DeviceSelector;
 
 /// Appended to the name of every ASIO device, so lists, the F3 line and `audio.output` tell the backends apart.
 const ASIO_TAG: &str = " [ASIO]";
+/// Rates tried in order when a device does not report its own (F-04 names both).
+const PREFERRED_SAMPLE_RATES: [u32; 2] = [48_000, 44_100];
 
 /// Which cpal host a device belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -71,9 +73,9 @@ pub fn list_output_devices() -> Result<Vec<AudioDeviceInfo>, AudioError> {
 		infos.push(AudioDeviceInfo {
 			index,
 			is_default: is_default_output(output.backend, &output.name, default_name.as_deref()),
+			default_sample_rate: device_sample_rate(&output.device, &config).unwrap_or(0),
 			name: output.name,
 			backend: output.backend,
-			default_sample_rate: config.sample_rate(),
 			buffer_range,
 		});
 	}
@@ -128,6 +130,32 @@ pub fn output_device_by_index(index: usize) -> Result<OutputDevice, AudioError> 
 
 pub fn device_name(device: &Device) -> Option<String> {
 	device.description().ok().map(|description| description.name().to_owned())
+}
+
+/// The rate a stream on `device` should use when the user did not choose one: the device's own, or —
+/// some ASIO drivers (Realtek) report 0 until a stream is active — the best common rate it accepts.
+pub fn device_sample_rate(device: &Device, config: &SupportedStreamConfig) -> Option<u32> {
+	let supported: Vec<u32> = match config.sample_rate() {
+		0 => device
+			.supported_output_configs()
+			.map(|configs| configs.map(|range| range.max_sample_rate()).collect())
+			.unwrap_or_default(),
+		_ => Vec::new(),
+	};
+	pick_sample_rate(config.sample_rate(), &supported)
+}
+
+/// `reported` when the device knows it; otherwise the first preferred rate in `supported`, else the
+/// highest supported one; `None` when nothing usable is known.
+fn pick_sample_rate(reported: u32, supported: &[u32]) -> Option<u32> {
+	if reported > 0 {
+		return Some(reported);
+	}
+	PREFERRED_SAMPLE_RATES
+		.iter()
+		.copied()
+		.find(|rate| supported.contains(rate))
+		.or_else(|| supported.iter().copied().filter(|rate| *rate > 0).max())
 }
 
 /// Every output in list order: the default host first, so indices from before the ASIO feature stay valid.
@@ -233,6 +261,20 @@ mod tests {
 		assert!(!is_default_output(Backend::Default, "HDMI", Some("Speakers")));
 		assert!(!is_default_output(Backend::Asio, "Speakers", Some("Speakers")));
 		assert!(!is_default_output(Backend::Default, "Speakers", None));
+	}
+
+	#[test]
+	fn unreported_sample_rate_falls_back_to_a_preferred_supported_one() {
+		assert_eq!(pick_sample_rate(96_000, &[44_100]), Some(96_000), "a reported rate wins");
+		assert_eq!(pick_sample_rate(0, &[44_100, 48_000, 96_000]), Some(48_000));
+		assert_eq!(pick_sample_rate(0, &[22_050, 44_100]), Some(44_100));
+		assert_eq!(
+			pick_sample_rate(0, &[22_050, 96_000]),
+			Some(96_000),
+			"highest supported when no preferred one"
+		);
+		assert_eq!(pick_sample_rate(0, &[]), None);
+		assert_eq!(pick_sample_rate(0, &[0]), None, "zero is never a usable rate");
 	}
 
 	#[test]

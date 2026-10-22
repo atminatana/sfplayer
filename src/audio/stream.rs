@@ -8,7 +8,7 @@ use cpal::{BufferSize, Device, ErrorKind, FromSample, I24, SampleFormat, SizedSa
 use ringbuf::traits::Split;
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 
-use super::device::OutputDevice;
+use super::device::{OutputDevice, device_sample_rate};
 use super::render::Command;
 use super::{AudioError, AudioShared, BlockRenderer};
 use crate::midi::MidiEvent;
@@ -63,7 +63,15 @@ pub fn open_output_stream(
 		device: device_name.clone(),
 		source,
 	})?;
-	let sample_rate = params.sample_rate.unwrap_or_else(|| default_config.sample_rate());
+	// A zero rate would size the rings to nothing and stall the stream, so it is an error, not a default.
+	let sample_rate = params
+		.sample_rate
+		.or_else(|| device_sample_rate(&device.device, &default_config))
+		.filter(|rate| *rate > 0)
+		.ok_or_else(|| AudioError::DeviceConfig {
+			device: device_name.clone(),
+			source: cpal::Error::with_message(ErrorKind::UnsupportedConfig, "the device reports no usable sample rate"),
+		})?;
 	// ASIO drivers speak their own format (mostly Int32) and cpal does not convert; WASAPI shared is f32.
 	let sample_format = default_config.sample_format();
 
@@ -158,4 +166,37 @@ fn build_stream<T: SizedSample + FromSample<f32>>(
 		error_callback,
 		None,
 	)
+}
+
+#[cfg(all(test, windows, feature = "asio"))]
+mod live_tests {
+	use super::*;
+	use crate::audio::{Backend, list_output_devices, output_device_by_index};
+
+	/// Spec v1.2 К-4 without the TUI: the first ASIO driver opens a stream in its own sample format.
+	/// Needs an installed ASIO driver that is not in use, so it only runs on request.
+	#[test]
+	#[ignore = "needs an ASIO driver: cargo test --features asio -- --ignored asio_driver_opens"]
+	fn asio_driver_opens_a_stream_in_its_own_format() {
+		let devices = list_output_devices().expect("device list");
+		let asio = devices
+			.iter()
+			.find(|device| device.backend == Backend::Asio)
+			.expect("an ASIO driver is installed");
+		let device = output_device_by_index(asio.index).expect("the ASIO device by index");
+		assert_eq!(device.name, asio.name);
+		let format = device.device.default_output_config().expect("driver config").sample_format();
+		let shared = Arc::new(AudioShared::default());
+		let params = StreamParams {
+			buffer_frames: 256,
+			sample_rate: None,
+		};
+		let (stream, _links) = open_output_stream(&device, params, &shared).expect("ASIO stream opens");
+		eprintln!(
+			"ASIO live: device={} format={format} sample_rate={} buffer={:?}",
+			stream.device_name, stream.sample_rate, stream.buffer_size
+		);
+		assert!(stream.device_name.ends_with("[ASIO]"));
+		std::thread::sleep(std::time::Duration::from_millis(200));
+	}
 }

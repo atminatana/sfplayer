@@ -29,3 +29,27 @@
 - Ветка `asio_output_devices` под `cfg(all(windows, feature = "asio"))` на этом шаге не компилировалась — проверка со feature и живой прогон на `Realtek ASIO` — шаг 2.
 - A-04 «ошибка хоста ASIO → только лог» проверяется только живым прогоном (нет способа подменить хост cpal в тестах).
 - `Cargo.lock` на этом шаге не изменён (feature не включался); после первой сборки с feature в нём появятся `asio-sys` и сборочные зависимости.
+
+## Шаг 2 — сборка с feature, живая проверка, CI (2026-10-22)
+
+**Сделано**
+
+- `src/audio/device.rs`: `device_sample_rate` + чистая `pick_sample_rate` — если устройство сообщает частоту 0 (Realtek ASIO до старта потока — задокументировано в cpal `host/asio/device.rs:189`), берётся первая из `PREFERRED_SAMPLE_RATES` (48 000, 44 100), которую драйвер принимает, иначе максимальная поддерживаемая; `--list-devices` и диалог F3 показывают её вместо `0 Hz`.
+- `src/audio/stream.rs`: частота 0 никогда не доходит до колец — `AudioError::DeviceConfig` «the device reports no usable sample rate» вместо паники `ringbuf` при ёмкости 0; живой тест `asio_driver_opens_a_stream_in_its_own_format` (`#[ignore]`, только `cfg(all(windows, feature = "asio"))`): первый ASIO-драйвер открывает поток в своём формате.
+- `.github/workflows/ci.yml`: шаг «Clippy with the asio feature (Windows, advisory)» — `if: runner.os == 'Windows'`, `continue-on-error: true`, `LIBCLANG_PATH`/`CLANG_PATH` на предустановленный LLVM образа.
+- `Cargo.lock`: `asio-sys 0.4.0`, `bindgen 0.72.1`, `clang-sys`, `cexpr`, `libloading`, `prettyplease`, `rustc-hash`, `shlex` (компилируются только с feature).
+
+**Окружение сборки (для README, шаг 3).** Первая сборка упала в `bindgen`: на `PATH` первым стоит `clang` из llvm-mingw, его встроенные заголовки (`mmintrin.h`) не парсятся в MSVC-режиме; лечится `CLANG_PATH=C:\Program Files\LLVM\bin\clang.exe` и `LIBCLANG_PATH=C:\Program Files\LLVM\bin`. SDK `asio-sys` скачал сам в `%TEMP%\asio_sdk` (там же `Steinberg ASIO Licensing Agreement.pdf`).
+
+**COMPLETENESS** — К-2: clippy и тесты с feature зелёные; К-3: `--list-devices` обеих сборок; К-4 частично: поток на `Realtek ASIO [ASIO]` открывается в формате драйвера (живой тест), звук из TUI — за владельцем; A-07 подтверждён вживую: буфер 256 отвергнут (диапазон драйвера 1024..1024) → fallback `Default`; A-11: шаг CI. К-5 (F3 туда и обратно) — за владельцем.
+
+**CORRECTNESS** — выбор частоты: сообщённая частота всегда главнее; при 0 — предпочтительная из принятых драйвером, не произвольная константа; при отсутствии данных — ошибка, не паника. Живой тест проверяет имя с пометкой, формат из `default_output_config` и успешный `play()`.
+
+**EVIDENCE** — `cargo clippy --all-targets --features asio -- -D warnings` чисто; `cargo test --features asio`: 178 unit + 3 i18n + 2 readme passed, 0 failed; `cargo test --features asio -- --ignored asio_driver_opens --nocapture`: `ASIO live: device=Realtek ASIO [ASIO] format=i24 sample_rate=48000 buffer=Default`, 1 passed; `cargo run --features asio -- --list-devices`: `* [0] Динамики (Realtek(R) Audio)  48000 Hz, buffer 480..480 frames` / `[1] Realtek ASIO [ASIO]  48000 Hz, buffer 1024..1024 frames`; без feature — только строка `[0]`. Без feature: `cargo fmt --check` ok, clippy чисто, `cargo test` 178 unit + 5 passed. YAML `ci.yml` разобран `yaml.safe_load`, env-пути с обратными слэшами проверены. LOC: `device.rs` 286, `stream.rs` 202 — ниже порогов QG-06.
+
+**⚠ WARNINGS**
+
+- К-4 (звук из TUI) и К-5 (диалог F3, `audio.output` с пометкой, перезапуск) требуют интерактивного терминала — `[data needed: прогон владельцем `cargo run --features asio -- --audio-out "Realtek ASIO" --sf2 <банк>` и лог]`.
+- cpal при перечислении ASIO останавливается на `DriverAlreadyExists`, если какой-то драйвер уже удерживается активным потоком (`host/asio/device.rs:226`): пока открыт ASIO-поток, список в F3 может не содержать ASIO-устройств — проверяется только вживую (К-5).
+- Realtek ASIO принимает только буфер 1024 кадра: при 48 000 Гц это ≈ 21 мс на буфер, цель N-02 (15 мс) этим драйвером не достигается; замер К-9 — за владельцем.
+- Первый прогон шага CI с feature — после пуша; образ `windows-latest` должен содержать `C:\Program Files\LLVM` (по документации образов GitHub — содержит), иначе шаг падает, не блокируя остальные.

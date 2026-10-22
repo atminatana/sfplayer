@@ -23,3 +23,18 @@
 **Результат** — 177 unit + 3 i18n + 2 readme = 182 passed, 0 failed; unit-прогон 0.78 s.
 
 **Ограничения** — перечисление реального хоста ASIO и открытие потока в формате драйвера в тестах не воспроизводятся (нужны драйверы и feature); покрыты чистые части (`label_outputs`, `is_default_output`, `interleave`, `fill<T>`). Живая проверка — шаг 2.
+
+## Шаг 2 (2026-10-22)
+
+**Состав**
+
+| Тест | Файл | Что проверяет |
+|------|------|---------------|
+| `unreported_sample_rate_falls_back_to_a_preferred_supported_one` | `audio/device.rs` | сообщённая частота главнее; при 0 — 48 000, затем 44 100, затем максимум из поддерживаемых; пусто или только 0 → `None` |
+| `asio_driver_opens_a_stream_in_its_own_format` (`#[ignore]`, `cfg(all(windows, feature = "asio"))`) | `audio/stream.rs` | первый ASIO-драйвер из общего списка открывает поток: имя с пометкой, формат драйвера, `play()` без ошибки (К-4 без TUI) |
+
+**Результат** — без feature: 178 unit + 3 i18n + 2 readme passed, 0 failed; с feature: 178 unit + 3 + 2 passed, 0 failed; живой тест: 1 passed (`format=i24 sample_rate=48000 buffer=Default` на `Realtek ASIO`).
+
+**Живые прогоны** — `--list-devices` с feature: WASAPI `[0]` с прежним индексом, `[1] Realtek ASIO [ASIO]  48000 Hz, buffer 1024..1024 frames`; без feature — только `[0]`. Первый запуск до правки частоты: `0 Hz` в списке и паника `ringbuf` при открытии (ёмкость кольца 0) — исправлено в этом шаге.
+
+**Ограничения** — звук из TUI (К-4), диалог F3 и `audio.output` (К-5), замер задержки (К-9) — только интерактивно, за владельцем; живой тест пропускается без `--ignored` и не выполняется в CI.

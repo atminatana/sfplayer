@@ -36,6 +36,16 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      # ADR 0012: the asio feature needs libclang and downloads the Steinberg ASIO SDK during the build,
+      # so this check depends on an external site and must not block the required jobs.
+      - name: Clippy with the asio feature (Windows, advisory)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CLANG_PATH: C:\Program Files\LLVM\bin\clang.exe
+        run: cargo clippy --all-targets --features asio -- -D warnings
+
       - name: Tests
         run: cargo test
 
