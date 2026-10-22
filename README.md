@@ -25,6 +25,22 @@ What the machine needs:
 
 SF2 banks are not shipped with the program. Free General MIDI banks: GeneralUser GS, FluidR3, TimGM6mb.
 
+### ASIO (Windows, optional)
+
+The default build uses WASAPI in shared mode. ASIO is a separate build with the `asio` feature on your own machine; the release archives do not include it:
+
+```
+cargo build --release --features asio
+```
+
+Beyond the table above the build needs:
+
+- LLVM with libclang (`winget install LLVM.LLVM`); set `LIBCLANG_PATH` to its `bin` directory. If another `clang` comes first on `PATH` (for example llvm-mingw), also set `CLANG_PATH` to `C:\Program Files\LLVM\bin\clang.exe`, otherwise `bindgen` fails inside `mmintrin.h`.
+- Visual Studio Build Tools with the C++ workload (the build script runs `vcvarsall.bat`).
+- The Steinberg ASIO SDK: the build downloads it into `%TEMP%\asio_sdk` on first use, or point `CPAL_ASIO_DIR` at an unpacked copy. The SDK comes with its own licence (`Steinberg ASIO Licensing Agreement.pdf` inside it) that applies to a binary built with it, which is why ASIO stays out of the release archives.
+
+With the feature, ASIO drivers are listed in `--list-devices` and the F3 dialog after the WASAPI devices, tagged `[ASIO]`; pick one like any other device: `--audio-out "Realtek ASIO"` or `output = "Realtek ASIO [ASIO]"` in the config. Without the feature, or when no ASIO driver is installed, the list is unchanged. An ASIO driver is exclusive: other programs cannot play through it while sf2_player holds it. The stream runs in the driver's own sample format (Realtek: 24-bit), the driver's buffer size wins when it rejects `buffer_frames` (Realtek ASIO accepts 1024 frames only), and the `xrun` counter stays 0 because cpal does not report underruns for ASIO.
+
 ## Running
 
 ```
@@ -33,7 +49,7 @@ sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
            [--log-level LEVEL] [--ascii] [--list-devices]
 ```
 
-- `--list-devices` prints MIDI inputs and audio outputs with their indices and exits.
+- `--list-devices` prints MIDI inputs and audio outputs with their indices and exits; in a build with the `asio` feature the ASIO drivers follow the WASAPI devices, tagged `[ASIO]`.
 - Devices whose configuration cannot be read (an unsupported ALSA hint, a busy device) are skipped with a warning in the log instead of breaking the whole list.
 - Devices are selected by index or by a case-insensitive substring of the name; if a device is not found, the system default is used (the first port for MIDI) and a warning appears in the status line. If a device is found but cannot be opened (busy, unsupported configuration), the program runs without sound, the status line shows the cause, and another device is chosen with F3.
 - The default buffer is 256 frames; if the device does not accept it, the device default is used.
@@ -114,7 +130,7 @@ input = "KeyStep"          # name substring or index
 omni_channel = 1           # route all incoming notes to channel 1 (1–16); remove to disable
 
 [audio]
-output = "Speakers"
+output = "Speakers"        # name substring or index; ASIO devices are "<driver> [ASIO]"
 buffer_frames = 256
 sample_rate = 48000        # remove — use the device rate
 
@@ -169,7 +185,7 @@ F7 opens the recording settings: the folder (Tab completes directory names; empt
 
 ## Latency
 
-Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How to measure: connect the sound card output to its input (or record both signals with an external recorder), capture the moment the MIDI note is pressed and the first non-zero output sample at the same time; the difference is the latency. On Windows, WASAPI in shared mode is used (ASIO is not supported); if the latency is high, check that the device accepts a 256-frame buffer (`--list-devices` shows the range) and that there is no extra audio processing in the system. On Linux, use the ALSA `hw:` device directly whenever possible.
+Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How to measure: connect the sound card output to its input (or record both signals with an external recorder), capture the moment the MIDI note is pressed and the first non-zero output sample at the same time; the difference is the latency. On Windows the default build uses WASAPI in shared mode; a build with the `asio` feature can play through an ASIO driver instead (see Installation). If the latency is high, check that the device accepts a 256-frame buffer (`--list-devices` shows the range) and that there is no extra audio processing in the system. On Linux, use the ALSA `hw:` device directly whenever possible.
 
 ## Limitations
 
@@ -177,6 +193,7 @@ Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How t
 - The MIDI monitor and per-channel mixer strips of version 1.0 are not part of this screen; channel volume follows incoming CC 7 only.
 - The F5 preset applies to every channel except 10 (percussion); a Program Change from the MIDI keyboard still switches its own channel until the next F5 choice, and the header keeps showing the F5 choice.
 - Toggling effects on or off (F6, Alt+R, Alt+C) recreates the synthesizer: sounding notes are cut off. Changing a send level in F6 does not.
+- ASIO is Windows-only and needs a build with the `asio` feature (LLVM, MSVC and the Steinberg SDK at build time); the release archives are built without it.
 
 ## License
 

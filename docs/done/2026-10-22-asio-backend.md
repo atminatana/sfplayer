@@ -53,3 +53,23 @@
 - cpal при перечислении ASIO останавливается на `DriverAlreadyExists`, если какой-то драйвер уже удерживается активным потоком (`host/asio/device.rs:226`): пока открыт ASIO-поток, список в F3 может не содержать ASIO-устройств — проверяется только вживую (К-5).
 - Realtek ASIO принимает только буфер 1024 кадра: при 48 000 Гц это ≈ 21 мс на буфер, цель N-02 (15 мс) этим драйвером не достигается; замер К-9 — за владельцем.
 - Первый прогон шага CI с feature — после пуша; образ `windows-latest` должен содержать `C:\Program Files\LLVM` (по документации образов GitHub — содержит), иначе шаг падает, не блокируя остальные.
+
+## Шаг 3 — документация и верификация (2026-10-22)
+
+**Сделано**
+
+- README.md / README.ru.md: подраздел «ASIO (Windows, optional / по желанию)» в «Установке» (команда сборки, LLVM + `LIBCLANG_PATH`/`CLANG_PATH`, Build Tools, SDK и его лицензия, пометка `[ASIO]`, монопольность, формат драйвера, буфер, `xrun`); `--list-devices`; комментарий к `output` в `[audio]`; «Задержка» без фразы «ASIO не поддерживается»; пункт в «Ограничениях».
+- AGENTS.md: ограничение «ASIO не используется» заменено ссылкой на ADR 0012 и ТЗ v1.2.
+- PROJECT_MAP.md: строка `src/audio/`, список «Сделано», открытые живые проверки, команды проверки с feature.
+- `docs/plans/2026-10-22-asio-backend.md`: статус; `docs/verify/2026-10-22-asio-backend.md`: К-1…К-9.
+
+**COMPLETENESS** — A-12 (README ×2), A-13 (AGENTS.md, PROJECT_MAP; ADR — шаг 1), A-14 (spec/plans/done/test/verify с одним id). Таблицы клавиш не менялись — `readme_keys` зелёный без перегенерации.
+
+**CORRECTNESS** — оба README правлены в одних и тех же пяти местах, содержание совпадает; утверждения README (24 бит, буфер 1024, 0 Hz → 48 000, `xrun` 0) взяты из живого прогона шага 2 и cpal, не из предположений.
+
+**EVIDENCE** — `cargo fmt --check` ok; `cargo clippy --all-targets -- -D warnings` чисто; `cargo test`: 178 unit + 3 i18n + 2 readme passed, 0 failed; `grep -c '\[ASIO\]'`: README.md — 3, README.ru.md — 3.
+
+**⚠ WARNINGS**
+
+- К-4 (звук из TUI), К-5 (F3, `audio.output`, перезапуск), К-9 (задержка) не закрыты — интерактивный прогон владельца; команда и что смотреть — в `docs/verify`.
+- Утверждение README о наличии `C:\Program Files\LLVM` на образе `windows-latest` подтвердится первым прогоном CI.
