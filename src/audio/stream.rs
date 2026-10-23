@@ -1,13 +1,14 @@
-//! Opening the cpal output stream (spec F-04): stereo f32, requested buffer size with fallback to the device default.
+//! Opening the cpal output stream (spec F-04): stereo in the device's sample format (f32 render converted per
+//! sample, ADR 0012), requested buffer size with fallback to the device default.
 
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cpal::{BufferSize, Device, ErrorKind, Stream, StreamConfig};
+use cpal::{BufferSize, Device, ErrorKind, FromSample, I24, SampleFormat, SizedSample, Stream, StreamConfig};
 use ringbuf::traits::Split;
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 
-use super::device::device_name;
+use super::device::{OutputDevice, device_sample_rate};
 use super::render::Command;
 use super::{AudioError, AudioShared, BlockRenderer};
 use crate::midi::MidiEvent;
@@ -53,24 +54,33 @@ pub struct AudioLinks {
 /// The requested fixed buffer is tried first; if the backend refuses it, the device default is used (F-04).
 /// Each attempt owns fresh rings because cpal consumes the callbacks even when it fails.
 pub fn open_output_stream(
-	device: &Device,
+	device: &OutputDevice,
 	params: StreamParams,
 	shared: &Arc<AudioShared>,
 ) -> Result<(AudioStream, AudioLinks), AudioError> {
-	let device_name = device_name(device).unwrap_or_else(|| "unknown".to_owned());
-	let default_config = device.default_output_config().map_err(|source| AudioError::DeviceConfig {
+	let device_name = device.name.clone();
+	let default_config = device.device.default_output_config().map_err(|source| AudioError::DeviceConfig {
 		device: device_name.clone(),
 		source,
 	})?;
-	let sample_rate = params.sample_rate.unwrap_or_else(|| default_config.sample_rate());
+	// A zero rate would size the rings to nothing and stall the stream, so it is an error, not a default.
+	let sample_rate = params
+		.sample_rate
+		.or_else(|| device_sample_rate(&device.device, &default_config))
+		.filter(|rate| *rate > 0)
+		.ok_or_else(|| AudioError::DeviceConfig {
+			device: device_name.clone(),
+			source: cpal::Error::with_message(ErrorKind::UnsupportedConfig, "the device reports no usable sample rate"),
+		})?;
+	// ASIO drivers speak their own format (mostly Int32) and cpal does not convert; WASAPI shared is f32.
+	let sample_format = default_config.sample_format();
 
 	let attempt = |buffer_size: BufferSize| -> Result<(Stream, AudioLinks), AudioError> {
 		let (events, events_rx) = HeapRb::<MidiEvent>::new(EVENT_RING_CAPACITY).split();
 		let (commands, commands_rx) = HeapRb::<Command>::new(COMMAND_RING_CAPACITY).split();
 		let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(RETIRED_RING_CAPACITY).split();
 		let (recording_tx, recording) = HeapRb::<f32>::new((sample_rate * 2 * RECORD_RING_SECONDS) as usize).split();
-		let mut renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, recording_tx, Arc::clone(shared), sample_rate);
-		let data_callback = move |output: &mut [f32], _: &cpal::OutputCallbackInfo| renderer.fill(output, OUTPUT_CHANNELS as usize);
+		let renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, recording_tx, Arc::clone(shared), sample_rate);
 		let xrun_counter = Arc::clone(shared);
 		let error_callback = move |error: cpal::Error| {
 			if error.kind() == ErrorKind::Xrun {
@@ -84,12 +94,21 @@ pub fn open_output_stream(
 			sample_rate,
 			buffer_size,
 		};
-		let stream = device
-			.build_output_stream(config, data_callback, error_callback, None)
-			.map_err(|source| AudioError::BuildStream {
-				device: device_name.clone(),
-				source,
-			})?;
+		let stream = match sample_format {
+			SampleFormat::F32 => build_stream::<f32>(&device.device, config, renderer, error_callback),
+			SampleFormat::I16 => build_stream::<i16>(&device.device, config, renderer, error_callback),
+			SampleFormat::I32 => build_stream::<i32>(&device.device, config, renderer, error_callback),
+			SampleFormat::I24 => build_stream::<I24>(&device.device, config, renderer, error_callback),
+			SampleFormat::F64 => build_stream::<f64>(&device.device, config, renderer, error_callback),
+			other => Err(cpal::Error::with_message(
+				ErrorKind::UnsupportedConfig,
+				format!("sample format {other} is not supported"),
+			)),
+		}
+		.map_err(|source| AudioError::BuildStream {
+			device: device_name.clone(),
+			source,
+		})?;
 		Ok((
 			stream,
 			AudioLinks {
@@ -115,7 +134,14 @@ pub fn open_output_stream(
 		device: device_name.clone(),
 		source,
 	})?;
-	tracing::info!(device = %device_name, sample_rate, ?buffer_size, "audio stream started");
+	tracing::info!(
+		device = %device_name,
+		backend = device.backend.label(),
+		%sample_format,
+		sample_rate,
+		?buffer_size,
+		"audio stream started"
+	);
 	Ok((
 		AudioStream {
 			_stream: stream,
@@ -125,4 +151,52 @@ pub fn open_output_stream(
 		},
 		links,
 	))
+}
+
+/// Builds the stream for the device's own sample type; the callback converts from the f32 render (ADR 0012).
+fn build_stream<T: SizedSample + FromSample<f32>>(
+	device: &Device,
+	config: StreamConfig,
+	mut renderer: BlockRenderer,
+	error_callback: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<Stream, cpal::Error> {
+	device.build_output_stream(
+		config,
+		move |output: &mut [T], _: &cpal::OutputCallbackInfo| renderer.fill(output, OUTPUT_CHANNELS as usize),
+		error_callback,
+		None,
+	)
+}
+
+#[cfg(all(test, windows, feature = "asio"))]
+mod live_tests {
+	use super::*;
+	use crate::audio::{Backend, list_output_devices, output_device_by_index};
+
+	/// Spec v1.2 К-4 without the TUI: the first ASIO driver opens a stream in its own sample format.
+	/// Needs an installed ASIO driver that is not in use, so it only runs on request.
+	#[test]
+	#[ignore = "needs an ASIO driver: cargo test --features asio -- --ignored asio_driver_opens"]
+	fn asio_driver_opens_a_stream_in_its_own_format() {
+		let devices = list_output_devices().expect("device list");
+		let asio = devices
+			.iter()
+			.find(|device| device.backend == Backend::Asio)
+			.expect("an ASIO driver is installed");
+		let device = output_device_by_index(asio.index).expect("the ASIO device by index");
+		assert_eq!(device.name, asio.name);
+		let format = device.device.default_output_config().expect("driver config").sample_format();
+		let shared = Arc::new(AudioShared::default());
+		let params = StreamParams {
+			buffer_frames: 256,
+			sample_rate: None,
+		};
+		let (stream, _links) = open_output_stream(&device, params, &shared).expect("ASIO stream opens");
+		eprintln!(
+			"ASIO live: device={} format={format} sample_rate={} buffer={:?}",
+			stream.device_name, stream.sample_rate, stream.buffer_size
+		);
+		assert!(stream.device_name.ends_with("[ASIO]"));
+		std::thread::sleep(std::time::Duration::from_millis(200));
+	}
 }

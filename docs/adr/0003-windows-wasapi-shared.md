@@ -1,7 +1,7 @@
 # 0003. Аудио на Windows: только WASAPI shared, без ASIO
 
 - **Дата:** 2026-10-20
-- **Статус:** Accepted
+- **Статус:** Superseded by [0012](0012-asio-optional-feature.md) (22.10.2026) для сборок с feature `asio`; для сборки по умолчанию остаётся в силе
 - **Тема:** аудиобэкенд на Windows
 
 ## Контекст

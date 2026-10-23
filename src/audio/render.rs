@@ -111,14 +111,16 @@ impl BlockRenderer {
 
 	/// Fills an interleaved output buffer with `channels` channels per frame.
 	/// Channels beyond the first two are silent; a mono output gets the L/R average.
-	pub fn fill(&mut self, output: &mut [f32], channels: usize) {
+	/// `T` is the device's sample type: the render stays f32 (meter, clip detector and recording read it),
+	/// each output sample is converted on the way out (ADR 0012).
+	pub fn fill<T: cpal::Sample + cpal::FromSample<f32>>(&mut self, output: &mut [T], channels: usize) {
 		// Clock reads are user-mode on every supported platform (QPC / vDSO), so they are allowed here (N-03).
 		let started = Instant::now();
 		self.drain_commands();
 		self.drain_events();
 		let total_frames = output.len() / channels.max(1);
 		match self.engine.as_mut() {
-			None => output.fill(0.0),
+			None => output.fill(T::EQUILIBRIUM),
 			Some(engine) => {
 				let gain = self.shared.master_gain();
 				for chunk in output.chunks_mut(MAX_CHUNK_FRAMES * channels) {
@@ -240,15 +242,15 @@ fn load_percent(elapsed_seconds: f32, frames: usize, sample_rate: u32) -> u32 {
 	(elapsed_seconds / block_seconds * 100.0).round().clamp(0.0, 999.0) as u32
 }
 
-fn interleave(left: &[f32], right: &[f32], gain: f32, output: &mut [f32], channels: usize) {
+fn interleave<T: cpal::Sample + cpal::FromSample<f32>>(left: &[f32], right: &[f32], gain: f32, output: &mut [T], channels: usize) {
 	for (frame, out) in output.chunks_mut(channels).enumerate() {
 		let (l, r) = (left[frame] * gain, right[frame] * gain);
 		match out {
-			[mono] => *mono = (l + r) * 0.5,
+			[mono] => *mono = T::from_sample((l + r) * 0.5),
 			[first, second, rest @ ..] => {
-				*first = l;
-				*second = r;
-				rest.fill(0.0);
+				*first = T::from_sample(l);
+				*second = T::from_sample(r);
+				rest.fill(T::EQUILIBRIUM);
 			}
 			[] => {}
 		}

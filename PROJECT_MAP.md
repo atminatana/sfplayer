@@ -1,6 +1,6 @@
 # PROJECT_MAP — sf2_player
 
-Консольный SoundFont-синтезатор на Rust. ТЗ: `docs/spec/2026-10-20-sf2-player-v1.md` (v1.0) и `docs/spec/2026-10-21-ui-redesign.md` (v1.1 — главный экран, F5/F6/F7, Home/End; меняет §6, F-06, F-20, выводит F-08). Планы: `docs/plans/2026-10-20-sf2-player-v1.md`, `docs/plans/2026-10-21-ui-redesign.md`. Архитектурные решения и их обоснования: `docs/adr/README.md`.
+Консольный SoundFont-синтезатор на Rust. ТЗ: `docs/spec/2026-10-20-sf2-player-v1.md` (v1.0) и `docs/spec/2026-10-21-ui-redesign.md` (v1.1 — главный экран, F5/F6/F7, Home/End; меняет §6, F-06, F-20, выводит F-08). ASIO как опциональный feature — `docs/spec/2026-10-22-asio-backend.md` (v1.2). Планы: `docs/plans/2026-10-20-sf2-player-v1.md`, `docs/plans/2026-10-21-ui-redesign.md`, `docs/plans/2026-10-22-asio-backend.md`. Архитектурные решения и их обоснования: `docs/adr/README.md`.
 
 ## Структура
 
@@ -13,7 +13,7 @@
 | `src/logging.rs` | `tracing` в файл в локальном каталоге данных ОС (N-07) | шаг 1.1 |
 | `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` с флагом эффектов (rusty.rs) (ADR 0001) | шаг 5.1 |
 | `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs), `HotplugWatcher` + `MidiStatus` (hotplug.rs); монитор MIDI удалён в v1.1 (ADR 0010) | v1.1 шаг 4 |
-| `src/audio/` | `AudioShared` атомики: гейн, xrun, уровни, клипы (shared.rs), `measure` peak/RMS/клипы (meter.rs), `Mixer` мастер с mute (mixer.rs; полосы каналов удалены в v1.1, ADR 0010), `BlockRenderer` + `Command` ядро коллбэка с учётом нот, нагрузки, транспонирования и omni (render.rs, тесты в render/tests.rs), устройства и `select_output_device` с fallback, пропуск устройств с нечитаемой конфигурацией (device.rs), `open_output_stream` (stream.rs) и тексты ошибок открытия с причиной (mod.rs) (ADR 0002); | шаг 4.3 |
+| `src/audio/` | `AudioShared` атомики: гейн, xrun, уровни, клипы (shared.rs), `measure` peak/RMS/клипы (meter.rs), `Mixer` мастер с mute (mixer.rs; полосы каналов удалены в v1.1, ADR 0010), `BlockRenderer` + `Command` ядро коллбэка с учётом нот, нагрузки, транспонирования и omni (render.rs, тесты в render/tests.rs), устройства: `Backend`/`OutputDevice`, единый список хоста по умолчанию + ASIO с пометкой `[ASIO]` (feature `asio`), `select_output_device` с fallback, пропуск устройств с нечитаемой конфигурацией, запасная частота при 0 Гц (device.rs), `open_output_stream` в формате сэмплов устройства через обобщённый `fill<T>` (stream.rs, render.rs) и тексты ошибок открытия с причиной (mod.rs) (ADR 0002, 0012); | v1.2 |
 | `src/config.rs` | `Config` (все секции, ADR 0007), load/save, `Settings::resolve` CLI > конфиг > умолчания, `project_dirs` | шаг 2.1 |
 | `src/ui/` | `app.rs` цикл ≤ 30 fps + `Request`/`fulfil` (тесты в `app/tests.rs`), `screen.rs` `View` + экран v1.1: список `[F1]…[F7]`, строка сообщений, микшер, статус в нижней рамке (тесты в `screen/tests.rs`), `meter.rs` CLIP-удержание и полосы, `text_keyboard.rs` ноты с клавиатуры (release/gate), `modals.rs` отрисовка модальных окон, `selector.rs` модальный список, `dialog.rs` селекторы F2/F3/F5, `effects_dialog.rs` диалог F6, `record_dialog.rs` диалог F7 (каталог + формат), `path_input.rs` поле пути F4, `keys.rs` таблица умолчаний + `Bindings` из конфига + справка (тесты в `keys/tests.rs`), `glyphs.rs` Unicode/ASCII-глифы, `i18n.rs` локаль (ADR 0004, 0008, 0009, 0010) | v1.1 шаг 4 |
 | `src/record/` | `Recorder` поток + кольцо, `flac.rs` потоковый FLAC 24 бит, `vorbis.rs` Ogg Vorbis (ADR 0005) | шаг 5.3 |
@@ -61,12 +61,14 @@
 - v1.1, шаг 3: пресет F5 для всех каналов, кроме 10 (ADR 0011); `synth.preset = [bank, program]` в конфиге, восстановление для того же банка.
 - v1.1, шаг 4: главный экран — список настроек с ошибками в своих строках, микшер L/R + мастер, статус в нижней рамке постоянной ширины (ADR 0010); монитор MIDI, фокус панелей, полосы каналов и их клавиши удалены.
 - v1.1, шаг 5: README ×2, PROJECT_MAP, AGENTS.md, верификация `docs/verify/2026-10-21-ui-redesign.md`. План v1.1 выполнен.
+- v1.2 (ASIO, ADR 0012): feature `asio`, единый список устройств с пометкой `[ASIO]`, поток в формате драйвера, запасная частота для драйверов с 0 Гц, живой тест открытия ASIO-потока, советующий шаг CI, README ×2; верификация `docs/verify/2026-10-22-asio-backend.md`.
 
 ## Дальше (открытые пункты для владельца)
 
 - Живая приёмка на оборудовании: MIDI-клавиатура (звук, hot-plug), замер задержки N-02, 10 минут без xrun, Linux и macOS.
 - Первый прогон CI на GitHub; публикация релиза по тегу `v*`.
 - Решения: зависимость `option-ext` (MPL-2.0); клавиши эффектов и omni; смысл «voices»; держатель прав в лицензиях.
+- ASIO вживую из TUI (сборка с `--features asio`): звук через `Realtek ASIO [ASIO]`, диалог F3 туда и обратно, `audio.output` после перезапуска, замер задержки (ТЗ v1.2 К-4, К-5, К-9); первый прогон советующего шага CI с feature.
 - Живая проверка экрана v1.1 в терминале (диалоги F6/F7, запись Home/End, цвета строк) — снэпшоты есть, живой прогон не выполнялся.
 - Бэклог ТЗ: F-17 собственный движок за `SynthEngine`, F-18 SF3 через feature `synth-oxi`; монитор MIDI (F-08) и полосы каналов — выведены в v1.1, возврат отдельной задачей (ADR 0010).
 
@@ -74,4 +76,7 @@
 
 ```bash
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+# Windows, сборка с ASIO (LLVM и MSVC; SDK скачивается в %TEMP%\asio_sdk):
+# LIBCLANG_PATH="C:\Program Files\LLVM\bin" CLANG_PATH="C:\Program Files\LLVM\bin\clang.exe" cargo test --features asio
+# живой тест с ASIO-драйвером: cargo test --features asio -- --ignored asio_driver_opens --nocapture
 ```
