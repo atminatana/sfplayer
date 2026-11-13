@@ -191,4 +191,4 @@ recent_dirs = ["D:/Music/sf2"]  # выбранные раньше папки, д
 
 ## Лицензия
 
-MIT или Apache-2.0 на ваш выбор (`LICENSE-MIT`, `LICENSE-APACHE`). Зависимости — под разрешительными лицензиями (MIT, Apache-2.0, BSD, ISC, Zlib, BSL-1.0), кроме транзитивной `option-ext` (MPL-2.0) из крейта `directories`. Окно построено на библиотеке [gterm](https://github.com/atminatana/gterm).
+MIT или Apache-2.0 на ваш выбор (`LICENSE-MIT`, `LICENSE-APACHE`). Зависимости — под разрешительными лицензиями (MIT, Apache-2.0, BSD, ISC, Zlib, BSL-1.0), кроме транзитивной `option-ext` (MPL-2.0) из крейта `directories`. Окно построено на библиотеке [gterm](https://github.com/atminatana/gterm). Реверб и хорус встроенного синтезатора перенесены из [RustySynth](https://github.com/sinshu/rustysynth) (MIT, © 2022 Nobuaki Tanaka); текст его лицензии — в файле `LICENSE-RUSTYSYNTH`.

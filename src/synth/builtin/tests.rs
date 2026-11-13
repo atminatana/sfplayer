@@ -532,3 +532,152 @@ fn the_timbre_keeps_what_is_set_in_it() {
 	assert!(peak(&plucked) > 0.05);
 	assert!(is_silent(&plucked[SECOND * 3 / 100..]));
 }
+
+/// Renders `frames` frames and returns both sides; with an effect sending, they differ.
+fn render_stereo(synth: &mut BuiltinSynth, frames: usize) -> (Vec<f32>, Vec<f32>) {
+	let mut left = vec![9.0; frames];
+	let mut right = vec![-9.0; frames];
+	synth.render(&mut left, &mut right);
+	(left, right)
+}
+
+/// Both sides of a rendered stretch.
+type Stereo = (Vec<f32>, Vec<f32>);
+
+/// A short organ note on channel 1 with the given send levels: the note itself, then the second after it.
+fn note_with_sends(reverb: u8, chorus: u8) -> (Stereo, Stereo) {
+	let (mut synth, _) = synth(Wave::Sine, ORGAN);
+	synth.control_change(0, controller::REVERB_SEND, reverb);
+	synth.control_change(0, controller::CHORUS_SEND, chorus);
+	synth.note_on(0, A4, FULL);
+	let note = render_stereo(&mut synth, SECOND / 5);
+	synth.note_off(0, A4);
+	let after = render_stereo(&mut synth, SECOND);
+	(note, after)
+}
+
+#[test]
+fn with_both_sends_at_zero_the_signal_is_dry() {
+	let ((note_left, note_right), (after_left, after_right)) = note_with_sends(0, 0);
+	let (mut plain, _) = synth(Wave::Sine, ORGAN);
+	plain.note_on(0, A4, FULL);
+	assert_eq!(
+		note_left,
+		render(&mut plain, SECOND / 5),
+		"the same samples as with no send ever set"
+	);
+	assert_eq!(note_left, note_right);
+	// The release is a millisecond long: after it there is nothing, on either side.
+	assert!(is_silent(&after_left[SECOND / 100..]) && is_silent(&after_right[SECOND / 100..]));
+}
+
+#[test]
+fn the_reverb_leaves_a_tail_after_the_note_and_follows_its_send_level() {
+	let ((note_left, _), (after_left, after_right)) = note_with_sends(127, 0);
+	let (_, (dry_after, _)) = note_with_sends(0, 0);
+	assert!(is_silent(&dry_after[SECOND / 100..]), "without the reverb the note is over");
+	let tail = |signal: &[f32], from: usize, to: usize| rms(&signal[SECOND * from / 10..SECOND * to / 10]);
+	assert!(
+		tail(&after_left, 1, 5) > 0.001,
+		"the room still sounds: {}",
+		tail(&after_left, 1, 5)
+	);
+	assert!(tail(&after_left, 6, 10) < tail(&after_left, 1, 5) / 2.0, "and fades");
+	assert_ne!(after_left, after_right, "the reverb gives the sound its width");
+	assert!(peak(&note_left) > VOICE_GAIN, "while the note sounds the reverb adds to it");
+
+	// Half the send, half the tail.
+	let (_, (half_left, _)) = note_with_sends(64, 0);
+	let share = tail(&half_left, 1, 5) / tail(&after_left, 1, 5);
+	assert_close(share, 64.0 / 127.0, 0.01, "send 64 against send 127");
+}
+
+#[test]
+fn the_chorus_doubles_the_note_with_a_swaying_copy_and_ends_with_it() {
+	let ((note_left, note_right), (after_left, after_right)) = note_with_sends(0, 127);
+	let ((dry, _), _) = note_with_sends(0, 0);
+	assert_ne!(note_left, dry);
+	assert_ne!(note_left, note_right, "the copies of the two sides are delayed differently");
+	// The copy is as loud as the note: together they reach up to twice its peak, never more.
+	let together = peak(&note_left).max(peak(&note_right));
+	assert!(together > VOICE_GAIN * 1.2 && together <= VOICE_GAIN * 2.001, "{together}");
+	// The longest delay is 3.9 ms: ten milliseconds after the note there is nothing left of it.
+	assert!(
+		peak(&after_left[..SECOND / 500]) > 0.01,
+		"the copy is still arriving right after the note"
+	);
+	assert!(is_silent(&after_left[SECOND / 100..]) && is_silent(&after_right[SECOND / 100..]));
+
+	// Half the send, a copy half as loud.
+	let ((half_left, _), _) = note_with_sends(0, 64);
+	let added = |signal: &[f32]| rms(&signal.iter().zip(&dry).map(|(wet, dry)| wet - dry).collect::<Vec<f32>>());
+	assert_close(
+		added(&half_left) / added(&note_left),
+		64.0 / 127.0,
+		0.01,
+		"send 64 against send 127",
+	);
+}
+
+#[test]
+fn a_send_belongs_to_its_channel() {
+	let (mut synth, _) = synth(Wave::Sine, ORGAN);
+	synth.control_change(0, controller::REVERB_SEND, 127);
+	synth.control_change(0, controller::CHORUS_SEND, 127);
+	// A note on another channel is not sent anywhere.
+	synth.note_on(1, A4, FULL);
+	let (left, right) = render_stereo(&mut synth, SECOND / 5);
+	let (mut plain, _) = self::synth(Wave::Sine, ORGAN);
+	plain.note_on(1, A4, FULL);
+	assert_eq!(left, render(&mut plain, SECOND / 5));
+	assert_eq!(left, right);
+}
+
+#[test]
+fn a_long_loud_chord_with_both_effects_stays_within_bounds_and_ends_in_silence() {
+	let (mut synth, _) = synth(Wave::Saw, ORGAN);
+	for channel in 0..16 {
+		synth.control_change(channel, controller::REVERB_SEND, 127);
+		synth.control_change(channel, controller::CHORUS_SEND, 127);
+	}
+	let chord: [u8; 8] = [45, 52, 57, 60, 64, 69, 72, 76];
+	for (channel, key) in (0u8..).zip(chord) {
+		synth.note_on(channel, key, FULL);
+	}
+	// Eight full voices peak at 1.6 dry; the chorus can double that, the reverb adds its room.
+	let mut loudest = 0.0f32;
+	for _ in 0..20 {
+		let (left, right) = render_stereo(&mut synth, SECOND);
+		assert!(left.iter().chain(&right).all(|sample| sample.is_finite()));
+		loudest = loudest.max(peak(&left)).max(peak(&right));
+	}
+	assert!(
+		loudest > 1.0 && loudest < 6.0,
+		"twenty seconds on, the level has not built up: {loudest}"
+	);
+
+	for (channel, key) in (0u8..).zip(chord) {
+		synth.note_off(channel, key);
+	}
+	let mut seconds = 0;
+	loop {
+		let (left, right) = render_stereo(&mut synth, SECOND);
+		seconds += 1;
+		if is_silent(&left) && is_silent(&right) {
+			break;
+		}
+		assert!(seconds < 60, "the tail has not ended after a minute");
+	}
+}
+
+#[test]
+fn buffers_of_different_lengths_are_rendered_up_to_the_shorter_one() {
+	let (mut synth, _) = synth(Wave::Sine, ORGAN);
+	synth.note_on(0, A4, FULL);
+	let mut left = vec![9.0; 300];
+	let mut right = vec![9.0; 200];
+	synth.render(&mut left, &mut right);
+	assert_eq!(left[..200], right[..]);
+	assert!(peak(&right) > 0.1);
+	assert!(is_silent(&left[200..]), "what one buffer has beyond the other is silence");
+}

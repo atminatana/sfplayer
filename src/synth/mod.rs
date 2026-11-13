@@ -4,6 +4,7 @@
 
 mod bank;
 mod builtin;
+mod effects;
 mod rusty;
 
 pub use bank::{PresetInfo, SoundFontBank, SynthError};

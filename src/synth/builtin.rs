@@ -1,5 +1,5 @@
 //! The built-in synthesizer (spec v1.2, F-22): one timbre for all sixteen channels — a sine, a saw or a
-//! triangle shaped by an ADSR envelope — with 64 voices.
+//! triangle shaped by an ADSR envelope — with 64 voices, a reverb and a chorus.
 //!
 //! Everything is allocated when the engine is created; no method called on the audio thread allocates
 //! (spec N-03). The timbre is shared with the UI through atomics: a note takes the wave and the envelope
@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
 use super::SynthEngine;
+use super::effects::Effects;
 use crate::midi::controller;
 
 /// Polyphony: a note beyond it takes the voice of the oldest one.
@@ -259,6 +260,9 @@ struct Channel {
 	/// Pitch Bend as a frequency ratio.
 	bend: f32,
 	is_pedal_down: bool,
+	/// How much of the channel goes to the reverb (CC 91) and to the chorus (CC 93), as gain.
+	reverb_send: f32,
+	chorus_send: f32,
 }
 
 pub struct BuiltinSynth {
@@ -268,10 +272,12 @@ pub struct BuiltinSynth {
 	channels: [Channel; CHANNELS],
 	/// Notes started so far: the stamp of the next one.
 	started: u64,
+	effects: Effects,
 }
 
 impl BuiltinSynth {
 	/// `timbre` stays shared: what the UI sets in it applies to the notes that start afterwards.
+	/// Both effects are silent until a channel is given a send level.
 	pub fn new(sample_rate: u32, timbre: Arc<Timbre>) -> Self {
 		Self {
 			sample_rate: sample_rate.max(1) as f32,
@@ -281,8 +287,11 @@ impl BuiltinSynth {
 				volume: amplitude_of(DEFAULT_VOLUME),
 				bend: 1.0,
 				is_pedal_down: false,
+				reverb_send: 0.0,
+				chorus_send: 0.0,
 			}; CHANNELS],
 			started: 0,
+			effects: Effects::new(sample_rate.max(1)),
 		}
 	}
 
@@ -306,6 +315,35 @@ impl BuiltinSynth {
 			.iter_mut()
 			.filter(move |voice| voice.is_active() && voice.channel == channel)
 	}
+
+	/// Renders one block of at most `Effects::BLOCK` frames: the voices, then what the effects make
+	/// of the share of each voice its channel sends them.
+	fn render_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+		left.fill(0.0);
+		let (reverb_input, chorus_input) = self.effects.begin_block(left.len());
+		for voice in self.voices.iter_mut().filter(|voice| voice.is_active()) {
+			let channel = self.channels[usize::from(voice.channel)];
+			let step = voice.step * channel.bend;
+			let gain = voice.gain * channel.volume;
+			for (frame, sample) in left.iter_mut().enumerate() {
+				let level = voice.advance_envelope();
+				let value = voice.wave.sample(voice.phase, step) * level * gain;
+				*sample += value;
+				reverb_input[frame] += value * channel.reverb_send;
+				chorus_input[frame] += value * channel.chorus_send;
+				voice.phase += step;
+				if voice.phase >= 1.0 {
+					voice.phase -= 1.0;
+				}
+				if !voice.is_active() {
+					break;
+				}
+			}
+		}
+		// The timbre has no width: both sides carry the same signal, and only the effects tell them apart.
+		right.copy_from_slice(left);
+		self.effects.finish_block(left, right);
+	}
 }
 
 /// A 7-bit value (velocity, volume) as amplitude: the square, so that half the value is a quarter
@@ -313,6 +351,11 @@ impl BuiltinSynth {
 fn amplitude_of(value: u8) -> f32 {
 	let share = f32::from(value.min(127)) / 127.0;
 	share * share
+}
+
+/// A send level (CC 91, CC 93) as the share of the signal that is sent: 127 sends all of it.
+fn send_of(value: u8) -> f32 {
+	f32::from(value.min(127)) / 127.0
 }
 
 fn frequency_of(key: u8) -> f32 {
@@ -373,6 +416,8 @@ impl SynthEngine for BuiltinSynth {
 		};
 		match controller {
 			controller::VOLUME => state.volume = amplitude_of(value),
+			controller::REVERB_SEND => state.reverb_send = send_of(value) * Effects::REVERB_SEND_GAIN,
+			controller::CHORUS_SEND => state.chorus_send = send_of(value),
 			controller::SUSTAIN => {
 				state.is_pedal_down = value >= PEDAL_DOWN;
 				if !state.is_pedal_down {
@@ -406,26 +451,16 @@ impl SynthEngine for BuiltinSynth {
 	}
 
 	fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
-		left.fill(0.0);
-		for voice in self.voices.iter_mut().filter(|voice| voice.is_active()) {
-			let channel = self.channels[usize::from(voice.channel)];
-			let step = voice.step * channel.bend;
-			let gain = voice.gain * channel.volume;
-			for sample in left.iter_mut() {
-				let level = voice.advance_envelope();
-				*sample += voice.wave.sample(voice.phase, step) * level * gain;
-				voice.phase += step;
-				if voice.phase >= 1.0 {
-					voice.phase -= 1.0;
-				}
-				if !voice.is_active() {
-					break;
-				}
-			}
-		}
-		// The timbre has no width: both sides carry the same signal.
 		let frames = left.len().min(right.len());
-		right[..frames].copy_from_slice(&left[..frames]);
+		// The contract is two buffers of one length; whatever one of them has beyond it is silence.
+		left[frames..].fill(0.0);
+		right[frames..].fill(0.0);
+		let blocks = left[..frames]
+			.chunks_mut(Effects::BLOCK)
+			.zip(right[..frames].chunks_mut(Effects::BLOCK));
+		for (left, right) in blocks {
+			self.render_block(left, right);
+		}
 	}
 
 	fn max_voices(&self) -> usize {

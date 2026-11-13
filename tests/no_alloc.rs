@@ -143,6 +143,16 @@ fn busy_callbacks(core: &mut Core, spare_engine: Box<dyn SynthEngine>) {
 			value: 127,
 		})
 		.expect("room");
+	for channel in 0..16 {
+		for controller in [controller::REVERB_SEND, controller::CHORUS_SEND] {
+			let message = MidiEvent::ControlChange {
+				channel,
+				controller,
+				value: 100,
+			};
+			core.commands.try_push(Command::Midi(message)).ok().expect("room");
+		}
+	}
 	core.shared.set_transpose(3);
 	core.shared.set_omni_channel(Some(2));
 	core.shared.set_recording(true);
@@ -196,6 +206,11 @@ fn the_builtin_synth_leaves_the_heap_alone_once_created() {
 		synth.note_on(0, 60, 127);
 		synth.control_change(0, controller::SUSTAIN, 127);
 		synth.control_change(0, controller::VOLUME, 90);
+		// Both effects at work on every channel.
+		for channel in 0..16 {
+			synth.control_change(channel, controller::REVERB_SEND, 100);
+			synth.control_change(channel, controller::CHORUS_SEND, 100);
+		}
 		synth.pitch_bend(0, 16_383);
 		synth.program_change(0, 5);
 		for key in 0..(MAX_VOICES as u8 + 20) {
