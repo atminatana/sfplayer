@@ -4,9 +4,9 @@
 
 use std::collections::BTreeMap;
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rust_i18n::t;
 
+use super::chord::{KeyCode, KeyEvent, KeyModifiers};
 use crate::config::KeyboardConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

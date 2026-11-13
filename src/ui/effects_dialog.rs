@@ -2,8 +2,7 @@
 //! level. Pure state machine; drawing lives in `modals.rs`. Changes are applied live through `Changed`,
 //! Enter keeps them (`Accepted`), Esc rolls back to the state the dialog opened with.
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
-
+use super::chord::{KeyCode, KeyEvent};
 use crate::session::EffectsSettings;
 
 /// ← / → move a send level by this much (CC 91 / CC 93 range 0..=127).
@@ -94,9 +93,8 @@ impl EffectsDialog {
 
 #[cfg(test)]
 mod tests {
-	use ratatui::crossterm::event::KeyModifiers;
-
 	use super::*;
+	use crate::ui::chord::KeyModifiers;
 
 	fn press(code: KeyCode) -> KeyEvent {
 		KeyEvent::new(code, KeyModifiers::NONE)

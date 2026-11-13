@@ -4,8 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
-
+use super::chord::{KeyCode, KeyEvent};
 use super::path_input::{DirEntry, PathInput, PathOutcome};
 use crate::config::RecordFormat;
 
@@ -109,9 +108,8 @@ impl RecordDialog {
 
 #[cfg(test)]
 mod tests {
-	use ratatui::crossterm::event::KeyModifiers;
-
 	use super::*;
+	use crate::ui::chord::KeyModifiers;
 
 	fn press(code: KeyCode) -> KeyEvent {
 		KeyEvent::new(code, KeyModifiers::NONE)

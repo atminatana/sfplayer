@@ -1,7 +1,7 @@
 //! Modal list selector (spec §6, dialog type 1): arrows / PgUp / PgDn / Home / End move, typed text filters,
 //! Enter applies, Esc cancels. Pure state machine; drawing lives in `screen.rs`.
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use super::chord::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectorItem {

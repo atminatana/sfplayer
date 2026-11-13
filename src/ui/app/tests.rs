@@ -1,7 +1,5 @@
 //! Key handling and request tests for `App` (no devices involved).
 
-use ratatui::crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
-
 use super::*;
 use crate::midi::MidiEvent;
 use crate::midi::MidiPortInfo;
@@ -366,4 +364,78 @@ fn home_and_end_drive_recording_and_quit_asks_for_confirmation_while_recording()
 	let mut idle = App::new("en");
 	idle.handle_key(plain(KeyCode::F(10)));
 	assert!(idle.should_quit, "no confirmation when not recording");
+}
+
+#[test]
+fn terminal_keys_translate_code_modifiers_and_kind_and_unknown_keys_are_dropped() {
+	let from_terminal = |code, modifiers, kind| key_from_terminal(&terminal::KeyEvent::new_with_kind(code, modifiers, kind));
+	assert_eq!(
+		from_terminal(
+			terminal::KeyCode::Char('c'),
+			terminal::KeyModifiers::CONTROL,
+			terminal::KeyEventKind::Press
+		),
+		Some(press(KeyCode::Char('c'), KeyModifiers::CONTROL))
+	);
+	assert_eq!(
+		from_terminal(
+			terminal::KeyCode::F(10),
+			terminal::KeyModifiers::NONE,
+			terminal::KeyEventKind::Press
+		),
+		Some(plain(KeyCode::F(10)))
+	);
+	assert_eq!(
+		from_terminal(
+			terminal::KeyCode::BackTab,
+			terminal::KeyModifiers::SHIFT,
+			terminal::KeyEventKind::Press
+		),
+		Some(press(KeyCode::BackTab, KeyModifiers::SHIFT))
+	);
+	assert_eq!(
+		from_terminal(
+			terminal::KeyCode::Left,
+			terminal::KeyModifiers::CONTROL | terminal::KeyModifiers::ALT,
+			terminal::KeyEventKind::Press
+		),
+		Some(press(KeyCode::Left, KeyModifiers::CONTROL | KeyModifiers::ALT))
+	);
+
+	// Auto-repeat and release keep their kind: the text keyboard depends on both.
+	assert_eq!(
+		from_terminal(
+			terminal::KeyCode::Char('z'),
+			terminal::KeyModifiers::NONE,
+			terminal::KeyEventKind::Repeat
+		),
+		Some(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Repeat))
+	);
+	assert_eq!(
+		from_terminal(
+			terminal::KeyCode::Char('z'),
+			terminal::KeyModifiers::NONE,
+			terminal::KeyEventKind::Release
+		),
+		Some(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Release))
+	);
+
+	// Super, Hyper and Meta all become the one modifier no binding uses, so such a chord matches no command.
+	for held in [
+		terminal::KeyModifiers::SUPER,
+		terminal::KeyModifiers::HYPER,
+		terminal::KeyModifiers::META,
+	] {
+		let key = from_terminal(terminal::KeyCode::F(1), held, terminal::KeyEventKind::Press).expect("F1 is known");
+		assert_eq!(key.modifiers, KeyModifiers::SUPER);
+		assert_eq!(Bindings::default().action_for(&key), None);
+	}
+
+	// Keys the UI does not distinguish never reach the handlers.
+	for code in [terminal::KeyCode::CapsLock, terminal::KeyCode::Null, terminal::KeyCode::Menu] {
+		assert_eq!(
+			from_terminal(code, terminal::KeyModifiers::NONE, terminal::KeyEventKind::Press),
+			None
+		);
+	}
 }

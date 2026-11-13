@@ -506,10 +506,7 @@ fn record_dialog_overlay_shows_folder_format_radio_and_description() {
 	assert!(contains(&lines, "Tab complete"));
 	let mut dialog = RecordDialog::new(Some(std::path::Path::new("D:/takes")), RecordFormat::OggVorbis, 0.5);
 	dialog.handle_key(
-		ratatui::crossterm::event::KeyEvent::new(
-			ratatui::crossterm::event::KeyCode::Down,
-			ratatui::crossterm::event::KeyModifiers::NONE,
-		),
+		crate::ui::chord::KeyEvent::new(crate::ui::chord::KeyCode::Down, crate::ui::chord::KeyModifiers::NONE),
 		|_| Vec::new(),
 	);
 	let mut app = App::new("ru");

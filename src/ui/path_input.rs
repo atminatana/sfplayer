@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use super::chord::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PathOutcome {

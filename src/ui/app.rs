@@ -7,8 +7,9 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use ratatui::DefaultTerminal;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{self as terminal, Event};
 
+use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use super::dialog::{Choice, Dialog, DialogKind};
 use super::effects_dialog::{EffectsDialog, EffectsOutcome};
 use super::glyphs::Glyphs;
@@ -401,6 +402,50 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 	}
 }
 
+/// Translates a terminal key event into the UI's own type; `None` for keys the UI does not distinguish
+/// (lock keys, media keys, lone modifiers).
+fn key_from_terminal(key: &terminal::KeyEvent) -> Option<KeyEvent> {
+	let code = match key.code {
+		terminal::KeyCode::Char(c) => KeyCode::Char(c),
+		terminal::KeyCode::F(number) => KeyCode::F(number),
+		terminal::KeyCode::Up => KeyCode::Up,
+		terminal::KeyCode::Down => KeyCode::Down,
+		terminal::KeyCode::Left => KeyCode::Left,
+		terminal::KeyCode::Right => KeyCode::Right,
+		terminal::KeyCode::Home => KeyCode::Home,
+		terminal::KeyCode::End => KeyCode::End,
+		terminal::KeyCode::PageUp => KeyCode::PageUp,
+		terminal::KeyCode::PageDown => KeyCode::PageDown,
+		terminal::KeyCode::Enter => KeyCode::Enter,
+		terminal::KeyCode::Esc => KeyCode::Esc,
+		terminal::KeyCode::Tab => KeyCode::Tab,
+		terminal::KeyCode::BackTab => KeyCode::BackTab,
+		terminal::KeyCode::Backspace => KeyCode::Backspace,
+		terminal::KeyCode::Delete => KeyCode::Delete,
+		terminal::KeyCode::Insert => KeyCode::Insert,
+		_ => return None,
+	};
+	let mut modifiers = KeyModifiers::NONE;
+	for (held, modifier) in [
+		(terminal::KeyModifiers::SHIFT, KeyModifiers::SHIFT),
+		(terminal::KeyModifiers::CONTROL, KeyModifiers::CONTROL),
+		(terminal::KeyModifiers::ALT, KeyModifiers::ALT),
+		(terminal::KeyModifiers::SUPER, KeyModifiers::SUPER),
+		(terminal::KeyModifiers::HYPER, KeyModifiers::SUPER),
+		(terminal::KeyModifiers::META, KeyModifiers::SUPER),
+	] {
+		if key.modifiers.contains(held) {
+			modifiers |= modifier;
+		}
+	}
+	let kind = match key.kind {
+		terminal::KeyEventKind::Press => KeyEventKind::Press,
+		terminal::KeyEventKind::Repeat => KeyEventKind::Repeat,
+		terminal::KeyEventKind::Release => KeyEventKind::Release,
+	};
+	Some(KeyEvent { code, modifiers, kind })
+}
+
 /// Runs the UI until the user quits. Input is polled with a timeout so the loop also wakes up to refresh meters.
 pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session) -> std::io::Result<()> {
 	let mut next_frame = Instant::now();
@@ -417,11 +462,14 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 			next_frame = now + FRAME_INTERVAL;
 		}
 		let timeout = next_frame.saturating_duration_since(Instant::now());
-		if event::poll(timeout)? {
-			match event::read()? {
+		if terminal::poll(timeout)? {
+			match terminal::read()? {
 				Event::Key(key) => {
 					// Raw key stream for diagnosing terminal behaviour (auto-repeat, release events); spec N-07.
 					tracing::debug!(code = ?key.code, kind = ?key.kind, modifiers = ?key.modifiers, "key event");
+					let Some(key) = key_from_terminal(&key) else {
+						continue;
+					};
 					let request = if key.kind == KeyEventKind::Release {
 						app.handle_release(key)
 					} else {
