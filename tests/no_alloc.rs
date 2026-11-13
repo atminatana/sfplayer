@@ -95,6 +95,7 @@ fn note_on(channel: u8, key: u8) -> MidiEvent {
 struct Core {
 	renderer: BlockRenderer,
 	events: HeapProd<MidiEvent>,
+	file_events: HeapProd<MidiEvent>,
 	commands: HeapProd<Command>,
 	/// The far ends of the rings the core writes to: kept so that they are not closed.
 	_retired: ringbuf::HeapCons<Box<dyn SynthEngine>>,
@@ -105,10 +106,19 @@ struct Core {
 fn core_with(engine: Box<dyn SynthEngine>) -> Core {
 	let shared = Arc::new(AudioShared::default());
 	let (events, events_rx) = HeapRb::<MidiEvent>::new(RING).split();
+	let (file_events, file_events_rx) = HeapRb::<MidiEvent>::new(RING).split();
 	let (mut commands, commands_rx) = HeapRb::<Command>::new(RING).split();
 	let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(4).split();
 	let (recording_tx, recording) = HeapRb::<f32>::new(BLOCK * 8).split();
-	let mut renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, recording_tx, Arc::clone(&shared), SAMPLE_RATE);
+	let mut renderer = BlockRenderer::new(
+		events_rx,
+		file_events_rx,
+		commands_rx,
+		retired_tx,
+		recording_tx,
+		Arc::clone(&shared),
+		SAMPLE_RATE,
+	);
 	commands
 		.try_push(Command::ReplaceEngine(Some(engine)))
 		.ok()
@@ -118,6 +128,7 @@ fn core_with(engine: Box<dyn SynthEngine>) -> Core {
 	Core {
 		renderer,
 		events,
+		file_events,
 		commands,
 		_retired: retired,
 		_recording: recording,
@@ -125,12 +136,13 @@ fn core_with(engine: Box<dyn SynthEngine>) -> Core {
 	}
 }
 
-/// What a busy callback sees: notes from both sources on several channels, controllers, a bend, a
+/// What a busy callback sees: notes from all three sources on several channels, controllers, a bend, a
 /// panic, recording switched on, and a replaced engine on its way back to the UI thread.
 fn busy_callbacks(core: &mut Core, spare_engine: Box<dyn SynthEngine>) {
 	let mut output = [0.0f32; BLOCK * 2];
 	for key in 30..100 {
 		core.events.try_push(note_on(key % 16, key)).expect("room");
+		core.file_events.try_push(note_on((key + 3) % 16, key)).expect("room");
 		core.commands.try_push(Command::Play(note_on(0, key))).ok().expect("room");
 	}
 	core.events

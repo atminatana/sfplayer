@@ -1,8 +1,9 @@
 //! MIDI layer: message parsing (parse.rs), midir ports (ports.rs), hot-plug polling (hotplug.rs) and
-//! Standard MIDI Files (smf.rs).
+//! Standard MIDI Files: reading (smf.rs) and playing (player.rs).
 
 mod hotplug;
 mod parse;
+pub mod player;
 mod ports;
 pub mod smf;
 

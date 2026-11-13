@@ -40,6 +40,8 @@ pub struct AudioStream {
 pub struct AudioLinks {
 	/// MIDI thread → audio: hardware events.
 	pub events: HeapProd<MidiEvent>,
+	/// MIDI file player thread → audio: the messages of the file being played.
+	pub file_events: HeapProd<MidiEvent>,
 	/// UI thread → audio: commands and UI-generated notes.
 	pub commands: HeapProd<Command>,
 	/// audio → UI: engines replaced via `Command::ReplaceEngine`, to be dropped off the audio thread.
@@ -66,10 +68,19 @@ pub fn open_output_stream(
 
 	let attempt = |buffer_size: BufferSize| -> Result<(Stream, AudioLinks), AudioError> {
 		let (events, events_rx) = HeapRb::<MidiEvent>::new(EVENT_RING_CAPACITY).split();
+		let (file_events, file_events_rx) = HeapRb::<MidiEvent>::new(EVENT_RING_CAPACITY).split();
 		let (commands, commands_rx) = HeapRb::<Command>::new(COMMAND_RING_CAPACITY).split();
 		let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(RETIRED_RING_CAPACITY).split();
 		let (recording_tx, recording) = HeapRb::<f32>::new((sample_rate * 2 * RECORD_RING_SECONDS) as usize).split();
-		let mut renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, recording_tx, Arc::clone(shared), sample_rate);
+		let mut renderer = BlockRenderer::new(
+			events_rx,
+			file_events_rx,
+			commands_rx,
+			retired_tx,
+			recording_tx,
+			Arc::clone(shared),
+			sample_rate,
+		);
 		let data_callback = move |output: &mut [f32], _: &cpal::OutputCallbackInfo| renderer.fill(output, OUTPUT_CHANNELS as usize);
 		let xrun_counter = Arc::clone(shared);
 		let error_callback = move |error: cpal::Error| {
@@ -94,6 +105,7 @@ pub fn open_output_stream(
 			stream,
 			AudioLinks {
 				events,
+				file_events,
 				commands,
 				retired,
 				recording,

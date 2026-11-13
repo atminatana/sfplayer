@@ -21,6 +21,7 @@ const NOTE_ON: MidiEvent = MidiEvent::NoteOn {
 struct Harness {
 	renderer: BlockRenderer,
 	events: HeapProd<MidiEvent>,
+	file_events: HeapProd<MidiEvent>,
 	commands: HeapProd<Command>,
 	retired: HeapCons<Box<dyn SynthEngine>>,
 	recording: HeapCons<f32>,
@@ -42,13 +43,23 @@ fn harness() -> Harness {
 fn empty_harness() -> Harness {
 	let shared = Arc::new(AudioShared::default());
 	let (events, events_rx) = HeapRb::<MidiEvent>::new(RING_CAPACITY).split();
+	let (file_events, file_events_rx) = HeapRb::<MidiEvent>::new(RING_CAPACITY).split();
 	let (commands, commands_rx) = HeapRb::<Command>::new(RING_CAPACITY).split();
 	let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(RING_CAPACITY).split();
 	let (recording_tx, recording) = HeapRb::<f32>::new(FRAMES * 2 + 16).split();
-	let renderer = BlockRenderer::new(events_rx, commands_rx, retired_tx, recording_tx, Arc::clone(&shared), SAMPLE_RATE);
+	let renderer = BlockRenderer::new(
+		events_rx,
+		file_events_rx,
+		commands_rx,
+		retired_tx,
+		recording_tx,
+		Arc::clone(&shared),
+		SAMPLE_RATE,
+	);
 	Harness {
 		renderer,
 		events,
+		file_events,
 		commands,
 		retired,
 		recording,
@@ -562,4 +573,68 @@ fn the_processor_is_switched_on_the_fly_between_the_two_engines() {
 	assert!(h.retired.try_pop().is_some(), "the synthesizer is handed back");
 	assert!(rms(&output) > 0.01);
 	assert_eq!(h.shared.notes(Source::Keyboard), 0, "its note did not survive the switch");
+}
+
+#[test]
+fn the_notes_of_a_midi_file_are_a_source_of_their_own_under_the_common_rules() {
+	let mut h = harness();
+	// The engine goes in with the first callback; a file message in that same callback would be
+	// applied before it and dropped with the engine it was meant for.
+	render(&mut h);
+	h.shared.set_transpose(2);
+	h.shared.set_omni_channel(Some(0));
+	h.file_events.try_push(note_on(4, 60)).unwrap();
+	h.events.try_push(note_on(0, 50)).unwrap();
+	let mut output = vec![0.0; FRAMES * 2];
+	h.renderer.fill(&mut output, 2);
+	assert!(rms(&output) > 0.01, "the file is heard");
+	// Transposed like any other note, and counted for the file alone.
+	assert_eq!(keys(h.shared.notes(Source::File)), [62]);
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [52]);
+	assert_eq!(h.shared.notes(Source::Keyboard), 0);
+
+	// Omni brought the file's note to channel 1: silencing that channel ends it.
+	h.events
+		.try_push(MidiEvent::ControlChange {
+			channel: 0,
+			controller: controller::ALL_NOTES_OFF,
+			value: 0,
+		})
+		.unwrap();
+	render(&mut h);
+	assert_eq!(h.shared.notes(Source::File), 0);
+
+	// The file lets go of its own note without touching the same key held from the MIDI input.
+	h.shared.set_omni_channel(None);
+	h.file_events.try_push(note_on(0, 60)).unwrap();
+	h.events.try_push(note_on(0, 60)).unwrap();
+	render(&mut h);
+	h.file_events.try_push(note_off(0, 60)).unwrap();
+	render(&mut h);
+	assert_eq!(h.shared.notes(Source::File), 0);
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [62]);
+}
+
+#[test]
+fn what_the_file_sent_is_applied_before_what_the_ui_sends_in_the_same_callback() {
+	let mut h = harness();
+	// The last of a song and, right behind it, the UI putting the synthesizer in order: both are in
+	// the rings when the callback runs. The file's note must be on before the UI silences the channel —
+	// the other way round the note would be left sounding.
+	h.file_events.try_push(note_on(0, 60)).unwrap();
+	h.commands
+		.try_push(Command::Midi(MidiEvent::ControlChange {
+			channel: 0,
+			controller: controller::ALL_SOUND_OFF,
+			value: 0,
+		}))
+		.ok()
+		.unwrap();
+	let mut output = vec![0.0; FRAMES * 2];
+	h.renderer.fill(&mut output, 2);
+	assert!(
+		output.iter().all(|sample| *sample == 0.0),
+		"the note was cut by the message sent after it"
+	);
+	assert_eq!(h.shared.notes(Source::File), 0);
 }

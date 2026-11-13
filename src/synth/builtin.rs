@@ -316,6 +316,15 @@ impl SynthEngine for BuiltinSynth {
 					voice.release();
 				}
 			}
+			// What a player sends when a song is over: the bend back to the centre, the pedal up.
+			// The volume is not a controller this message resets.
+			controller::RESET_ALL_CONTROLLERS => {
+				state.bend = 1.0;
+				state.is_pedal_down = false;
+				for voice in self.voices_of(channel).filter(|voice| voice.is_held_by_pedal) {
+					voice.release();
+				}
+			}
 			_ => {}
 		}
 	}

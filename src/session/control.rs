@@ -269,6 +269,36 @@ pub(super) fn push_effect_sends(commands: &mut HeapProd<Command>, synth: &SynthC
 	}
 }
 
+/// Channel volume and pan as a synthesizer has them before any message arrives.
+const DEFAULT_VOLUME: u8 = 100;
+const CENTRE_PAN: u8 = 64;
+
+/// Puts the synthesizer back in order after a MIDI file (spec v1.2, F-21): a file sets controllers,
+/// volumes and programs of its own, and the next thing played by hand must not inherit them. On every
+/// channel the controllers are reset and the volume and the pan put back — the reset message leaves
+/// those two alone; then the F5 preset and the effect sends are applied again.
+pub(super) fn push_after_playback(commands: &mut HeapProd<Command>, preset: Option<(u16, u8)>, synth: &SynthConfig) {
+	for channel in 0..MIDI_CHANNELS as u8 {
+		for (controller, value) in [
+			(controller::RESET_ALL_CONTROLLERS, 0),
+			(controller::VOLUME, DEFAULT_VOLUME),
+			(controller::PAN, CENTRE_PAN),
+		] {
+			let _ = commands.try_push(Command::Midi(MidiEvent::ControlChange {
+				channel,
+				controller,
+				value,
+			}));
+		}
+	}
+	if synth.engine == EngineKind::Sf2
+		&& let Some((bank, program)) = preset
+	{
+		push_global_preset(commands, bank, program);
+	}
+	push_effect_sends(commands, synth);
+}
+
 /// Bank Select (CC 0, 7-bit; the percussion bank 128 is implied by channel 10 in SF2) followed by Program Change.
 pub(super) fn push_preset(commands: &mut HeapProd<Command>, channel: u8, bank: u16, program: u8) {
 	let bank_msb = u8::try_from(bank & 0x7F).unwrap_or(0);
@@ -370,6 +400,89 @@ mod tests {
 				"the built-in synthesizer keeps its engine"
 			);
 		}
+	}
+
+	/// Everything a ring holds, as (channel, what) pairs of the messages that matter to these tests.
+	fn sent(received: &mut ringbuf::HeapCons<Command>) -> Vec<MidiEvent> {
+		let mut events = Vec::new();
+		while let Some(command) = received.try_pop() {
+			match command {
+				Command::Midi(event) => events.push(event),
+				_ => panic!("only service messages are expected here"),
+			}
+		}
+		events
+	}
+
+	#[test]
+	fn after_a_midi_file_every_channel_is_put_back_in_order_and_the_preset_and_sends_return() {
+		let (mut commands, mut received) = HeapRb::<Command>::new(256).split();
+		let synth = SynthConfig::default();
+		push_after_playback(&mut commands, Some((0, 5)), &synth);
+		let events = sent(&mut received);
+		let control = |channel: u8, controller: u8| {
+			events.iter().find_map(|event| match event {
+				MidiEvent::ControlChange {
+					channel: found,
+					controller: number,
+					value,
+				} if (*found, *number) == (channel, controller) => Some(*value),
+				_ => None,
+			})
+		};
+		for channel in 0..16 {
+			assert_eq!(control(channel, controller::RESET_ALL_CONTROLLERS), Some(0), "channel {channel}");
+			assert_eq!(control(channel, controller::VOLUME), Some(100));
+			assert_eq!(control(channel, controller::PAN), Some(64));
+			// The sends of the default config: reverb at 40, chorus off.
+			assert_eq!(control(channel, controller::REVERB_SEND), Some(40));
+			assert_eq!(control(channel, controller::CHORUS_SEND), Some(0));
+		}
+		// The F5 preset again on every channel but percussion, after the controllers were reset.
+		let programs: Vec<(u8, u8)> = events
+			.iter()
+			.filter_map(|event| match event {
+				MidiEvent::ProgramChange { channel, program } => Some((*channel, *program)),
+				_ => None,
+			})
+			.collect();
+		assert_eq!(programs.len(), 15);
+		assert!(
+			programs
+				.iter()
+				.all(|(channel, program)| *channel != PERCUSSION_CHANNEL && *program == 5)
+		);
+		let position = |wanted: &dyn Fn(&MidiEvent) -> bool| events.iter().position(wanted).expect("sent");
+		let last_reset = events
+			.iter()
+			.rposition(|event| {
+				matches!(
+					event,
+					MidiEvent::ControlChange {
+						controller: controller::RESET_ALL_CONTROLLERS,
+						..
+					}
+				)
+			})
+			.expect("sent");
+		assert!(last_reset < position(&|event| matches!(event, MidiEvent::ProgramChange { .. })));
+		assert_eq!(events.len(), 16 * 3 + 15 * 2 + 16 * 2, "and it all fits the command ring");
+
+		// Without a chosen preset none is sent; the built-in synthesizer has no presets at all.
+		push_after_playback(&mut commands, None, &synth);
+		assert!(
+			!sent(&mut received)
+				.iter()
+				.any(|event| matches!(event, MidiEvent::ProgramChange { .. }))
+		);
+		let builtin = SynthConfig {
+			engine: EngineKind::Builtin,
+			..SynthConfig::default()
+		};
+		push_after_playback(&mut commands, Some((0, 5)), &builtin);
+		let events = sent(&mut received);
+		assert!(!events.iter().any(|event| matches!(event, MidiEvent::ProgramChange { .. })));
+		assert_eq!(events.len(), 16 * 3 + 16 * 2);
 	}
 
 	#[test]

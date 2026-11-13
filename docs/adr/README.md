@@ -17,3 +17,4 @@
 | [0011](0011-global-preset.md) | Пресет F5 — один на все каналы, кроме ударных (v1.1) | Accepted |
 | [0012](0012-gterm-window-ui.md) | Интерфейс — окно gterm вместо терминала; Windows и Linux; уточнение о лицензиях (v1.2) | Accepted |
 | [0013](0013-builtin-synth-shared-effects.md) | Встроенный синтезатор — второй движок за `SynthEngine`; эффекты с общим управлением (v1.2) | Accepted |
+| [0014](0014-smf-reader-and-sequencer-thread.md) | MIDI-файл: собственный разбор SMF и поток-секвенсор со своим кольцом (v1.2) | Accepted |

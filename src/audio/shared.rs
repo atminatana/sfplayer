@@ -4,24 +4,25 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
 
 use super::meter::Levels;
 
-/// Where a note comes from (spec v1.2, F-24). The source of MIDI-file events joins with its ring
-/// (plan v1.2, step 5.2).
+/// Where a note comes from (spec v1.2, F-21, F-24).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
 	/// The text keyboard and the on-screen piano.
 	Keyboard,
 	/// The hardware MIDI input.
 	MidiIn,
+	/// The MIDI file being played.
+	File,
 }
 
 impl Source {
-	pub const ALL: [Self; 2] = [Self::Keyboard, Self::MidiIn];
+	pub const ALL: [Self; 3] = [Self::Keyboard, Self::MidiIn, Self::File];
 	pub const COUNT: usize = Self::ALL.len();
 
 	/// Whether the omni redirection applies: it is for what comes from outside, not for what is
 	/// played in the window, which already goes to the channel of the chosen preset (F-15).
 	pub fn follows_omni(self) -> bool {
-		self == Self::MidiIn
+		self != Self::Keyboard
 	}
 }
 
@@ -240,7 +241,10 @@ mod tests {
 		shared.publish_notes(Source::MidiIn, 0);
 		assert_eq!(shared.notes(Source::Keyboard), 1 << 60);
 		assert_eq!(shared.notes(Source::MidiIn), 0);
-		assert!(Source::MidiIn.follows_omni() && !Source::Keyboard.follows_omni());
+		assert!(Source::MidiIn.follows_omni() && Source::File.follows_omni() && !Source::Keyboard.follows_omni());
+		shared.publish_notes(Source::File, 1 << 72);
+		assert_eq!(shared.notes(Source::File), 1 << 72);
+		assert_eq!(shared.notes(Source::Keyboard), 1 << 60, "the file has a map of its own");
 	}
 
 	#[test]

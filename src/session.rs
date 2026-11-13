@@ -1,4 +1,5 @@
-//! Runtime wiring of audio, MIDI, bank and config: owns the device handles and the ring producers.
+//! Runtime wiring of audio, MIDI, bank and config: owns the device handles, the ring producers and the
+//! thread that plays MIDI files.
 //! Request handling (mixer, effects, presets, panic, notes) lives in `control.rs`.
 //!
 //! The UI reads state through `Session` and never touches cpal/midir directly. Threading: ADR 0002.
@@ -18,6 +19,7 @@ use ringbuf::{HeapCons, HeapProd};
 use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, Mixer, StreamParams};
 use crate::cli::DeviceSelector;
 use crate::config::{Config, EngineKind, Settings};
+use crate::midi::player::Player;
 use crate::midi::{self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus};
 use crate::record::{RecordParams, Recorder, file_name};
 use crate::synth::{SoundFontBank, SynthEngine, SynthError, Timbre};
@@ -70,6 +72,10 @@ pub struct Session {
 	pub midi_status: MidiStatus,
 	pub midi_ports: Vec<MidiPortInfo>,
 	pub midi_dropped: Arc<AtomicU32>,
+	/// The thread that plays MIDI files, once there is an audio stream to play into.
+	player: Option<Player>,
+	/// The player's count of stops the session has already cleaned up after.
+	handled_stops: u32,
 	_hotplug: Option<HotplugWatcher>,
 	hotplug_rx: Receiver<Vec<MidiPortInfo>>,
 	pub bank: Option<LoadedBank>,
@@ -111,6 +117,8 @@ impl Session {
 			midi_status: MidiStatus::NoPort,
 			midi_ports: Vec::new(),
 			midi_dropped: Arc::new(AtomicU32::new(0)),
+			player: None,
+			handled_stops: 0,
 			_hotplug: None,
 			hotplug_rx,
 			bank: None,
@@ -171,6 +179,7 @@ impl Session {
 				stream,
 				AudioLinks {
 					events,
+					file_events,
 					commands,
 					retired,
 					recording,
@@ -181,6 +190,11 @@ impl Session {
 				self.retired = Some(retired);
 				self.record_rx = Some(recording);
 				self.spare_events = Some(events);
+				// A file that is playing goes on into the ring of the new stream.
+				match &self.player {
+					Some(player) => player.set_output(file_events),
+					None => self.player = Some(Player::spawn(file_events)),
+				}
 			}
 			Err(error) => self.notice = Some(Notice::NoAudioDevice(error.to_string())),
 		}
@@ -439,6 +453,22 @@ impl Session {
 			while let Some(engine) = retired.try_pop() {
 				drop(engine);
 			}
+		}
+		self.clean_up_after_playback();
+	}
+
+	/// When a MIDI file has played to its end or was stopped, puts back what it changed in the
+	/// synthesizer (F-21). The player counts its stops; each is cleaned up after once.
+	fn clean_up_after_playback(&mut self) {
+		let Some(stops) = self.player.as_ref().map(Player::stops) else {
+			return;
+		};
+		if stops == self.handled_stops {
+			return;
+		}
+		self.handled_stops = stops;
+		if let Some(commands) = self.commands.as_mut() {
+			control::push_after_playback(commands, self.preset, &self.config.synth);
 		}
 	}
 }

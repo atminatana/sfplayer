@@ -1,10 +1,11 @@
 //! The real-time render core: runs inside the cpal callback. No allocation, no locking, no I/O here.
 //!
-//! Two inbound rings feed the renderer: MIDI events from the MIDI thread and `Command`s from the UI
-//! thread (ADR 0002, 0009). Replaced engines travel back to the UI thread through the `retired` ring
-//! so that deallocation never happens on the audio thread.
+//! Three inbound rings feed the renderer: MIDI events from the MIDI thread, the messages of a MIDI
+//! file from the thread that plays it, and `Command`s from the UI thread (ADR 0002, 0009, 0014).
+//! Replaced engines travel back to the UI thread through the `retired` ring so that deallocation
+//! never happens on the audio thread.
 //!
-//! Every note has a source (the window, the MIDI input): which keys are held and what key a played
+//! Every note has a source (the window, the MIDI input, the file): which keys are held and what key a played
 //! one sounds as are kept per source, so two sources playing the same note do not undo each other,
 //! and the screen can show whose notes sound (spec v1.2, F-24).
 
@@ -40,6 +41,8 @@ pub enum Command {
 pub struct BlockRenderer {
 	engine: Option<Box<dyn SynthEngine>>,
 	events: HeapCons<MidiEvent>,
+	/// The messages of the MIDI file being played, from its player thread.
+	file_events: HeapCons<MidiEvent>,
 	commands: HeapCons<Command>,
 	retired: HeapProd<Box<dyn SynthEngine>>,
 	/// audio → recorder thread: interleaved stereo f32 while `shared.is_recording()`.
@@ -61,6 +64,7 @@ impl BlockRenderer {
 	/// Allocates the scratch buffers once; everything after this is allocation-free.
 	pub fn new(
 		events: HeapCons<MidiEvent>,
+		file_events: HeapCons<MidiEvent>,
 		commands: HeapCons<Command>,
 		retired: HeapProd<Box<dyn SynthEngine>>,
 		recording: HeapProd<f32>,
@@ -70,6 +74,7 @@ impl BlockRenderer {
 		Self {
 			engine: None,
 			events,
+			file_events,
 			commands,
 			retired,
 			recording,
@@ -124,6 +129,9 @@ impl BlockRenderer {
 	pub fn fill(&mut self, output: &mut [f32], channels: usize) {
 		// Clock reads are user-mode on every supported platform (QPC / vDSO), so they are allowed here (N-03).
 		let started = Instant::now();
+		// The file first: when playback stops, the UI sends what puts the synthesizer back in order
+		// after the player has sent the last of the file — and it must find that already applied.
+		self.drain_file_events();
 		self.drain_commands();
 		self.drain_events();
 		let total_frames = output.len() / channels.max(1);
@@ -234,6 +242,12 @@ impl BlockRenderer {
 	fn drain_events(&mut self) {
 		while let Some(event) = self.events.try_pop() {
 			self.feed(event, Some(Source::MidiIn));
+		}
+	}
+
+	fn drain_file_events(&mut self) {
+		while let Some(event) = self.file_events.try_pop() {
+			self.feed(event, Some(Source::File));
 		}
 	}
 }

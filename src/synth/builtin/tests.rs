@@ -682,3 +682,42 @@ fn buffers_of_different_lengths_are_rendered_up_to_the_shorter_one() {
 	assert!(peak(&right) > 0.1);
 	assert!(is_silent(&left[200..]), "what one buffer has beyond the other is silence");
 }
+
+#[test]
+fn a_reset_of_controllers_centres_the_bend_and_lifts_the_pedal_of_its_channel() {
+	let adsr = Adsr {
+		attack: 0.001,
+		decay: 0.001,
+		sustain: 1.0,
+		release: 0.01,
+	};
+	let (mut synth, _) = synth(Wave::Sine, adsr);
+	synth.pitch_bend(0, 16_383);
+	synth.pitch_bend(1, 16_383);
+	synth.control_change(0, controller::SUSTAIN, 127);
+	synth.control_change(0, controller::VOLUME, 64);
+	synth.note_on(0, A4, FULL);
+	synth.note_off(0, A4);
+	render(&mut synth, SECOND / 10);
+	assert_eq!(active(&synth), 1, "the pedal holds the released note");
+
+	synth.control_change(0, controller::RESET_ALL_CONTROLLERS, 0);
+	render(&mut synth, SECOND / 10);
+	assert_eq!(active(&synth), 0, "the pedal is up: the note is released");
+	// The bend is back at the centre on this channel only; the volume is not a controller it resets.
+	synth.note_on(0, A4, FULL);
+	render(&mut synth, SECOND / 10);
+	let second = render(&mut synth, SECOND);
+	assert!(rising_crossings(&second).abs_diff(440) <= 1);
+	assert_close(peak(&second) / VOICE_GAIN, (64.0f32 / 127.0).powi(2), 0.005, "volume 64 stays");
+	// The pedal really is up: a note let go now is not kept.
+	synth.note_off(0, A4);
+	render(&mut synth, SECOND / 10);
+	assert_eq!(active(&synth), 0);
+	synth.note_on(1, A4, FULL);
+	render(&mut synth, SECOND / 10);
+	assert!(
+		rising_crossings(&render(&mut synth, SECOND)).abs_diff(494) <= 1,
+		"channel 2 keeps its bend"
+	);
+}
