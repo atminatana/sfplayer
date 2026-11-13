@@ -1,8 +1,29 @@
 //! State shared between the audio callback and other threads through atomics only (spec N-03).
 
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
 
 use super::meter::Levels;
+
+/// Where a note comes from (spec v1.2, F-24). The source of MIDI-file events joins with its ring
+/// (plan v1.2, step 5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+	/// The text keyboard and the on-screen piano.
+	Keyboard,
+	/// The hardware MIDI input.
+	MidiIn,
+}
+
+impl Source {
+	pub const ALL: [Self; 2] = [Self::Keyboard, Self::MidiIn];
+	pub const COUNT: usize = Self::ALL.len();
+
+	/// Whether the omni redirection applies: it is for what comes from outside, not for what is
+	/// played in the window, which already goes to the channel of the chosen preset (F-15).
+	pub fn follows_omni(self) -> bool {
+		self == Self::MidiIn
+	}
+}
 
 pub struct AudioShared {
 	/// Master gain as `f32` bits (0.0..=1.0).
@@ -26,6 +47,8 @@ pub struct AudioShared {
 	recording: AtomicBool,
 	/// Samples the callback could not fit into the recording ring.
 	record_dropped: AtomicU32,
+	/// Keys sounding now, by source: a bit per key, the low and the high half of the 128 (F-24).
+	notes: [[AtomicU64; 2]; Source::COUNT],
 }
 
 impl AudioShared {
@@ -42,6 +65,7 @@ impl AudioShared {
 			omni_channel: AtomicI32::new(-1),
 			recording: AtomicBool::new(false),
 			record_dropped: AtomicU32::new(0),
+			notes: [const { [const { AtomicU64::new(0) }; 2] }; Source::COUNT],
 		}
 	}
 
@@ -145,6 +169,21 @@ impl AudioShared {
 			self.record_dropped.fetch_add(samples, Ordering::Relaxed);
 		}
 	}
+
+	/// Audio thread: the keys `source` holds now, a bit per key.
+	pub fn publish_notes(&self, source: Source, keys: u128) {
+		let [low, high] = &self.notes[source as usize];
+		low.store(keys as u64, Ordering::Relaxed);
+		high.store((keys >> 64) as u64, Ordering::Relaxed);
+	}
+
+	/// The keys `source` holds, a bit per key. The halves are read one after the other, so a reader
+	/// may for one frame see a note of one half that the other half has not caught up with — it is
+	/// a picture, not a protocol.
+	pub fn notes(&self, source: Source) -> u128 {
+		let [low, high] = &self.notes[source as usize];
+		u128::from(low.load(Ordering::Relaxed)) | (u128::from(high.load(Ordering::Relaxed)) << 64)
+	}
 }
 
 impl Default for AudioShared {
@@ -184,6 +223,24 @@ mod tests {
 		shared.publish_levels(levels, 3);
 		assert_eq!(shared.levels(), levels);
 		assert_eq!(shared.clips(), 5);
+	}
+
+	#[test]
+	fn note_maps_round_trip_across_both_halves_and_stay_apart_by_source() {
+		let shared = AudioShared::default();
+		for source in Source::ALL {
+			assert_eq!(shared.notes(source), 0);
+		}
+		// Keys 0, 63, 64 and 127: both ends of both halves.
+		let keys = 1u128 | (1 << 63) | (1 << 64) | (1 << 127);
+		shared.publish_notes(Source::MidiIn, keys);
+		assert_eq!(shared.notes(Source::MidiIn), keys);
+		assert_eq!(shared.notes(Source::Keyboard), 0);
+		shared.publish_notes(Source::Keyboard, 1 << 60);
+		shared.publish_notes(Source::MidiIn, 0);
+		assert_eq!(shared.notes(Source::Keyboard), 1 << 60);
+		assert_eq!(shared.notes(Source::MidiIn), 0);
+		assert!(Source::MidiIn.follows_omni() && !Source::Keyboard.follows_omni());
 	}
 
 	#[test]

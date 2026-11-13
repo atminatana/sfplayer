@@ -124,15 +124,11 @@ impl Session {
 		}
 	}
 
-	/// Notes from the text keyboard (F-16): same path as hardware MIDI, via the command ring (ADR 0009).
+	/// Notes played in the window (F-16, F-24): same path as hardware MIDI, via the command ring
+	/// (ADR 0009), as the notes of the keyboard source.
 	pub fn send_notes(&mut self, events: &[MidiEvent]) {
-		let Some(commands) = self.commands.as_mut() else {
-			return;
-		};
-		for event in events {
-			if commands.try_push(Command::Midi(*event)).is_err() {
-				tracing::warn!("command ring full, text keyboard event dropped");
-			}
+		if let Some(commands) = self.commands.as_mut() {
+			push_played(commands, events);
 		}
 	}
 
@@ -182,6 +178,16 @@ impl Session {
 
 /// MIDI channel 10 (0-based 9): percussion in General MIDI and in SF2 (bank 128), left out of the global preset.
 pub const PERCUSSION_CHANNEL: u8 = 9;
+
+/// What was played in the window goes as `Command::Play`, so the audio thread counts it among the notes
+/// of the keyboard source; an event that does not fit the ring is dropped and logged.
+pub(super) fn push_played(commands: &mut HeapProd<Command>, events: &[MidiEvent]) {
+	for event in events {
+		if commands.try_push(Command::Play(*event)).is_err() {
+			tracing::warn!("command ring full, text keyboard event dropped");
+		}
+	}
+}
 
 /// Bank Select + Program Change on every melodic channel (spec v1.1 §4.1): 30 ring pushes.
 pub(super) fn push_global_preset(commands: &mut HeapProd<Command>, bank: u16, program: u8) {
@@ -253,6 +259,33 @@ mod tests {
 		assert!(programs.iter().all(|(_, program)| *program == 5));
 		assert!(bank_selects.iter().all(|(_, bank)| *bank == 8));
 		assert!(!programs.iter().any(|(channel, _)| *channel == 9), "channel 10 keeps its drum kit");
+	}
+
+	#[test]
+	fn notes_played_in_the_window_travel_as_play_commands_in_order() {
+		let (mut commands, mut received) = HeapRb::<Command>::new(2).split();
+		let played = [
+			MidiEvent::NoteOn {
+				channel: 0,
+				key: 60,
+				velocity: 100,
+			},
+			MidiEvent::NoteOff { channel: 0, key: 60 },
+			MidiEvent::NoteOff { channel: 0, key: 62 },
+		];
+		push_played(&mut commands, &played);
+		let mut arrived = Vec::new();
+		while let Some(command) = received.try_pop() {
+			match command {
+				Command::Play(event) => arrived.push(event),
+				_ => panic!("a played note is not a service message"),
+			}
+		}
+		assert_eq!(
+			arrived,
+			played[..2],
+			"what does not fit the ring is dropped, the rest keeps its order"
+		);
 	}
 
 	#[test]

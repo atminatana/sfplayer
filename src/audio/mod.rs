@@ -14,7 +14,7 @@ pub use device::{
 pub use meter::Levels;
 pub use mixer::Mixer;
 pub use render::{BlockRenderer, Command};
-pub use shared::AudioShared;
+pub use shared::{AudioShared, Source};
 pub use stream::{AudioLinks, AudioStream, StreamParams, open_output_stream};
 
 use crate::synth::SynthError;

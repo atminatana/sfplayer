@@ -93,7 +93,7 @@ fn note_from_midi_ring_is_rendered_to_both_stereo_channels() {
 #[test]
 fn note_from_command_ring_takes_the_same_path() {
 	let mut h = harness();
-	h.commands.try_push(Command::Midi(NOTE_ON)).ok().unwrap();
+	h.commands.try_push(Command::Play(NOTE_ON)).ok().unwrap();
 	let mut output = vec![0.0; FRAMES * 2];
 	h.renderer.fill(&mut output, 2);
 	assert!(rms(&output) > 0.01);
@@ -144,10 +144,7 @@ fn held_notes_follow_note_on_off_all_notes_off_and_engine_swap() {
 	h.events.try_push(NOTE_ON).unwrap();
 	h.renderer.fill(&mut output, 2);
 	assert_eq!(h.shared.held_notes(), 2, "a repeated note on counts once");
-	h.commands
-		.try_push(Command::Midi(MidiEvent::NoteOff { channel: 0, key: 60 }))
-		.ok()
-		.unwrap();
+	h.events.try_push(MidiEvent::NoteOff { channel: 0, key: 60 }).unwrap();
 	h.renderer.fill(&mut output, 2);
 	assert_eq!(h.shared.held_notes(), 1);
 	h.events
@@ -215,7 +212,7 @@ fn omni_redirects_hardware_notes_but_not_ui_notes() {
 		"the note sounded on channel 0, so all-notes-off there silences it"
 	);
 	h.commands
-		.try_push(Command::Midi(MidiEvent::NoteOn {
+		.try_push(Command::Play(MidiEvent::NoteOn {
 			channel: 5,
 			key: 60,
 			velocity: 100,
@@ -321,4 +318,201 @@ fn recording_ring_gets_the_output_only_while_recording_and_counts_overflow() {
 	h.renderer.fill(&mut output, 2);
 	h.renderer.fill(&mut output, 2);
 	assert!(h.shared.record_dropped() > 0, "a full ring is counted, not blocked on");
+}
+
+fn note_on(channel: u8, key: u8) -> MidiEvent {
+	MidiEvent::NoteOn {
+		channel,
+		key,
+		velocity: 100,
+	}
+}
+
+fn note_off(channel: u8, key: u8) -> MidiEvent {
+	MidiEvent::NoteOff { channel, key }
+}
+
+/// The keys of a note map, lowest first.
+fn keys(map: u128) -> Vec<u8> {
+	(0..128).filter(|key| map & (1u128 << key) != 0).collect()
+}
+
+/// One callback's worth of rendering; the note maps are published at its end.
+fn render(h: &mut Harness) {
+	let mut output = vec![0.0; FRAMES * 2];
+	h.renderer.fill(&mut output, 2);
+}
+
+/// Panic as the UI sends it: All Notes Off and All Sound Off on every channel. The command ring of the
+/// harness is shorter than that, so the renderer runs while the ring is fed.
+fn panic(h: &mut Harness) {
+	for channel in 0..16 {
+		for controller in [controller::ALL_NOTES_OFF, controller::ALL_SOUND_OFF] {
+			let message = MidiEvent::ControlChange {
+				channel,
+				controller,
+				value: 0,
+			};
+			h.commands.try_push(Command::Midi(message)).ok().unwrap();
+		}
+		render(h);
+	}
+}
+
+#[test]
+fn the_notes_of_each_source_are_published_in_its_own_map() {
+	let mut h = harness();
+	render(&mut h);
+	assert_eq!((h.shared.notes(Source::Keyboard), h.shared.notes(Source::MidiIn)), (0, 0));
+
+	h.commands.try_push(Command::Play(note_on(0, 60))).ok().unwrap();
+	h.commands.try_push(Command::Play(note_on(0, 64))).ok().unwrap();
+	// The map is by key, whatever the channel: the low and the high half of the 128 keys.
+	h.events.try_push(note_on(3, 50)).unwrap();
+	h.events.try_push(note_on(9, 100)).unwrap();
+	render(&mut h);
+	assert_eq!(keys(h.shared.notes(Source::Keyboard)), [60, 64]);
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [50, 100]);
+	assert_eq!(h.shared.held_notes(), 4);
+
+	h.commands.try_push(Command::Play(note_off(0, 60))).ok().unwrap();
+	h.events.try_push(note_off(9, 100)).unwrap();
+	render(&mut h);
+	assert_eq!(keys(h.shared.notes(Source::Keyboard)), [64]);
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [50]);
+	assert_eq!(h.shared.held_notes(), 2);
+}
+
+#[test]
+fn the_maps_show_the_key_that_sounds_after_transposition_and_omni() {
+	let mut h = harness();
+	h.shared.set_transpose(2);
+	h.shared.set_omni_channel(Some(0));
+	h.commands.try_push(Command::Play(note_on(0, 60))).ok().unwrap();
+	h.events.try_push(note_on(7, 60)).unwrap();
+	h.events.try_push(note_on(8, 60)).unwrap();
+	render(&mut h);
+	assert_eq!(keys(h.shared.notes(Source::Keyboard)), [62]);
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [62]);
+	assert_eq!(
+		h.shared.held_notes(),
+		1,
+		"omni brought both hardware notes to the channel of the window: one note, held three times"
+	);
+}
+
+#[test]
+fn a_note_held_by_two_sources_is_released_by_each_on_its_own() {
+	let mut h = harness();
+	h.commands.try_push(Command::Play(note_on(0, 60))).ok().unwrap();
+	h.events.try_push(note_on(0, 60)).unwrap();
+	render(&mut h);
+	assert_eq!(keys(h.shared.notes(Source::Keyboard)), [60]);
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [60]);
+	assert_eq!(h.shared.held_notes(), 1, "the same note on the same channel counts once");
+
+	h.commands.try_push(Command::Play(note_off(0, 60))).ok().unwrap();
+	render(&mut h);
+	assert_eq!(h.shared.notes(Source::Keyboard), 0, "the window let go");
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [60], "the MIDI input still holds it");
+	assert_eq!(h.shared.held_notes(), 1);
+
+	h.events.try_push(note_off(0, 60)).unwrap();
+	render(&mut h);
+	assert_eq!(h.shared.notes(Source::MidiIn), 0);
+	assert_eq!(h.shared.held_notes(), 0);
+}
+
+#[test]
+fn a_source_releases_the_key_it_started_whatever_another_source_played_since() {
+	let mut h = harness();
+	// The window plays key 60 an octave up: key 72 sounds.
+	h.shared.set_transpose(12);
+	h.commands.try_push(Command::Play(note_on(0, 60))).ok().unwrap();
+	render(&mut h);
+	// The MIDI input plays the same key 60 without transposition: key 60 sounds.
+	h.shared.set_transpose(0);
+	h.events.try_push(note_on(0, 60)).unwrap();
+	render(&mut h);
+	assert_eq!(keys(h.shared.notes(Source::Keyboard)), [72]);
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [60]);
+
+	// The window lets go of its key 60: that is key 72, not the 60 the MIDI input holds.
+	h.commands.try_push(Command::Play(note_off(0, 60))).ok().unwrap();
+	render(&mut h);
+	assert_eq!(h.shared.notes(Source::Keyboard), 0);
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [60]);
+	h.events.try_push(note_off(0, 60)).unwrap();
+	let mut tail = vec![0.0; SAMPLE_RATE as usize * 2];
+	h.renderer.fill(&mut tail, 2);
+	let mut output = vec![0.0; FRAMES * 2];
+	h.renderer.fill(&mut output, 2);
+	assert!(rms(&output) < 0.001, "no key is left sounding: {}", rms(&output));
+}
+
+#[test]
+fn panic_clears_the_maps_of_every_source() {
+	let mut h = harness();
+	h.commands.try_push(Command::Play(note_on(0, 60))).ok().unwrap();
+	h.events.try_push(note_on(0, 62)).unwrap();
+	h.events.try_push(note_on(11, 70)).unwrap();
+	render(&mut h);
+	assert_eq!(h.shared.held_notes(), 3);
+	panic(&mut h);
+	assert_eq!((h.shared.notes(Source::Keyboard), h.shared.notes(Source::MidiIn)), (0, 0));
+	assert_eq!(h.shared.held_notes(), 0);
+}
+
+#[test]
+fn silencing_one_channel_clears_that_channel_alone_for_every_source() {
+	let mut h = harness();
+	h.commands.try_push(Command::Play(note_on(0, 60))).ok().unwrap();
+	h.events.try_push(note_on(0, 62)).unwrap();
+	h.events.try_push(note_on(1, 64)).unwrap();
+	render(&mut h);
+	// All Notes Off from the MIDI keyboard on channel 1 (0-based 0).
+	h.events
+		.try_push(MidiEvent::ControlChange {
+			channel: 0,
+			controller: controller::ALL_NOTES_OFF,
+			value: 0,
+		})
+		.unwrap();
+	render(&mut h);
+	assert_eq!(h.shared.notes(Source::Keyboard), 0, "the engine silenced the channel for everyone");
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [64]);
+}
+
+#[test]
+fn service_messages_of_the_ui_are_nobodys_notes() {
+	let mut h = harness();
+	h.shared.set_transpose(12);
+	h.commands.try_push(Command::Midi(note_on(0, 60))).ok().unwrap();
+	h.commands
+		.try_push(Command::Midi(MidiEvent::ProgramChange { channel: 0, program: 0 }))
+		.ok()
+		.unwrap();
+	let mut output = vec![0.0; FRAMES * 2];
+	h.renderer.fill(&mut output, 2);
+	assert!(rms(&output) > 0.01, "the message reached the engine");
+	assert_eq!((h.shared.notes(Source::Keyboard), h.shared.notes(Source::MidiIn)), (0, 0));
+	assert_eq!(h.shared.held_notes(), 0);
+	// It went as it was, untransposed: releasing key 60 itself silences it.
+	h.commands.try_push(Command::Midi(note_off(0, 60))).ok().unwrap();
+	let mut tail = vec![0.0; SAMPLE_RATE as usize * 2];
+	h.renderer.fill(&mut tail, 2);
+	h.renderer.fill(&mut output, 2);
+	assert!(rms(&output) < 0.001);
+}
+
+#[test]
+fn replacing_the_engine_drops_the_notes_of_every_source() {
+	let mut h = harness();
+	h.commands.try_push(Command::Play(note_on(0, 60))).ok().unwrap();
+	h.events.try_push(note_on(0, 62)).unwrap();
+	render(&mut h);
+	h.commands.try_push(Command::ReplaceEngine(Some(engine()))).ok().unwrap();
+	render(&mut h);
+	assert_eq!((h.shared.notes(Source::Keyboard), h.shared.notes(Source::MidiIn)), (0, 0));
+	assert_eq!(h.shared.held_notes(), 0);
 }
