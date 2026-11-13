@@ -6,7 +6,7 @@ use crate::config::{BuiltinConfig, EngineKind, RecordFormat};
 use crate::midi::MidiStatus;
 use crate::midi::player::Transport;
 use crate::session::MidiFile;
-use crate::ui::view::FileView;
+use crate::ui::view::{FileView, TakeView};
 
 fn view() -> View {
 	View {
@@ -38,6 +38,7 @@ fn view() -> View {
 			position_tenths: 0,
 			duration_tenths: 0,
 		},
+		take: TakeView::None,
 	}
 }
 

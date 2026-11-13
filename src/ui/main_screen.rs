@@ -19,7 +19,7 @@ use super::meter::{dbfs_text, level_ratio};
 use super::paint::Pen;
 pub use super::paint::{BACKGROUND, DISABLED, ERROR, GOOD, HINT, LABEL, MESSAGE, METER_TRACK, RULE, TEXT, VALUE};
 use super::piano;
-use super::view::{FileView, NoticeTarget, View, note_names, notice_target, notice_text};
+use super::view::{FileView, NoticeTarget, TakeView, View, note_names, notice_target, notice_text};
 use crate::config::{EngineKind, RecordFormat};
 use crate::midi::MidiStatus;
 use crate::midi::player::Transport;
@@ -279,6 +279,16 @@ fn fitted(text: &str, room: usize) -> String {
 	}
 	let kept: String = text.chars().take(room.saturating_sub(1)).collect();
 	format!("{kept}…")
+}
+
+/// The last `room` cells of `text`; what is cut off at the front is marked with `…`.
+fn fitted_end(text: &str, room: usize) -> String {
+	let length = text.chars().count();
+	if length <= room {
+		return text.to_owned();
+	}
+	let kept: String = text.chars().skip(length - room.saturating_sub(1)).collect();
+	format!("…{kept}")
 }
 
 /// The width of the grid the pen writes into.
@@ -576,27 +586,55 @@ fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &Vi
 		unless(recording.is_none()),
 	);
 	pen.gap(1);
-	// Cancelling a take arrives with plan stage 6.
+	// Cancelling throws the take away: the button is red while there is a take to throw away.
 	put(
 		&mut pen,
 		buttons,
 		ButtonId::RecordCancel,
 		&t!("main.cancel", locale = locale),
-		Look::Disabled,
+		if recording.is_some() { Look::Danger } else { Look::Disabled },
 	);
 	pen.gap(2);
+	// What follows the buttons has the row up to one cell short of the right edge.
+	let room = usize::from(buf_width(&pen).saturating_sub(pen.x + 1));
+	let megabytes = |tenths: u64| {
+		t!(
+			"main.megabytes",
+			locale = locale,
+			value = format!("{}.{}", tenths / 10, tenths % 10)
+		)
+		.into_owned()
+	};
 	match (recording, view.line_error(NoticeTarget::Record)) {
 		(Some(elapsed), _) => {
 			let time = format!("{:02}:{:02}", elapsed.as_secs() / 60, elapsed.as_secs() % 60);
-			let indicator = format!("{} {}", record_dot(elapsed), t!("status.rec", locale = locale, time = time));
-			pen.styled(&indicator, Style::new().fg(ERROR).bold());
+			let mut indicator = format!("{} {}", record_dot(elapsed), t!("status.rec", locale = locale, time = time));
+			// The size and the name of the file being written follow the timer (spec v1.2 §3).
+			if let TakeView::Recording { name, tenths_of_megabyte } = &view.take {
+				indicator = format!("{indicator} · {} · {name}", megabytes(*tenths_of_megabyte));
+			}
+			pen.styled(&fitted(&indicator, room), Style::new().fg(ERROR).bold());
 		}
 		(None, Some(error)) => {
-			pen.text(error, ERROR);
+			pen.text(&fitted(error, room), ERROR);
 		}
-		(None, None) => {
-			pen.text(&t!("main.no_takes", locale = locale), HINT);
-		}
+		(None, None) => match &view.take {
+			TakeView::Saved { path, tenths_of_megabyte } => {
+				// A path too long for the row loses its beginning: the file name is what tells takes apart.
+				let size = megabytes(*tenths_of_megabyte);
+				let frame = t!("main.saved", locale = locale, path = "", size = size).chars().count();
+				let saved = t!(
+					"main.saved",
+					locale = locale,
+					path = fitted_end(path, room.saturating_sub(frame)),
+					size = size
+				);
+				pen.text(&saved, GOOD);
+			}
+			TakeView::None | TakeView::Recording { .. } => {
+				pen.text(&t!("main.no_takes", locale = locale), HINT);
+			}
+		},
 	}
 
 	if let Some(notice) = view.notice.as_ref().filter(|notice| notice_target(notice) == NoticeTarget::Message) {

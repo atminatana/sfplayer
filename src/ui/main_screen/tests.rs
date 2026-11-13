@@ -54,6 +54,7 @@ fn view() -> View {
 			position_tenths: 0,
 			duration_tenths: 0,
 		},
+		take: TakeView::None,
 	}
 }
 
@@ -577,7 +578,7 @@ fn the_button_under_the_focus_is_underlined_from_the_first_frame() {
 }
 
 #[test]
-fn a_running_take_locks_the_format_and_leaves_only_stop_of_the_record_buttons() {
+fn a_running_take_locks_the_format_and_takes_start_away() {
 	let mut app = App::new("ru");
 	app.recording = Some(Duration::from_secs(3));
 	let mut buttons = Buttons::new();
@@ -1078,4 +1079,104 @@ fn the_transport_buttons_stand_in_the_tab_ring_after_the_file_button() {
 		]
 	);
 	assert_eq!(click(&mut buttons, &buf, "[Старт] [Пауза]"), Touch::Pressed(ButtonId::FileStart));
+}
+
+fn megabytes(bytes: u64) -> u64 {
+	crate::ui::view::tenths_of_megabyte(bytes)
+}
+
+#[test]
+fn a_running_take_shows_its_time_size_and_file_and_offers_a_red_cancel() {
+	let mut app = App::new("ru");
+	app.recording = Some(Duration::from_millis(42_100));
+	let mut recording = view();
+	recording.take = TakeView::Recording {
+		name: "2026-11-13_12-03-41.flac".into(),
+		tenths_of_megabyte: megabytes(1_300_000),
+	};
+	let mut buttons = Buttons::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &app, &recording, &mut buttons);
+	assert!(is_shown(&buf, "[Отмена]  ● ЗАП 00:42 · 1.2 МБ · 2026-11-13_12-03-41.flac"));
+	assert_eq!(colour_of(&buf, "● ЗАП"), ERROR);
+	assert_eq!(colour_of(&buf, "2026-11-13_12-03-41.flac"), ERROR, "the whole indicator is red");
+	assert_eq!(colour_of(&buf, "[Стоп] [Отмена]"), TEXT);
+	assert_eq!(colour_of(&buf, "[Отмена]"), ERROR, "what cannot be undone is red");
+	assert_eq!(click(&mut buttons, &buf, "[Отмена]"), Touch::Pressed(ButtonId::RecordCancel));
+	assert!(ring(&mut buttons).contains(&ButtonId::RecordCancel), "Tab reaches it");
+
+	// A name too long for the row is cut and marked, one cell short of the right edge.
+	recording.take = TakeView::Recording {
+		name: "x".repeat(90),
+		tenths_of_megabyte: 0,
+	};
+	let buf = rendered(&app, &recording);
+	let (row, _) = find(&buf, "● ЗАП 00:42 · 0.0 МБ · xxx");
+	let line = &lines_of(&buf)[row];
+	assert!(line.ends_with("xx…"));
+	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 1);
+
+	// Without a take there is nothing to cancel.
+	let idle = rendered_ru(&view());
+	assert_eq!(colour_of(&idle, "[Отмена]"), DISABLED);
+}
+
+#[test]
+fn the_last_saved_take_is_shown_in_green_with_its_path_and_size() {
+	let mut saved = view();
+	saved.take = TakeView::Saved {
+		path: "D:/rec/2026-11-13_12-03-41.flac".into(),
+		tenths_of_megabyte: megabytes(5 * 1024 * 1024 + 300 * 1024),
+	};
+	let buf = rendered_ru(&saved);
+	println!(
+		"{}",
+		lines_of(&buf).join(
+			"
+"
+		)
+	);
+	assert!(is_shown(&buf, "[Отмена]  сохранено: D:/rec/2026-11-13_12-03-41.flac · 5.3 МБ"));
+	assert_eq!(colour_of(&buf, "сохранено:"), GOOD);
+	assert!(!is_shown(&buf, "записей ещё не было"));
+	assert!(is_shown(
+		&rendered(&App::new("en"), &saved),
+		"[Cancel]  saved: D:/rec/2026-11-13_12-03-41.flac · 5.3 MB"
+	));
+
+	// A long path loses its beginning, not the file name; the row stops one cell short of the edge.
+	saved.take = TakeView::Saved {
+		path: format!("D:/{}2026-11-13_12-03-41.flac", "папка/".repeat(20)),
+		tenths_of_megabyte: 12,
+	};
+	let buf = rendered_ru(&saved);
+	let (row, _) = find(&buf, "сохранено: …");
+	let line = &lines_of(&buf)[row];
+	assert!(line.ends_with("папка/2026-11-13_12-03-41.flac · 1.2 МБ"), "{line}");
+	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 1);
+
+	// An error of the record line is more urgent than the last take; a new take replaces both.
+	saved.notice = Some(Notice::RecordError("disk full".into()));
+	let buf = rendered_ru(&saved);
+	assert!(!is_shown(&buf, "сохранено:"));
+	assert_eq!(colour_of(&buf, "disk full"), ERROR);
+}
+
+#[test]
+fn a_cancelled_take_is_reported_on_the_message_line() {
+	let mut cancelled = view();
+	cancelled.notice = Some(Notice::RecordCancelled);
+	let buf = rendered_ru(&cancelled);
+	assert_eq!(colour_of(&buf, "Запись отменена"), MESSAGE);
+	assert!(is_shown(&buf, "записей ещё не было"), "a cancelled take is not a saved one");
+	assert!(is_shown(&rendered(&App::new("en"), &cancelled), "Recording cancelled"));
+}
+
+#[test]
+fn a_text_cut_at_the_front_keeps_its_end() {
+	assert_eq!(fitted_end("abcdef", 6), "abcdef");
+	assert_eq!(fitted_end("abcdef", 5), "…cdef");
+	assert_eq!(fitted_end("abcdef", 1), "…");
+	assert_eq!(fitted_end("abcdef", 0), "…");
+	assert_eq!(fitted_end("папка", 3), "…ка");
 }

@@ -128,7 +128,7 @@ fn recorder_thread_drains_the_ring_and_returns_the_consumer() {
 	}
 	let (consumer, result) = recorder.stop();
 	assert!(consumer.is_some(), "ring consumer comes back for the next take");
-	assert_eq!(result.expect("saved"), path);
+	assert_eq!(result.expect("saved").path, path);
 	let mut reader = claxon::FlacReader::open(&path).expect("valid FLAC");
 	assert_eq!(
 		reader.streaminfo().samples,
@@ -140,16 +140,94 @@ fn recorder_thread_drains_the_ring_and_returns_the_consumer() {
 	std::fs::remove_file(&path).ok();
 }
 
-#[test]
-fn unwritable_path_is_a_create_error() {
-	let path = PathBuf::from("definitely/not/here/take.flac");
-	let (_, consumer) = HeapRb::<f32>::new(16).split();
-	let params = RecordParams {
+fn params() -> RecordParams {
+	RecordParams {
 		sample_rate: SAMPLE_RATE,
 		vorbis_quality: 0.5,
+	}
+}
+
+/// Waits (up to five seconds) until `ready` holds.
+fn wait_until(ready: impl Fn() -> bool) {
+	let deadline = std::time::Instant::now() + Duration::from_secs(5);
+	while !ready() {
+		assert!(
+			std::time::Instant::now() < deadline,
+			"the recorder did not get there in five seconds"
+		);
+		std::thread::sleep(Duration::from_millis(5));
+	}
+}
+
+#[test]
+fn a_take_that_does_not_start_gives_the_ring_back_and_the_next_one_records() {
+	let (mut producer, consumer) = HeapRb::<f32>::new(SAMPLE_RATE as usize * 2).split();
+	let missing_dir = PathBuf::from("definitely/not/here/take.flac");
+	let Err(failed) = Recorder::start(RecordFormat::Flac, missing_dir, params(), consumer) else {
+		panic!("a file cannot be created in a folder that does not exist");
 	};
-	assert!(matches!(
-		Recorder::start(RecordFormat::Flac, path, params, consumer),
-		Err(RecordError::Create { .. })
-	));
+	assert!(matches!(failed.error, RecordError::Create { .. }));
+	let consumer = failed.samples.expect("the ring comes back from a take that did not start");
+
+	// The very same ring records the next take.
+	let path = temp_path("flac");
+	let recorder = Recorder::start(RecordFormat::Flac, path.clone(), params(), consumer).expect("start");
+	let input = stereo_sine(4_800);
+	assert_eq!(producer.push_slice(&input), input.len());
+	let (consumer, result) = recorder.stop();
+	assert!(consumer.is_some());
+	assert_eq!(result.expect("saved").path, path);
+	let reader = claxon::FlacReader::open(&path).expect("valid FLAC");
+	assert_eq!(reader.streaminfo().samples, Some(4_800));
+	std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn a_cancelled_take_leaves_no_file_and_the_ring_serves_the_next_take() {
+	for (format, extension) in [(RecordFormat::Flac, "flac"), (RecordFormat::OggVorbis, "ogg")] {
+		let cancelled = temp_path(extension);
+		let (mut producer, consumer) = HeapRb::<f32>::new(SAMPLE_RATE as usize * 4).split();
+		let recorder = Recorder::start(format, cancelled.clone(), params(), consumer).expect("start");
+		assert!(cancelled.exists(), "{format:?}: the file is there while the take runs");
+		let input = stereo_sine(SAMPLE_RATE as usize / 2);
+		assert_eq!(producer.push_slice(&input), input.len());
+		let (consumer, removed) = recorder.cancel();
+		removed.expect("the file is removed");
+		assert!(!cancelled.exists(), "{format:?}: a cancelled take leaves no file");
+		let consumer = consumer.expect("the ring comes back from a cancelled take");
+
+		// What the cancelled take did not read is not carried into the next one.
+		let kept = temp_path("flac");
+		let recorder = Recorder::start(RecordFormat::Flac, kept.clone(), params(), consumer).expect("start again");
+		let input = stereo_sine(2_400);
+		assert_eq!(producer.push_slice(&input), input.len());
+		let (_, result) = recorder.stop();
+		result.expect("saved");
+		let reader = claxon::FlacReader::open(&kept).expect("valid FLAC");
+		assert_eq!(reader.streaminfo().samples, Some(2_400), "{format:?}");
+		std::fs::remove_file(&kept).ok();
+	}
+}
+
+#[test]
+fn the_size_of_the_file_is_published_while_it_grows_and_reported_with_the_take() {
+	let path = temp_path("flac");
+	let (mut producer, consumer) = HeapRb::<f32>::new(SAMPLE_RATE as usize * 4).split();
+	let recorder = Recorder::start(RecordFormat::Flac, path.clone(), params(), consumer).expect("start");
+	assert_eq!(recorder.path(), path);
+	// A second of sound is far more than the writer keeps in memory before it reaches the file.
+	let input = stereo_sine(SAMPLE_RATE as usize);
+	assert_eq!(producer.push_slice(&input), input.len());
+	wait_until(|| recorder.bytes() > 0);
+	let while_running = recorder.bytes();
+	let (_, result) = recorder.stop();
+	let take = result.expect("saved");
+	let on_disk = std::fs::metadata(&path).expect("the file").len();
+	assert_eq!(take.bytes, on_disk);
+	assert!(
+		take.bytes >= while_running && while_running > 0,
+		"{while_running} then {}",
+		take.bytes
+	);
+	std::fs::remove_file(&path).ok();
 }

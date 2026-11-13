@@ -55,6 +55,8 @@ pub enum Request {
 	/// Home / End (spec v1.1 §4.3).
 	StartRecord,
 	StopRecord,
+	/// The Cancel button: the take is thrown away (spec v1.2, F-23).
+	CancelRecord,
 	/// Quit confirmed while recording: stop the take, then quit.
 	StopRecordingAndQuit,
 	/// Text keyboard output: goes to the engine through the command ring (ADR 0009).
@@ -264,9 +266,9 @@ impl App {
 			ButtonId::FileStart => self.ask(Request::FilePlay),
 			ButtonId::FilePause => self.ask(Request::FilePause),
 			ButtonId::FileStop => self.perform(Action::FileStop),
-			// Recording MIDI and cancelling a take arrive with plan stage 6; until then the screen shows
-			// these buttons unavailable.
-			ButtonId::FormatMidi | ButtonId::RecordCancel => None,
+			ButtonId::RecordCancel => self.ask(Request::CancelRecord),
+			// Recording MIDI arrives with plan step 6.2; until then the screen shows this button unavailable.
+			ButtonId::FormatMidi => None,
 		}
 	}
 
@@ -548,6 +550,7 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 		Request::AdjustAdsr(field, steps) => session.adjust_adsr(field, steps),
 		Request::Rescan => session.rescan(),
 		Request::StartRecord => session.start_recording(),
+		Request::CancelRecord => session.cancel_recording(),
 		Request::StopRecord | Request::StopRecordingAndQuit => session.stop_recording(),
 		Request::Panic => session.panic(),
 		Request::Transpose(delta) => session.adjust_transpose(delta),

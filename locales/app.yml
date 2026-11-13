@@ -453,3 +453,12 @@ help.action.file_stop:
 dialog.midi_file_title:
   en: "MIDI file"
   ru: "MIDI-файл"
+notice.record_cancelled:
+  en: "Recording cancelled"
+  ru: "Запись отменена"
+main.saved:
+  en: "saved: %{path} · %{size}"
+  ru: "сохранено: %{path} · %{size}"
+main.megabytes:
+  en: "%{value} MB"
+  ru: "%{value} МБ"

@@ -318,6 +318,7 @@ fn every_available_button_gives_the_command_of_its_hotkey() {
 		(ButtonId::FormatOgg, Request::SetRecordFormat(RecordFormat::OggVorbis)),
 		(ButtonId::RecordStart, Request::StartRecord),
 		(ButtonId::RecordStop, Request::StopRecord),
+		(ButtonId::RecordCancel, Request::CancelRecord),
 		(ButtonId::MidiFile, Request::OpenMidiFileDialog),
 		(ButtonId::FileStart, Request::FilePlay),
 		(ButtonId::FilePause, Request::FilePause),

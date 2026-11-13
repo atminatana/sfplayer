@@ -255,3 +255,35 @@ fn effects_settings_round_trip_through_the_config_and_clamp_levels() {
 	assert_eq!((synth.reverb_level, synth.chorus_level), (40, 0));
 	assert_eq!(synth.sf2, None, "other synth fields untouched");
 }
+
+/// The ring of samples survives a take that did not start (the defect behind plan step 6.1: one failed
+/// start used to leave the session unable to record until the audio stream was reopened).
+#[test]
+fn a_failed_start_keeps_the_ring_for_the_next_take() {
+	let params = RecordParams {
+		sample_rate: 48_000,
+		vorbis_quality: 0.5,
+	};
+	let mut ring = None;
+	assert!(
+		begin_take(&mut ring, RecordFormat::Flac, PathBuf::from("take.flac"), params).is_none(),
+		"nothing to record from"
+	);
+	assert!(!Path::new("take.flac").exists(), "no file is created without a ring");
+
+	let (_producer, consumer) = HeapRb::<f32>::new(64).split();
+	ring = Some(consumer);
+	let nowhere = PathBuf::from("definitely/not/here/take.flac");
+	let failed = begin_take(&mut ring, RecordFormat::Flac, nowhere, params).expect("there was a ring");
+	assert!(matches!(failed, Err(RecordError::Create { .. })));
+	assert!(ring.is_some(), "the ring is back after the failure");
+
+	let path = std::env::temp_dir().join(format!("sf2_player-begin-take-{}.flac", std::process::id()));
+	let recorder = begin_take(&mut ring, RecordFormat::Flac, path.clone(), params)
+		.expect("there was a ring")
+		.expect("the second attempt starts");
+	assert!(ring.is_none(), "the ring is lent to the running take");
+	let (returned, removed) = recorder.cancel();
+	assert!(returned.is_some() && removed.is_ok());
+	assert!(!path.exists());
+}

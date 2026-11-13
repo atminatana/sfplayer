@@ -93,6 +93,23 @@ fn looks_are_drawn_as_the_spec_describes_them() {
 }
 
 #[test]
+fn a_dangerous_button_is_red_and_reacts() {
+	let mut buttons = Buttons::new();
+	buttons.begin_frame();
+	buttons.place(ButtonId::RecordCancel, 0, 0, "Cancel", Look::Danger);
+	let mut buf = screen();
+	buttons.finish_frame(&mut buf);
+	assert_eq!((buf.cell(0, 0).fg, buf.cell(0, 0).bg), (ERROR, BACKGROUND));
+	assert_eq!(buttons.focused(), Some(ButtonId::RecordCancel));
+	buttons.handle_mouse(&mouse(MouseKind::Down, 1, 0));
+	assert_eq!(
+		buttons.handle_mouse(&mouse(MouseKind::Up, 1, 0)),
+		Touch::Pressed(ButtonId::RecordCancel)
+	);
+	assert_eq!(buttons.handle_key(&key(KeyCode::Enter)), Touch::Pressed(ButtonId::RecordCancel));
+}
+
+#[test]
 fn tab_walks_the_buttons_that_react_in_a_ring_and_shift_tab_walks_back() {
 	let (mut buttons, mut buf) = drawn();
 	assert_eq!(buttons.focused(), Some(ButtonId::MidiIn));

@@ -44,6 +44,30 @@ pub struct View {
 	pub builtin: BuiltinConfig,
 	/// The MIDI file and where its playback is (F-21).
 	pub file: FileView,
+	/// The take being recorded, or the last one saved (F-23).
+	pub take: TakeView,
+}
+
+/// What the record row says about takes. Sizes are in tenths of a megabyte — what the row shows —
+/// so that a growing file redraws the window only when the shown number changes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TakeView {
+	/// Nothing recorded in this session yet.
+	None,
+	Recording {
+		name: String,
+		tenths_of_megabyte: u64,
+	},
+	Saved {
+		path: String,
+		tenths_of_megabyte: u64,
+	},
+}
+
+/// Bytes as tenths of a megabyte, rounded to the nearest.
+pub(super) fn tenths_of_megabyte(bytes: u64) -> u64 {
+	const TENTH: u64 = 1024 * 1024 / 10;
+	(bytes + TENTH / 2) / TENTH
 }
 
 /// The MIDI file source as the screen shows it.
@@ -113,6 +137,17 @@ impl View {
 			midi_notes: session.shared.notes(Source::MidiIn),
 			engine: session.config.synth.engine,
 			builtin: session.config.synth.builtin.clone(),
+			take: match (session.recording_file(), &session.last_take) {
+				(Some((name, bytes)), _) => TakeView::Recording {
+					name,
+					tenths_of_megabyte: tenths_of_megabyte(bytes),
+				},
+				(None, Some(take)) => TakeView::Saved {
+					path: take.path.display().to_string(),
+					tenths_of_megabyte: tenths_of_megabyte(take.bytes),
+				},
+				(None, None) => TakeView::None,
+			},
 			file: {
 				let status = session.file_status();
 				let tenths = |time: std::time::Duration| u32::try_from(time.as_millis() / 100).unwrap_or(u32::MAX);
@@ -149,6 +184,7 @@ pub(super) fn notice_target(notice: &Notice) -> NoticeTarget {
 		| Notice::MidiFallback
 		| Notice::ConfigError(_)
 		| Notice::RecordSaved(_)
+		| Notice::RecordCancelled
 		| Notice::FontFallback(_) => NoticeTarget::Message,
 	}
 }
@@ -216,6 +252,7 @@ pub(super) fn notice_text(notice: &Notice, locale: &str) -> String {
 		Notice::Sf2Error(error) => t!("notice.sf2_error", locale = locale, error = error).into_owned(),
 		Notice::ConfigError(error) => t!("notice.config_error", locale = locale, error = error).into_owned(),
 		Notice::RecordSaved(name) => t!("notice.record_saved", locale = locale, name = name).into_owned(),
+		Notice::RecordCancelled => t!("notice.record_cancelled", locale = locale).into_owned(),
 		Notice::RecordError(error) => t!("notice.record_error", locale = locale, error = error).into_owned(),
 		Notice::FontFallback(font) => t!("notice.font_fallback", locale = locale, font = font).into_owned(),
 	}
@@ -227,6 +264,17 @@ mod tests {
 
 	fn keys(sounding: &[u8]) -> u128 {
 		sounding.iter().fold(0, |map, key| map | (1u128 << key))
+	}
+
+	#[test]
+	fn sizes_are_rounded_to_the_tenth_of_a_megabyte_the_screen_shows() {
+		const MEGABYTE: u64 = 1024 * 1024;
+		assert_eq!(tenths_of_megabyte(0), 0);
+		assert_eq!(tenths_of_megabyte(MEGABYTE / 20 - 1), 0, "just under 0.05 MB");
+		assert_eq!(tenths_of_megabyte(MEGABYTE / 20 + 1), 1, "just over 0.05 MB");
+		assert_eq!(tenths_of_megabyte(MEGABYTE), 10);
+		assert_eq!(tenths_of_megabyte(MEGABYTE * 5 / 4 + 1), 13, "1.25 MB and a byte");
+		assert_eq!(tenths_of_megabyte(MEGABYTE * 1024), 10_240, "a gigabyte");
 	}
 
 	#[test]

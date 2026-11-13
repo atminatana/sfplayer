@@ -4,8 +4,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ringbuf::HeapProd;
 use ringbuf::traits::Producer;
+use ringbuf::{HeapCons, HeapProd};
 
 use super::{MIDI_CHANNELS, MidiFile, Notice, Session};
 use crate::audio::Command;
@@ -14,6 +14,7 @@ use crate::config::{AdsrField, EngineKind, RecordFormat, SynthConfig};
 use crate::midi::player::{PlayerStatus, Transport};
 use crate::midi::smf::{self, SmfError};
 use crate::midi::{MidiEvent, controller};
+use crate::record::{RecordError, RecordParams, Recorder};
 use crate::synth::{AdsrPreset, BuiltinSynth, PresetInfo, RustySynthEngine, SoundFontBank, SynthEngine, SynthError, Timbre, Wave};
 
 /// Reverb / chorus switches (F-13): Alt+R / Alt+C toggle one effect, the F6 dialog sets everything at once.
@@ -378,6 +379,21 @@ pub(super) fn push_preset(commands: &mut HeapProd<Command>, channel: u8, bank: u
 		value: bank_msb,
 	}));
 	let _ = commands.try_push(Command::Midi(MidiEvent::ProgramChange { channel, program }));
+}
+
+/// Starts a take on the ring kept in `ring`; `None` when there is no ring to record from. If the take
+/// does not start, the ring is put back: the next attempt needs it.
+pub(super) fn begin_take(
+	ring: &mut Option<HeapCons<f32>>,
+	format: RecordFormat,
+	path: PathBuf,
+	params: RecordParams,
+) -> Option<Result<Recorder, RecordError>> {
+	let samples = ring.take()?;
+	Some(Recorder::start(format, path, params, samples).map_err(|failed| {
+		*ring = failed.samples;
+		failed.error
+	}))
 }
 
 #[cfg(test)]

@@ -22,7 +22,7 @@ use crate::config::{Config, EngineKind, Settings};
 use crate::midi::player::Player;
 use crate::midi::smf::Song;
 use crate::midi::{self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus};
-use crate::record::{RecordParams, Recorder, file_name};
+use crate::record::{RecordParams, Recorder, Take, file_name};
 use crate::synth::{SoundFontBank, SynthEngine, SynthError, Timbre};
 
 /// Something the status line should tell the user (translated by the UI, spec N-07).
@@ -37,6 +37,8 @@ pub enum Notice {
 	Sf2Error(String),
 	ConfigError(String),
 	RecordSaved(String),
+	/// The take was cancelled and its file removed (spec v1.2, F-23).
+	RecordCancelled,
 	RecordError(String),
 	/// The configured window font could not be loaded; carries its name (spec v1.2 N-14).
 	FontFallback(String),
@@ -81,6 +83,8 @@ pub struct Session {
 	/// Recording ring consumer while no recording is running.
 	record_rx: Option<HeapCons<f32>>,
 	recorder: Option<Recorder>,
+	/// The last take saved in this session.
+	pub last_take: Option<Take>,
 	/// The MIDI → audio producer while no port is connected.
 	spare_events: Option<HeapProd<MidiEvent>>,
 	midi: Option<MidiInputHandle<MidiSink>>,
@@ -130,6 +134,7 @@ impl Session {
 			retired: None,
 			record_rx: None,
 			recorder: None,
+			last_take: None,
 			spare_events: None,
 			midi: None,
 			midi_port_index: None,
@@ -396,11 +401,12 @@ impl Session {
 	}
 
 	/// Home: starts a recording in the configured format (F-20); a running take is left alone.
+	/// Whatever goes wrong, the ring of samples stays with the session for the next attempt.
 	pub fn start_recording(&mut self) {
 		if self.recorder.is_some() {
 			return;
 		}
-		let (Some(stream), Some(samples)) = (&self.audio, self.record_rx.take()) else {
+		let Some(sample_rate) = self.audio.as_ref().map(|stream| stream.sample_rate) else {
 			return;
 		};
 		let dir = self.record_dir();
@@ -411,20 +417,19 @@ impl Session {
 		let format = self.config.record.format;
 		let path = file_name(&dir, format, chrono::Local::now());
 		let params = RecordParams {
-			sample_rate: stream.sample_rate,
+			sample_rate,
 			vorbis_quality: self.config.record.vorbis_quality,
 		};
-		match Recorder::start(format, path, params, samples) {
-			Ok(recorder) => {
+		match control::begin_take(&mut self.record_rx, format, path, params) {
+			Some(Ok(recorder)) => {
 				self.shared.set_recording(true);
 				self.recorder = Some(recorder);
 			}
-			Err(error) => {
+			Some(Err(error)) => {
 				tracing::warn!(%error, "recording start failed");
 				self.notice = Some(Notice::RecordError(error.to_string()));
-				// The consumer travelled into `Recorder::start` and is lost with the failed thread spawn only;
-				// an encoder failure happens before the thread exists, so a fresh ring is needed either way.
 			}
+			None => {}
 		}
 	}
 
@@ -437,9 +442,42 @@ impl Session {
 		let (samples, result) = recorder.stop();
 		self.record_rx = samples;
 		self.notice = Some(match result {
-			Ok(path) => Notice::RecordSaved(path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()),
+			Ok(take) => {
+				let name = take
+					.path
+					.file_name()
+					.map(|name| name.to_string_lossy().into_owned())
+					.unwrap_or_default();
+				self.last_take = Some(take);
+				Notice::RecordSaved(name)
+			}
 			Err(error) => Notice::RecordError(error.to_string()),
 		});
+	}
+
+	/// The Cancel button (spec v1.2, F-23): the take is stopped and its file removed.
+	pub fn cancel_recording(&mut self) {
+		let Some(recorder) = self.recorder.take() else {
+			return;
+		};
+		self.shared.set_recording(false);
+		let (samples, removed) = recorder.cancel();
+		self.record_rx = samples;
+		self.notice = Some(match removed {
+			Ok(()) => Notice::RecordCancelled,
+			Err(error) => Notice::RecordError(error.to_string()),
+		});
+	}
+
+	/// The file of the running take: its name and its size so far.
+	pub fn recording_file(&self) -> Option<(String, u64)> {
+		let recorder = self.recorder.as_ref()?;
+		let name = recorder
+			.path()
+			.file_name()
+			.map(|name| name.to_string_lossy().into_owned())
+			.unwrap_or_default();
+		Some((name, recorder.bytes()))
 	}
 
 	/// Elapsed time of the running recording, if any.

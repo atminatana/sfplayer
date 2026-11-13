@@ -12,7 +12,7 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use super::app::ButtonId;
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use super::paint::{BACKGROUND, DISABLED, SELECTED, TEXT, VALUE};
+use super::paint::{BACKGROUND, DISABLED, ERROR, SELECTED, TEXT, VALUE};
 
 /// How a button looks (spec v1.2 §3). Under the keyboard focus any of them is underlined; while the
 /// mouse holds it down, it is inverted on light.
@@ -23,6 +23,8 @@ pub enum Look {
 	Active,
 	/// The selected one that cannot be changed now (the format of a running take): looks active, does not react.
 	ActiveLocked,
+	/// Reacts, and what it does cannot be undone (cancelling a take): red.
+	Danger,
 	/// Not available now: dark, does not react.
 	Disabled,
 }
@@ -32,12 +34,13 @@ impl Look {
 		match self {
 			Self::Normal => Style::new().fg(TEXT),
 			Self::Active | Self::ActiveLocked => Style::new().fg(BACKGROUND).bg(VALUE).bold(),
+			Self::Danger => Style::new().fg(ERROR),
 			Self::Disabled => Style::new().fg(DISABLED),
 		}
 	}
 
 	fn reacts(self) -> bool {
-		matches!(self, Self::Normal | Self::Active)
+		matches!(self, Self::Normal | Self::Active | Self::Danger)
 	}
 }
 
