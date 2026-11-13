@@ -224,3 +224,19 @@ fn paste_is_ctrl_v_or_shift_insert_and_nothing_else() {
 	release.kind = KeyEventKind::Release;
 	assert!(!is_paste_chord(&release), "letting go of the chord does not paste again");
 }
+
+#[test]
+fn in_a_text_field_only_non_character_quit_keys_quit() {
+	let bindings = Bindings::default();
+	assert!(quits_from_a_field(&bindings, &KeyEvent::new(KeyCode::F(10), KeyModifiers::NONE)));
+	// Ctrl+C is the other quit chord, but in a field it copies.
+	assert!(!quits_from_a_field(
+		&bindings,
+		&KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
+	));
+	assert!(!quits_from_a_field(&bindings, &KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
+	assert!(!quits_from_a_field(&bindings, &KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+	let mut release = KeyEvent::new(KeyCode::F(10), KeyModifiers::NONE);
+	release.kind = KeyEventKind::Release;
+	assert!(!quits_from_a_field(&bindings, &release));
+}

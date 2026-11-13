@@ -168,7 +168,7 @@ impl PathInput {
 }
 
 /// Splits "dir/part" into ("dir/", "part"); both separators count on every platform.
-fn split_dir_and_prefix(text: &str) -> (String, String) {
+pub(super) fn split_dir_and_prefix(text: &str) -> (String, String) {
 	match text.rfind(['/', '\\']) {
 		Some(index) => (text[..=index].to_owned(), text[index + 1..].to_owned()),
 		None => (String::new(), text.to_owned()),

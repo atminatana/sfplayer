@@ -7,7 +7,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use gterm::app::{App as GridWindow, AppHandler, AppOptions, Ctx, Grid};
+use gterm::app::{App as GridWindow, AppHandler, AppOptions, Ctx, DrawCtx, Grid, PointerEvent};
 use gterm::buffer::ScreenBuffer;
 use gterm::config::{BACKEND_ENV, Config as GridConfig};
 use gterm::font::{FONT_SCALE, FontFamily, glyph_px_for};
@@ -16,10 +16,13 @@ use gterm_widgets::{Clipboard, SystemClipboard};
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
-use super::app::{App, FRAME_INTERVAL, Request, fulfil};
+use super::app::{App, FRAME_INTERVAL, Modal, Request, fulfil};
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use super::dialog_screen;
+use super::input_dialog::{InputDialog, InputKind, InputOutcome};
+use super::keys::{Action, Bindings};
 use super::main_screen::{self, BACKGROUND, MIN_COLS, MIN_ROWS, TEXT};
+use super::path_input;
 use super::view::View;
 use crate::session::{Notice, Session};
 
@@ -101,6 +104,7 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		session,
 		shown: None,
 		clipboard: SystemClipboard::new(),
+		input: None,
 	};
 	GridWindow::new(WINDOW_TITLE, screen, rasterizer, grid_config, window_options)
 		.run(window)
@@ -145,6 +149,8 @@ struct Window {
 	shown: Option<FrameState>,
 	/// Where Ctrl+V takes text from for the fields of the dialogs.
 	clipboard: SystemClipboard,
+	/// The input dialog on widget controls, while it is open. It stands in for the path dialog of `App`.
+	input: Option<InputDialog>,
 }
 
 impl Window {
@@ -166,6 +172,55 @@ impl Window {
 		self.shown = Some(state);
 		ctx.redraw();
 	}
+
+	/// The SoundFont path dialog is shown as the input dialog on widget controls: take over what `App` opened.
+	fn adopt_path_dialog(&mut self) {
+		if let Some(Modal::Sf2Path(path)) = &self.app.modal {
+			self.input = Some(InputDialog::new(
+				InputKind::Sf2File,
+				&path.text(),
+				path.recent(),
+				path_input::list_dir,
+			));
+			self.app.modal = None;
+		}
+	}
+
+	/// A key press or release for the open input dialog.
+	fn key_to_input(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
+		let Self { input, clipboard, app, .. } = self;
+		let Some(dialog) = input else {
+			return;
+		};
+		// The dialog sees releases too (the library tracks held keys by them); only presses act.
+		let routed = dialog.ui(app.locale, clipboard).key(event, ctx);
+		if event.state != ElementState::Pressed {
+			return;
+		}
+		let outcome = dialog.settle(routed, Some(&event.logical_key), path_input::list_dir);
+		self.conclude_input(outcome);
+		self.refresh(ctx, true);
+	}
+
+	/// Acts on what the input dialog decided: a submitted bank is loaded, and the dialog closes only
+	/// when that worked — otherwise it stays open and shows why not.
+	fn conclude_input(&mut self, outcome: InputOutcome) {
+		match outcome {
+			InputOutcome::Pending => {}
+			InputOutcome::Cancelled => self.input = None,
+			InputOutcome::Submit(path) => match self.session.load_bank(&path) {
+				Ok(()) => {
+					self.input = None;
+					self.session.save_config();
+				}
+				Err(error) => {
+					if let Some(dialog) = &mut self.input {
+						dialog.set_error(error.to_string());
+					}
+				}
+			},
+		}
+	}
 }
 
 impl AppHandler for Window {
@@ -179,7 +234,16 @@ impl AppHandler for Window {
 	}
 
 	fn on_key(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
-		let Some(key) = key_from_window(&event.logical_key, event.state, event.repeat, ctx.modifiers) else {
+		let key = key_from_window(&event.logical_key, event.state, event.repeat, ctx.modifiers);
+		if self.input.is_some() {
+			let is_quitting = key.is_some_and(|key| quits_from_a_field(&self.app.bindings, &key));
+			if !is_quitting {
+				self.key_to_input(event, ctx);
+				return;
+			}
+			self.input = None;
+		}
+		let Some(key) = key else {
 			return;
 		};
 		// Raw key stream for diagnosing input (auto-repeat, release events); spec N-07.
@@ -199,8 +263,40 @@ impl AppHandler for Window {
 			ctx.exit();
 			return;
 		}
+		self.adopt_path_dialog();
 		let force = self.app.take_dirty();
 		self.refresh(ctx, force);
+	}
+
+	/// Text that arrives outside key presses (input methods) belongs to the field of the input dialog.
+	fn on_text(&mut self, text: &str, ctx: &mut Ctx<'_>) {
+		let Self { input, clipboard, app, .. } = self;
+		let Some(dialog) = input else {
+			return;
+		};
+		let routed = dialog.ui(app.locale, clipboard).text(text);
+		let outcome = dialog.settle(routed, None, path_input::list_dir);
+		self.conclude_input(outcome);
+		self.refresh(ctx, true);
+	}
+
+	fn on_pointer(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
+		let Self { input, clipboard, app, .. } = self;
+		let Some(dialog) = input else {
+			return;
+		};
+		let routed = dialog.ui(app.locale, clipboard).pointer(event, ctx);
+		let outcome = dialog.settle(routed, None, path_input::list_dir);
+		self.conclude_input(outcome);
+		self.refresh(ctx, true);
+	}
+
+	/// The input dialog is a modal layer of the widget library: it is drawn over the frame, not into it.
+	fn on_redraw(&mut self, ctx: &mut DrawCtx<'_>) {
+		let Self { input, clipboard, app, .. } = self;
+		if let Some(dialog) = input {
+			dialog.ui(app.locale, clipboard).draw_modal(ctx);
+		}
 	}
 
 	fn on_focus(&mut self, focused: bool, ctx: &mut Ctx<'_>) {
@@ -234,6 +330,12 @@ impl Drop for Window {
 		self.session.save_config();
 		tracing::info!(xruns = self.session.shared.xruns(), "sf2_player exiting");
 	}
+}
+
+/// Whether a key pressed in a text field quits the program. A quit chord made of a character key means
+/// something else there (Ctrl+C copies), so only the other quit keys (F10) do.
+fn quits_from_a_field(bindings: &Bindings, key: &KeyEvent) -> bool {
+	key.kind == KeyEventKind::Press && !matches!(key.code, KeyCode::Char(_)) && bindings.action_for(key) == Some(Action::Quit)
 }
 
 /// Ctrl+V or Shift+Insert, pressed: paste the clipboard into the field being edited.

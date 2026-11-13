@@ -427,3 +427,9 @@ notice.window_too_small:
 notice.font_fallback:
   en: "Font %{font} is unavailable, using the system monospace font"
   ru: "Шрифт %{font} недоступен, взят системный моноширинный"
+dialog.ok:
+  en: "OK"
+  ru: "OK"
+dialog.input_hint:
+  en: "↑↓ choose · Enter open · Tab next · Esc cancel"
+  ru: "↑↓ — выбор · Enter — открыть · Tab — дальше · Esc — отмена"
