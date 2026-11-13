@@ -99,6 +99,8 @@ F7 opens the same dialog for the folder of takes: only folders are offered; with
 
 Notes play on MIDI channel 1 with the F5 preset and sound while the key is held. When the window loses focus, held notes are released.
 
+The screen shows a piano of the same range — from the C of the base octave to the E of the next one; when the octave changes (Ctrl+↑/↓) it moves along with the keyboard. The keys of sounding notes are lit wherever the note comes from — the keyboard, the mouse or the MIDI input. The piano can be played with the mouse: a press starts a note and the release stops it; dragging the pointer over the keys with the button down plays them one after another. Mouse notes use the velocity of the text keyboard.
+
 Notes and hotkeys go by the position of the key, not by its character: the input language (Russian, German) does not get in their way. In the config and in the help, keys are named by the characters of the US layout. Text in dialogs — the list filter, a path — is typed in the current layout.
 
 ## Configuration
@@ -171,6 +173,7 @@ The folder of takes is chosen with F7 or the `[Folder for files]` button, the fo
 - The screen is divided into the sections "MIDI sources", "Processor", "Output" and "Audio file". The lines show the chosen MIDI input (green "open"), the bank file and the audio output (green `OK` while everything works), the preset, effects and the recording folder and format. A problem is shown in red in the line it belongs to (no device, disconnected port, open error, missing bank); messages that belong to no line (device fallback, recording saved, config not saved, font replaced) appear in yellow under the recording line. Labels in square brackets are buttons: the chosen option is highlighted, unavailable ones are dimmed, the button under the keyboard focus is underlined, the one held down by the mouse is light.
 - Meter: the bar shows the RMS of the left and right channels with colour zones (green, amber from 78 %, red from 92 %), the number is the peak in dBFS; updated 30 times per second, a red `CLIP` stays for 1 s after clipping.
 - The bottom line, with counters of fixed width so the fields never move: `voices 7/64` — the number of held notes and the engine's polyphony limit (rustysynth does not publish the active voice count, so release tails and layered presets are not counted); `cpu 3%` — audio callback time relative to the block duration; `xrun` — buffer underruns. Transposition, the omni channel and dropped-event counters follow when active; on the right — the chosen processor and bank. The octave and velocity of the text keyboard are shown in the "Keyboard" line.
+- Note lines: "Keyboard" names the notes sounding from the text keyboard and the mouse, "→ notes" those from the MIDI input (`C4 E4 G4`, lowest first, transposition applied; what does not fit is replaced by `…`). Notes outside the range of the piano are visible only here.
 - The window can be resized; the grid needs at least 96×31 cells, otherwise a request to enlarge the window is shown instead of the screen. The font and its size are set in the `[ui]` section; if the font is not found, the system monospace font is used.
 
 ## Latency

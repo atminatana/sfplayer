@@ -25,6 +25,8 @@ fn view() -> View {
 		levels: Levels::default(),
 		mixer: Mixer::new(80),
 		notice: None,
+		keyboard_notes: 0,
+		midi_notes: 0,
 	}
 }
 

@@ -6,7 +6,7 @@ use cpal::BufferSize;
 use rust_i18n::t;
 
 use super::dialog::preset_label;
-use crate::audio::{Levels, Mixer};
+use crate::audio::{Levels, Mixer, Source};
 use crate::config::RecordFormat;
 use crate::midi::MidiStatus;
 use crate::session::{Notice, Session};
@@ -34,6 +34,10 @@ pub struct View {
 	pub levels: Levels,
 	pub mixer: Mixer,
 	pub notice: Option<Notice>,
+	/// Keys sounding now, a bit per MIDI key: played in the window (text keyboard, mouse) and coming
+	/// from the MIDI input (F-24).
+	pub keyboard_notes: u128,
+	pub midi_notes: u128,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +92,8 @@ impl View {
 			levels: session.shared.levels(),
 			mixer: session.mixer.clone(),
 			notice: session.notice.clone(),
+			keyboard_notes: session.shared.notes(Source::Keyboard),
+			midi_notes: session.shared.notes(Source::MidiIn),
 		}
 	}
 }
@@ -138,6 +144,38 @@ impl View {
 	}
 }
 
+const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const ELLIPSIS: &str = "…";
+
+/// The name of a MIDI key with its octave: 60 is C4.
+pub(super) fn note_name(key: u8) -> String {
+	format!("{}{}", NOTE_NAMES[usize::from(key % 12)], i16::from(key / 12) - 1)
+}
+
+/// The names of the keys set in `keys`, lowest first, separated by spaces: `C4 E4 G4`. What does
+/// not fit into `width` cells is cut at a whole name and marked with `…`. `None` when no key is set.
+pub(super) fn note_names(keys: u128, width: usize) -> Option<String> {
+	let names: Vec<String> = (0..128u8).filter(|key| keys & (1u128 << key) != 0).map(note_name).collect();
+	if names.is_empty() {
+		return None;
+	}
+	let all = names.join(" ");
+	if all.chars().count() <= width {
+		return Some(all);
+	}
+	let mut shown = String::new();
+	for name in &names {
+		// Room is kept for the space after the name and for the mark.
+		if shown.chars().count() + name.chars().count() + 2 > width {
+			break;
+		}
+		shown.push_str(name);
+		shown.push(' ');
+	}
+	shown.push_str(ELLIPSIS);
+	Some(shown)
+}
+
 pub(super) fn notice_text(notice: &Notice, locale: &str) -> String {
 	match notice {
 		Notice::NoAudioDevice(error) => t!("notice.no_audio_device", locale = locale, error = error).into_owned(),
@@ -151,5 +189,46 @@ pub(super) fn notice_text(notice: &Notice, locale: &str) -> String {
 		Notice::RecordSaved(name) => t!("notice.record_saved", locale = locale, name = name).into_owned(),
 		Notice::RecordError(error) => t!("notice.record_error", locale = locale, error = error).into_owned(),
 		Notice::FontFallback(font) => t!("notice.font_fallback", locale = locale, font = font).into_owned(),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn keys(sounding: &[u8]) -> u128 {
+		sounding.iter().fold(0, |map, key| map | (1u128 << key))
+	}
+
+	#[test]
+	fn keys_are_named_by_note_and_octave() {
+		assert_eq!(note_name(60), "C4");
+		assert_eq!(note_name(61), "C#4");
+		assert_eq!(note_name(69), "A4");
+		assert_eq!(note_name(59), "B3");
+		assert_eq!(note_name(0), "C-1");
+		assert_eq!(note_name(127), "G9");
+	}
+
+	#[test]
+	fn note_names_are_listed_lowest_first_or_not_at_all() {
+		assert_eq!(note_names(0, 40), None);
+		assert_eq!(note_names(keys(&[67, 60, 64]), 40).as_deref(), Some("C4 E4 G4"));
+		assert_eq!(note_names(keys(&[0, 127]), 40).as_deref(), Some("C-1 G9"));
+	}
+
+	#[test]
+	fn names_that_do_not_fit_are_cut_at_a_whole_name_and_marked() {
+		let chord = keys(&[60, 64, 67]);
+		assert_eq!(note_names(chord, 8).as_deref(), Some("C4 E4 G4"), "exactly fits");
+		assert_eq!(note_names(chord, 7).as_deref(), Some("C4 E4 …"));
+		assert_eq!(note_names(chord, 6).as_deref(), Some("C4 …"), "E4 would leave no room for the mark");
+		assert_eq!(note_names(chord, 4).as_deref(), Some("C4 …"));
+		assert_eq!(note_names(chord, 3).as_deref(), Some("…"), "not even one name fits");
+		assert_eq!(note_names(chord, 0).as_deref(), Some("…"));
+		for width in 1..40 {
+			let shown = note_names(keys(&[36, 49, 61, 73, 85, 97, 109]), width).expect("notes sound");
+			assert!(shown.chars().count() <= width, "{shown:?} in {width} cells");
+		}
 	}
 }

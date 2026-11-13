@@ -11,9 +11,9 @@ use crate::config::KeyboardConfig;
 use crate::midi::MidiEvent;
 
 /// Semitone offsets of the white keys from the base C: C D E F G A B C D E.
-const WHITE_OFFSETS: [u8; 10] = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16];
+pub const WHITE_OFFSETS: [u8; 10] = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16];
 /// Semitone offsets of the black keys: C# D# F# G# A# C# D#.
-const BLACK_OFFSETS: [u8; 7] = [1, 3, 6, 8, 10, 13, 15];
+pub const BLACK_OFFSETS: [u8; 7] = [1, 3, 6, 8, 10, 13, 15];
 pub const MIN_OCTAVE: u8 = 1;
 pub const MAX_OCTAVE: u8 = 7;
 pub const VELOCITY_STEP: i16 = 10;
@@ -53,6 +53,11 @@ impl TextKeyboard {
 		self.velocity
 	}
 
+	/// MIDI key of the first white key: the C of the base octave (C4 = 60).
+	pub fn base_key(&self) -> u8 {
+		(self.octave + 1) * 12
+	}
+
 	pub fn held_count(&self) -> usize {
 		self.held.len()
 	}
@@ -66,7 +71,7 @@ impl TextKeyboard {
 			let index = self.black.iter().position(|c| *c == lower)?;
 			*BLACK_OFFSETS.get(index)?
 		};
-		let note = u16::from(self.octave + 1) * 12 + u16::from(offset);
+		let note = u16::from(self.base_key()) + u16::from(offset);
 		u8::try_from(note).ok().filter(|note| *note <= 127)
 	}
 

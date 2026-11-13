@@ -14,6 +14,7 @@ pub mod main_screen;
 pub mod meter;
 pub mod paint;
 pub mod path_input;
+pub mod piano;
 pub mod selector;
 pub mod text_keyboard;
 pub mod view;

@@ -20,8 +20,9 @@ use crate::session::{EffectsAction, EffectsSettings, MixerAction, Notice, Sessio
 
 /// Spec §6: redraw at most 30 frames per second.
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(33);
-/// MIDI channel the text keyboard plays on (0-based): channel 1, where the F5 preset applies (ADR 0011).
-const KEYBOARD_CHANNEL: u8 = 0;
+/// MIDI channel the text keyboard and the on-screen piano play on (0-based): channel 1, where the F5
+/// preset applies (ADR 0011).
+pub const KEYBOARD_CHANNEL: u8 = 0;
 
 /// What the UI wants the session to do.
 #[derive(Debug, Clone, PartialEq, Eq)]

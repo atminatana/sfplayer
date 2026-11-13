@@ -18,7 +18,8 @@ use super::buttons::{Buttons, Look};
 use super::meter::{dbfs_text, level_ratio};
 use super::paint::Pen;
 pub use super::paint::{BACKGROUND, DISABLED, ERROR, GOOD, HINT, LABEL, MESSAGE, METER_TRACK, RULE, TEXT, VALUE};
-use super::view::{NoticeTarget, View, notice_target, notice_text};
+use super::piano;
+use super::view::{NoticeTarget, View, note_names, notice_target, notice_text};
 use crate::config::RecordFormat;
 use crate::midi::MidiStatus;
 
@@ -41,10 +42,9 @@ const METER_ZONES: [(f64, Style); 3] = [
 	(0.78, Style::new().fg(VALUE)),
 	(0.92, Style::new().fg(ERROR)),
 ];
-/// The on-screen piano: the text keyboard's range, C to E of the next octave (10 white keys, 7 black).
-const PIANO_TOP: &str = "│ ██ ██  │ ██ ██ ██  │ ██ ██  │";
-const PIANO_BOTTOM: &str = "│  │  │  │  │  │  │  │  │  │  │";
-const PIANO_CELLS: u16 = 31;
+/// Row of the "MIDI sources" section, and of the piano within it.
+const SOURCES_Y: u16 = 2;
+const PIANO_ROW: u16 = 2;
 const RULE_GLYPH: char = '─';
 const NOTHING: &str = "—";
 const MINUS: &str = "−";
@@ -67,12 +67,19 @@ pub fn render(buf: &mut ScreenBuffer, app: &App, view: &View, buttons: &mut Butt
 	}
 
 	title(buf, locale);
-	sources(buf, 2, app, locale, view, buttons);
+	sources(buf, SOURCES_Y, app, locale, view, buttons);
 	handler(buf, 10, locale, view, buttons);
 	output(buf, 15, app, locale, view, buttons);
 	audio_file(buf, 21, app, locale, view, buttons);
 	status(buf, area.height - 1, locale, view);
 	buttons.finish_frame(buf);
+}
+
+/// The top-left cell of the piano on a grid of `area`: centred, whatever the width (spec v1.2 §3).
+/// `None` while the grid is too small for the screen to be shown.
+pub fn piano_origin(area: Rect) -> Option<(u16, u16)> {
+	let is_shown = area.width >= MIN_COLS && area.height >= MIN_ROWS;
+	is_shown.then(|| (area.width.saturating_sub(piano::WIDTH) / 2, SOURCES_Y + PIANO_ROW))
 }
 
 /// Gives a button its place at the pen and moves the pen past it; the button is drawn when the frame is finished.
@@ -111,12 +118,22 @@ fn sub_label(buf: &mut ScreenBuffer, y: u16, text: &str) {
 	Pen::at(buf, SUB_LABEL_X, y).text(text, LABEL);
 }
 
+/// The names of the sounding notes of one source from the value column up to column `end`, or a dash.
+fn notes(buf: &mut ScreenBuffer, y: u16, keys: u128, end: u16) {
+	let width = usize::from(end.saturating_sub(VALUE_X));
+	match note_names(keys, width) {
+		Some(names) => Pen::at(buf, VALUE_X, y).text(&names, VALUE),
+		None => Pen::at(buf, VALUE_X, y).text(NOTHING, DISABLED),
+	};
+}
+
 fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, buttons: &mut Buttons) {
 	let after_title = section(buf, y, &t!("main.section_sources", locale = locale));
 	rule(buf, after_title, y);
 
 	label(buf, y + 1, &t!("main.keyboard", locale = locale));
-	Pen::at(buf, VALUE_X, y + 1).text(NOTHING, DISABLED);
+	// The names stop two cells short of the octave and velocity read-out.
+	notes(buf, y + 1, view.keyboard_notes, KEYBOARD_STATE_X - 2);
 	let keyboard_state = t!(
 		"status.octave",
 		locale = locale,
@@ -124,9 +141,10 @@ fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View,
 		velocity = format!("{:>3}", app.keyboard.velocity())
 	);
 	Pen::at(buf, KEYBOARD_STATE_X, y + 1).text(&keyboard_state, HINT);
-	let piano_x = buf.area().width.saturating_sub(PIANO_CELLS) / 2;
-	Pen::at(buf, piano_x, y + 2).text(PIANO_TOP, HINT);
-	Pen::at(buf, piano_x, y + 3).text(PIANO_BOTTOM, HINT);
+	if let Some((piano_x, piano_y)) = piano_origin(buf.area()) {
+		let sounding = view.keyboard_notes | view.midi_notes;
+		piano::draw(buf, piano_x, piano_y, app.keyboard.base_key(), sounding);
+	}
 
 	let midi_in = t!("main.midi_in", locale = locale);
 	label(buf, y + 4, &midi_in);
@@ -148,7 +166,8 @@ fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View,
 		pen.gap(2).text(error, ERROR);
 	}
 	sub_label(buf, y + 5, &t!("main.notes", locale = locale));
-	Pen::at(buf, VALUE_X, y + 5).text(NOTHING, DISABLED);
+	let right_edge = buf.area().width.saturating_sub(1);
+	notes(buf, y + 5, view.midi_notes, right_edge);
 
 	// The MIDI file source arrives with plan stage 5; until then its controls are shown unavailable.
 	let midi_file = t!("main.midi_file", locale = locale);

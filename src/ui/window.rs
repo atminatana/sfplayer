@@ -17,7 +17,7 @@ use gterm_widgets::{MouseMsg, Rect, SystemClipboard};
 use rust_i18n::t;
 use winit::event::ElementState;
 
-use super::app::{App, FRAME_INTERVAL, Request, fulfil};
+use super::app::{App, FRAME_INTERVAL, KEYBOARD_CHANNEL, Request, fulfil};
 use super::buttons::{Buttons, Touch};
 use super::chord::{KeyCode, KeyEvent, KeyEventKind};
 use super::dialog_screen;
@@ -25,6 +25,7 @@ use super::input_dialog::{InputDialog, InputOutcome};
 use super::keymap::{Reading, WindowKey, key_from_window, quits_from_a_field, reading_in_a_dialog};
 use super::main_screen::{self, BACKGROUND, MIN_COLS, MIN_ROWS, TEXT};
 use super::path_input::{self, InputKind};
+use super::piano::Piano;
 use super::view::View;
 use crate::session::{Notice, Session};
 
@@ -78,6 +79,7 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		session,
 		shown: None,
 		buttons: Buttons::new(),
+		piano: Piano::new(KEYBOARD_CHANNEL),
 		clipboard: SystemClipboard::new(),
 		input: None,
 	};
@@ -132,6 +134,8 @@ struct Window {
 	shown: Option<FrameState>,
 	/// The `[buttons]` of the main screen: where the last frame put them, the focus, the one held down.
 	buttons: Buttons,
+	/// The on-screen piano: the note the mouse holds on it.
+	piano: Piano,
 	/// Where Ctrl+V takes text from for the field of the input dialog.
 	clipboard: SystemClipboard,
 	/// The input dialog on widget controls, while it is open.
@@ -198,6 +202,20 @@ impl Window {
 		let outcome = dialog.settle(routed, Some(&event.logical_key), path_input::list_dir);
 		self.conclude_input(outcome);
 		self.refresh(ctx, true);
+	}
+
+	/// Offers a mouse event to the on-screen piano; `true` when the piano took it. The notes go the way
+	/// of the text keyboard's, and the screen follows when the audio thread reports them sounding.
+	fn pointer_to_piano(&mut self, message: &MouseMsg, ctx: &mut Ctx<'_>) -> bool {
+		let origin = main_screen::piano_origin(Rect::of_screen(ctx.screen));
+		let keyboard = &self.app.keyboard;
+		let Some(events) = self.piano.handle_mouse(message, origin, keyboard.base_key(), keyboard.velocity()) else {
+			return false;
+		};
+		if !events.is_empty() {
+			self.apply(Some(Request::Notes(events)));
+		}
+		true
 	}
 
 	/// A mouse event for the open input dialog.
@@ -320,11 +338,17 @@ impl AppHandler for Window {
 	}
 
 	fn on_pointer(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
+		let message = MouseMsg::from_pointer(event, ctx);
+		// A note the mouse holds on the piano is the piano's to end, even if a dialog opened meanwhile;
+		// a new one starts only on the bare main screen.
+		let is_screen_bare = self.input.is_none() && self.app.modal.is_none();
+		if (is_screen_bare || self.piano.is_dragging()) && self.pointer_to_piano(&message, ctx) {
+			return;
+		}
 		if self.input.is_some() {
 			self.pointer_to_input(event, ctx);
 			return;
 		}
-		let message = MouseMsg::from_pointer(event, ctx);
 		let request = if self.app.modal.is_some() {
 			// A dialog takes the mouse from the screen under it; a click outside closes it like Esc.
 			let dialog = dialog_screen::area(&self.app, Rect::of_screen(ctx.screen));
@@ -355,7 +379,8 @@ impl AppHandler for Window {
 	fn on_focus(&mut self, focused: bool, ctx: &mut Ctx<'_>) {
 		// Releases that happen outside the window never arrive: without this a held note would hang.
 		if !focused {
-			let events = self.app.keyboard.all_notes_off();
+			let mut events = self.app.keyboard.all_notes_off();
+			events.extend(self.piano.release());
 			if !events.is_empty() {
 				self.apply(Some(Request::Notes(events)));
 			}

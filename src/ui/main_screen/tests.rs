@@ -41,6 +41,8 @@ fn view() -> View {
 		levels: Levels::default(),
 		mixer: Mixer::new(80),
 		notice: None,
+		keyboard_notes: 0,
+		midi_notes: 0,
 	}
 }
 
@@ -444,8 +446,13 @@ fn a_grid_below_the_minimum_shows_only_the_hint() {
 	// A larger grid keeps the layout: the piano stays centred, the status goes to the last row.
 	let mut wide = screen(120, 40);
 	render(&mut wide, &App::new("ru"), &view(), &mut Buttons::new());
-	let (_, piano_col) = find(&wide, PIANO_TOP);
-	assert_eq!(piano_col, (120 - usize::from(PIANO_CELLS)) / 2);
+	let (piano_row, piano_col) = find(&wide, "│ ██ ██  │ ██ ██ ██  │ ██ ██  │");
+	assert_eq!(piano_col, (120 - usize::from(piano::WIDTH)) / 2);
+	assert_eq!(
+		piano_origin(wide.area()),
+		Some((piano_col as u16, piano_row as u16)),
+		"the mouse looks for the piano where it is drawn"
+	);
 	let (status_row, _) = find(&wide, "голоса");
 	assert_eq!(status_row, 39);
 	assert_eq!(lines_of(&wide)[0].chars().count(), 120, "the title rule spans the whole width");
@@ -593,4 +600,101 @@ fn on_a_grid_below_the_minimum_no_button_reacts() {
 	);
 	// Where `[MIDI-вход]` stood on the full screen.
 	assert_eq!(click(&mut buttons, &buf, "[MIDI-вход]"), Touch::Missed);
+}
+
+/// A note map with the given MIDI keys set.
+fn sounding(keys: &[u8]) -> u128 {
+	keys.iter().fold(0, |map, key| map | (1u128 << key))
+}
+
+#[test]
+fn the_note_rows_name_what_each_source_plays_and_the_piano_lights_both() {
+	let mut playing = view();
+	playing.keyboard_notes = sounding(&[60, 64, 67]);
+	playing.midi_notes = sounding(&[62, 61, 100]);
+	let buf = rendered_ru(&playing);
+	assert!(is_shown(&buf, " Клавиатура        C4 E4 G4 "), "the names of the window's notes");
+	assert!(is_shown(&buf, "   → ноты          C#4 D4 E7"), "lowest first, sharps named");
+	assert_eq!(colour_of(&buf, "C4 E4 G4"), VALUE);
+	assert_eq!(colour_of(&buf, "C#4 D4 E7"), VALUE);
+	assert!(is_shown(&buf, "окт 4 vel 100"), "the read-out of the keyboard row stays in place");
+	// The piano lights the keys of both sources that are in its range: C C# D E G; E7 is outside.
+	assert!(is_shown(&buf, "│██│██│██│  │██│  │  │  │  │  │"));
+	let (row, col) = piano_origin(buf.area())
+		.map(|(x, y)| (usize::from(y), usize::from(x)))
+		.expect("shown");
+	assert_eq!(buf.cell(col + 2, row).fg, VALUE, "C# is lit");
+	assert_eq!(buf.cell(col + 5, row).fg, HINT, "D# is not");
+
+	// Silence: a dash in both rows, a grey piano.
+	let buf = rendered_ru(&view());
+	assert!(is_shown(&buf, " Клавиатура        —"));
+	assert!(is_shown(&buf, "   → ноты          —"));
+	assert!(is_shown(&buf, "│  │  │  │  │  │  │  │  │  │  │"));
+}
+
+#[test]
+fn the_piano_follows_the_base_octave_of_the_text_keyboard() {
+	let mut playing = view();
+	playing.midi_notes = sounding(&[60]);
+	let mut app = App::new("ru");
+	assert!(
+		is_shown(&rendered(&app, &playing), "│██│  │  │  │  │  │  │  │  │  │"),
+		"C4 is the first key"
+	);
+	app.keyboard.octave_down();
+	assert!(
+		is_shown(&rendered(&app, &playing), "│  │  │  │  │  │  │  │██│  │  │"),
+		"from C3 it is the eighth"
+	);
+	app.keyboard.octave_up();
+	app.keyboard.octave_up();
+	assert!(
+		is_shown(&rendered(&app, &playing), "│  │  │  │  │  │  │  │  │  │  │"),
+		"from C5 it is out of range"
+	);
+}
+
+#[test]
+fn a_long_list_of_notes_is_cut_at_a_whole_name_and_marked() {
+	let mut playing = view();
+	// Twenty-four notes from C2 up.
+	let many: Vec<u8> = (36..60).collect();
+	playing.keyboard_notes = sounding(&many);
+	playing.midi_notes = sounding(&many);
+	let buf = rendered_ru(&playing);
+	let lines = lines_of(&buf);
+	let (keyboard_row, _) = find(&buf, " Клавиатура ");
+	let keyboard: String = lines[keyboard_row].chars().skip(usize::from(VALUE_X)).take(50).collect();
+	// 48 cells are the keyboard row's: up to two short of the read-out at column 69. C#3 and the mark
+	// would take 49.
+	assert_eq!(keyboard, "C2 C#2 D2 D#2 E2 F2 F#2 G2 G#2 A2 A#2 B2 C3 …     ");
+	assert!(
+		lines[keyboard_row].contains("C3 …     окт 4 vel 100"),
+		"the read-out is not overwritten"
+	);
+	// The MIDI row has the whole width to the right edge.
+	let (midi_row, _) = find(&buf, "   → ноты ");
+	let midi: String = lines[midi_row].chars().skip(usize::from(VALUE_X)).collect();
+	assert_eq!(midi, "C2 C#2 D2 D#2 E2 F2 F#2 G2 G#2 A2 A#2 B2 C3 C#3 D3 D#3 E3 F3 F#3 G3 G#3 A3 …");
+	assert!(
+		lines[midi_row].chars().count() < usize::from(MIN_COLS),
+		"one cell is left at the edge"
+	);
+
+	// Twenty-six natural notes from C2 take exactly 77 cells — one more than the row has: the last cell
+	// of the screen stays free, so the list is cut.
+	let naturals: Vec<u8> = (36..128)
+		.filter(|key| [0, 2, 4, 5, 7, 9, 11].contains(&(key % 12)))
+		.take(26)
+		.collect();
+	playing.midi_notes = sounding(&naturals);
+	let buf = rendered_ru(&playing);
+	let midi: String = lines_of(&buf)[midi_row].chars().skip(usize::from(VALUE_X)).collect();
+	assert!(midi.ends_with("F5 …") && !midi.contains("G5"), "{midi}");
+	assert!(midi.chars().count() <= 76);
+	// One note fewer fits whole.
+	playing.midi_notes = sounding(&naturals[..25]);
+	let buf = rendered_ru(&playing);
+	assert!(lines_of(&buf)[midi_row].ends_with("E5 F5"));
 }
