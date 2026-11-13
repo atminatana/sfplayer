@@ -13,7 +13,7 @@ pub const DEFAULT_BUFFER_FRAMES: u32 = 256;
 #[command(
 	name = "sf2_player",
 	version,
-	about = "Console SoundFont synthesizer: MIDI in, SF2 bank, audio out"
+	about = "SoundFont synthesizer in a cell-grid window: MIDI in, SF2 bank, audio out"
 )]
 pub struct Cli {
 	/// Path to the SoundFont (.sf2) bank
@@ -36,7 +36,7 @@ pub struct Cli {
 	#[arg(long, value_name = "HZ", value_parser = clap::value_parser!(u32).range(1..))]
 	pub sample_rate: Option<u32>,
 
-	/// Print MIDI inputs and audio outputs, then exit without starting the TUI
+	/// Print MIDI inputs and audio outputs, then exit without opening the window
 	#[arg(long)]
 	pub list_devices: bool,
 
@@ -48,17 +48,8 @@ pub struct Cli {
 	#[arg(long, value_name = "LEVEL", default_value = "info")]
 	pub log_level: LevelFilter,
 
-	/// Draw meters and markers with ASCII characters (for terminals without Unicode block glyphs)
-	#[arg(long)]
-	pub ascii: bool,
-
-	/// Open the gterm window instead of the terminal UI. Temporary while the window is being built
-	/// (plan v1.2, stage 1): hidden from --help and removed when the window becomes the only UI.
-	#[arg(long, hide = true)]
-	pub gterm: bool,
-
-	/// Rendering backend of the window: auto, gl, gles or soft. Hidden together with --gterm.
-	#[arg(long, hide = true, value_name = "KIND")]
+	/// Rendering backend of the window: auto, gl, gles or soft (default: the TERM_BACKEND variable, else auto)
+	#[arg(long, value_name = "KIND")]
 	pub backend: Option<String>,
 }
 
@@ -128,7 +119,7 @@ mod tests {
 		assert!(cli.audio_out.is_none());
 		assert!(cli.config.is_none());
 		assert!(!cli.list_devices);
-		assert!(!cli.ascii);
+		assert!(cli.backend.is_none());
 		assert_eq!(cli.log_level, LevelFilter::INFO);
 	}
 
@@ -151,9 +142,10 @@ mod tests {
 			"my.toml",
 			"--log-level",
 			"debug",
-			"--ascii",
+			"--backend",
+			"soft",
 		]);
-		assert!(cli.ascii);
+		assert_eq!(cli.backend.as_deref(), Some("soft"));
 		assert_eq!(cli.sf2.as_deref(), Some(std::path::Path::new("bank.sf2")));
 		assert_eq!(cli.midi_in, Some(DeviceSelector::Name("Arturia".into())));
 		assert_eq!(cli.audio_out, Some(DeviceSelector::Index(2)));

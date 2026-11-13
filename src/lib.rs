@@ -1,4 +1,4 @@
-//! sf2_player — console SoundFont synthesizer. Library crate: modules used by the binary and by tests.
+//! sf2_player — SoundFont synthesizer in a cell-grid window. Library crate: modules used by the binary and by tests.
 
 rust_i18n::i18n!("locales", fallback = "en");
 

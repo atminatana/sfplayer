@@ -4,30 +4,6 @@ app.title:
   en: "sf2_player %{version}"
   ru: "sf2_player %{version}"
 
-header.help:
-  en: "Help"
-  ru: "Справка"
-header.midi:
-  en: "MIDI:"
-  ru: "MIDI:"
-header.audio:
-  en: "Audio:"
-  ru: "Аудио:"
-header.sf2:
-  en: "SF2:"
-  ru: "SF2:"
-header.preset:
-  en: "Preset:"
-  ru: "Пресет:"
-header.effects:
-  en: "Effects:"
-  ru: "Эффекты:"
-header.record:
-  en: "Recording:"
-  ru: "Запись:"
-header.record_keys:
-  en: "[Home] start recording   [End] stop"
-  ru: "[Home] начать запись   [End] остановить"
 header.no_device:
   en: "no device"
   ru: "нет устройства"
@@ -40,19 +16,12 @@ header.audio_ok:
 header.sf2_missing:
   en: "not set, press F4"
   ru: "не указан, нажмите F4"
-header.no_bank:
-  en: "no bank"
-  ru: "нет банка"
 header.buffer:
   en: "%{frames} frames"
   ru: "%{frames} кадров"
 header.buffer_default:
   en: "default buffer"
   ru: "буфер по умолчанию"
-
-panel.mixer:
-  en: "Mixer"
-  ru: "Микшер"
 
 status.voices:
   en: "voices %{voices}"
@@ -82,9 +51,6 @@ notice.midi_error:
 notice.sf2_error:
   en: "SoundFont: %{error}"
   ru: "SoundFont: %{error}"
-notice.terminal_too_small:
-  en: "Terminal too small: need at least %{width}x%{height}"
-  ru: "Терминал слишком мал: нужно не меньше %{width}x%{height}"
 
 dialog.midi_title:
   en: "MIDI input"
@@ -146,15 +112,6 @@ dialog.sf2_title:
 dialog.sf2_path:
   en: "Path:"
   ru: "Путь:"
-dialog.sf2_recent:
-  en: "Recent banks:"
-  ru: "Последние банки:"
-dialog.sf2_no_recent:
-  en: "no recent banks"
-  ru: "недавних банков нет"
-dialog.sf2_hint:
-  en: "Tab complete · ↑↓ recent · Enter load · Esc cancel"
-  ru: "Tab — дополнить · ↑↓ — недавние · Enter — загрузить · Esc — отмена"
 
 help.title:
   en: "Help"
@@ -203,9 +160,6 @@ meter.silence:
   en: "-inf"
   ru: "−∞"
 
-mixer.master:
-  en: "MASTER"
-  ru: "МАСТЕР"
 mixer.mute:
   en: "mute"
   ru: "тихо"
@@ -229,12 +183,6 @@ help.action.panic:
   en: "Panic: all notes off + all sound off"
   ru: "Паника: снять все ноты и заглушить звук"
 
-status.kbd_release:
-  en: "kbd: release"
-  ru: "клав: отпускание"
-status.kbd_gate:
-  en: "kbd: gate %{ms}ms"
-  ru: "клав: gate %{ms}мс"
 status.octave:
   en: "oct %{octave} vel %{velocity}"
   ru: "окт %{octave} vel %{velocity}"

@@ -3,7 +3,7 @@ name = "sf2_player"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "Console cross-platform SoundFont synthesizer: MIDI in, SF2 bank, audio out"
+description = "SoundFont synthesizer in a cell-grid window: MIDI in, SF2 bank, audio out"
 
 [dependencies]
 anyhow = "1.0"
@@ -12,12 +12,11 @@ clap = { version = "4.6", features = ["derive"] }
 cpal = "0.18"
 directories = "6.0"
 flacenc = "0.5"
-# Window with a cell grid and immediate-mode widgets (spec v1.2, ADR pending step 1.4). Both crates must
+# Window with a cell grid and immediate-mode widgets (spec v1.2, ADR 0012). Both crates must
 # point at the same revision; it carries the application tick and the Meter widget (gterm ADR-0033, ADR-0034).
 gterm = { git = "https://github.com/atminatana/gterm", rev = "e7c04032b72b18980afd67e813955a621db4babb" }
 gterm-widgets = { git = "https://github.com/atminatana/gterm", rev = "e7c04032b72b18980afd67e813955a621db4babb" }
 midir = "0.11"
-ratatui = "0.30"
 ringbuf = "0.5"
 rust-i18n = "4"
 rustysynth = "1.3"

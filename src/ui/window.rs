@@ -352,8 +352,8 @@ fn is_paste_chord(key: &KeyEvent) -> bool {
 
 /// Translates a window key event into the UI's own type; `None` for keys the UI does not distinguish.
 ///
-/// The logical key is used, so a chord means the same as in a terminal: `Shift` + `=` is `+`, a letter
-/// comes with the case the layout gives it.
+/// The logical key is used: `Shift` + `=` is `+`, and a letter comes with the case and the alphabet the
+/// layout gives it.
 fn key_from_window(logical_key: &Key, state: ElementState, is_repeat: bool, held: ModifiersState) -> Option<KeyEvent> {
 	let mut modifiers = KeyModifiers::NONE;
 	for (is_held, modifier) in [

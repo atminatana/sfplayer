@@ -1,8 +1,8 @@
 //! Key presses as the UI logic sees them, independent of the input backend (plan v1.2, step 1.1).
 //!
 //! Bindings, dialogs and the key table work with these types only; the event loop converts whatever
-//! the backend delivers. The shape follows the terminal events the UI was written against, so the
-//! logic and its tests did not change when the types were introduced.
+//! the backend delivers. The shape follows the terminal events the UI was first written against, which
+//! is why Shift+Tab is its own key.
 
 use std::ops::{BitOr, BitOrAssign};
 
@@ -24,7 +24,7 @@ pub enum KeyCode {
 	Enter,
 	Esc,
 	Tab,
-	/// Shift+Tab as terminals report it.
+	/// Shift+Tab.
 	BackTab,
 	Backspace,
 	Delete,

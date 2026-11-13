@@ -1,8 +1,7 @@
-//! Level meter presentation (spec F-09): dBFS text, bar graphics and the one-second clip hold.
+//! Level meter presentation (spec F-09): dBFS text, the share of the bar to fill and the one-second clip hold.
 
 use std::time::{Duration, Instant};
 
-use super::glyphs::Glyphs;
 use crate::audio::meter::{DBFS_FLOOR, to_dbfs};
 
 /// Spec F-09: the CLIP mark stays lit this long after the last clipped sample.
@@ -39,13 +38,6 @@ impl ClipHold {
 /// Lowest level drawn on the bar; below it the bar is empty.
 pub const BAR_FLOOR_DB: f32 = -60.0;
 
-/// Bar of `width` cells filled proportionally between `BAR_FLOOR_DB` and 0 dBFS, like "████████░░".
-pub fn level_bar(level: f32, width: usize, glyphs: &Glyphs) -> String {
-	let db = to_dbfs(level).unwrap_or(DBFS_FLOOR).clamp(BAR_FLOOR_DB, 0.0);
-	let filled = ((db - BAR_FLOOR_DB) / -BAR_FLOOR_DB * width as f32).round() as usize;
-	glyphs.bar(filled, width)
-}
-
 /// Share of a level bar to fill, 0..=1: linear in decibels between `BAR_FLOOR_DB` and 0 dBFS.
 pub fn level_ratio(level: f32) -> f64 {
 	let db = to_dbfs(level).unwrap_or(DBFS_FLOOR).clamp(BAR_FLOOR_DB, 0.0);
@@ -79,15 +71,13 @@ mod tests {
 	}
 
 	#[test]
-	fn bar_fills_with_level() {
-		let g = &Glyphs::UNICODE;
-		assert_eq!(level_bar(1.0, 10, g), "██████████");
-		assert_eq!(level_bar(0.0, 10, g), "░░░░░░░░░░");
-		assert_eq!(level_bar(0.001, 10, g), "░░░░░░░░░░", "-60 dBFS is the empty end");
-		let half = level_bar(0.5, 10, g);
-		assert_eq!(half.chars().filter(|c| *c == '█').count(), 9, "-6 dB of 60 → 90 %");
-		assert_eq!(level_bar(2.0, 4, g), "████", "clamped at full scale");
-		assert_eq!(level_bar(1.0, 4, &Glyphs::ASCII), "####");
+	fn bar_share_is_linear_in_decibels_between_the_floor_and_full_scale() {
+		assert_eq!(level_ratio(1.0), 1.0);
+		assert_eq!(level_ratio(0.0), 0.0);
+		assert_eq!(level_ratio(0.001), 0.0, "-60 dBFS is the empty end");
+		assert!((level_ratio(0.5) - 0.9).abs() < 0.001, "-6 dB of 60 is 90 %");
+		assert_eq!(level_ratio(2.0), 1.0, "clamped at full scale");
+		assert_eq!(level_ratio(0.000_001), 0.0, "below the floor the bar is empty");
 	}
 
 	#[test]

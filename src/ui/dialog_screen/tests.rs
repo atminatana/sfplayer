@@ -1,6 +1,6 @@
 //! Snapshot tests of the window dialogs: text and cell colours of a `ScreenBuffer`, no window.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use gterm::cell::CellFlags;
 
@@ -201,46 +201,9 @@ fn a_long_selector_list_scrolls_to_keep_the_cursor_visible() {
 }
 
 #[test]
-fn the_path_dialog_shows_the_field_with_its_cursor_the_error_and_the_recent_banks() {
-	let recent = vec![PathBuf::from("D:/sf2/A.sf2"), PathBuf::from("D:/sf2/B.sf2")];
-	let mut input = PathInput::new("D:/sf2/Gen", recent);
-	let buf = shown(Modal::Sf2Path(input.clone()));
-	assert!(is_shown(&buf, "┌ Файл SoundFont ─"));
-	assert!(is_shown(&buf, "│Путь: D:/sf2/Gen"));
-	assert!(is_shown(&buf, "│Последние банки:"));
-	assert!(is_shown(&buf, "│  D:/sf2/A.sf2"));
-	assert!(is_shown(
-		&buf,
-		"│Tab — дополнить · ↑↓ — недавние · Enter — загрузить · Esc — отмена"
-	));
-	// The cursor is after the last character: an inverted empty cell.
-	let (row, col) = find(&buf, "D:/sf2/Gen");
-	let after_text = col + "D:/sf2/Gen".chars().count();
-	assert_eq!(buf.cell(after_text, row).bg, TEXT);
-	assert_eq!(buf.cell(after_text - 1, row).bg, BACKGROUND);
-	assert_eq!(colours_of(&buf, "  D:/sf2/A.sf2"), (TEXT, BACKGROUND));
-
-	// Moved left, the cursor inverts the character it stands on.
-	input.handle_key(press(KeyCode::Left), |_| Vec::new());
-	let buf = shown(Modal::Sf2Path(input.clone()));
-	let under_cursor = buf.cell(after_text - 1, row);
-	assert_eq!((under_cursor.ch, under_cursor.fg, under_cursor.bg), ('n', BACKGROUND, TEXT));
-	assert_eq!(buf.cell(after_text, row).bg, BACKGROUND);
-
-	input.set_error("file not found: D:/sf2/Gen".into());
-	let buf = shown(Modal::Sf2Path(input.clone()));
-	let (error_row, _) = find(&buf, "│file not found: D:/sf2/Gen");
-	assert_eq!(error_row, row + 1, "the error sits under the field");
-	assert_eq!(colours_of(&buf, "file not found").0, ERROR);
-
-	// ↓ walks the recent list: the chosen bank is highlighted and copied into the field.
-	input.handle_key(press(KeyCode::Down), |_| Vec::new());
-	let buf = shown(Modal::Sf2Path(input));
-	assert_eq!(colours_of(&buf, "  D:/sf2/A.sf2"), (BACKGROUND, TEXT));
-	assert!(is_shown(&buf, "│Путь: D:/sf2/A.sf2"));
-
-	let empty = shown(Modal::Sf2Path(PathInput::new("", Vec::new())));
-	assert!(is_shown(&empty, "│недавних банков нет"));
+fn the_path_dialog_of_the_app_is_left_to_the_input_dialog() {
+	let buf = shown(Modal::Sf2Path(crate::ui::path_input::PathInput::new("D:/sf2/Gen", Vec::new())));
+	assert!(lines_of(&buf).iter().all(String::is_empty));
 }
 
 #[test]

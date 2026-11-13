@@ -1,4 +1,4 @@
-//! Application state and the event loop (≤ 30 frames/s, never blocks the audio thread).
+//! Application state and key handling, independent of the window that shows it.
 //!
 //! `App` never touches devices: key handling yields a `Request`, which `fulfil` applies to the `Session`.
 //! That keeps dialogs and hotkeys testable without hardware.
@@ -6,21 +6,15 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use ratatui::DefaultTerminal;
-use ratatui::crossterm::event::{self as terminal, Event};
-
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use super::dialog::{Choice, Dialog, DialogKind};
 use super::effects_dialog::{EffectsDialog, EffectsOutcome};
-use super::glyphs::Glyphs;
 use super::keys::{Action, Bindings};
 use super::meter::ClipHold;
 use super::path_input::{self, PathInput, PathOutcome};
 use super::record_dialog::{RecordDialog, RecordOutcome};
-use super::screen;
 use super::selector::SelectorOutcome;
 use super::text_keyboard::{NoteOffMode, TextKeyboard};
-use super::view::View;
 use crate::audio;
 use crate::config::KeyboardConfig;
 use crate::midi::MidiEvent;
@@ -76,7 +70,6 @@ pub struct App {
 	pub modal: Option<Modal>,
 	pub keyboard: TextKeyboard,
 	pub bindings: Bindings,
-	pub glyphs: Glyphs,
 	/// Elapsed time of the running recording, refreshed every frame; `None` when not recording.
 	pub recording: Option<Duration>,
 	clip_hold: ClipHold,
@@ -100,7 +93,6 @@ impl App {
 			modal: None,
 			keyboard,
 			bindings: Bindings::default(),
-			glyphs: Glyphs::UNICODE,
 			recording: None,
 			clip_hold: ClipHold::new(0),
 			clipping: false,
@@ -196,7 +188,7 @@ impl App {
 		self.notes(events)
 	}
 
-	/// Key release events (only delivered by terminals that report them).
+	/// Key release events.
 	pub fn handle_release(&mut self, key: KeyEvent) -> Option<Request> {
 		if self.modal.is_some() {
 			return None;
@@ -295,7 +287,7 @@ impl App {
 		}
 	}
 
-	/// Terminal paste (bracketed paste) goes into the path field; elsewhere it is ignored.
+	/// Pasted text goes into the path field of the open dialog; elsewhere it is ignored.
 	pub fn handle_paste(&mut self, text: &str) {
 		match self.modal.as_mut() {
 			Some(Modal::Sf2Path(input)) => input.insert_str(text),
@@ -312,11 +304,6 @@ impl App {
 
 	pub fn open_dialog(&mut self, dialog: Dialog) {
 		self.open_modal(Modal::Select(dialog));
-	}
-
-	/// Marks the screen for redraw without changing state (terminal resize).
-	pub fn mark_dirty(&mut self) {
-		self.dirty = true;
 	}
 
 	/// Returns and clears the redraw flag.
@@ -399,94 +386,6 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 		Request::Notes(events) => {
 			tracing::debug!(?events, "notes to the command ring");
 			session.send_notes(&events);
-		}
-	}
-}
-
-/// Translates a terminal key event into the UI's own type; `None` for keys the UI does not distinguish
-/// (lock keys, media keys, lone modifiers).
-fn key_from_terminal(key: &terminal::KeyEvent) -> Option<KeyEvent> {
-	let code = match key.code {
-		terminal::KeyCode::Char(c) => KeyCode::Char(c),
-		terminal::KeyCode::F(number) => KeyCode::F(number),
-		terminal::KeyCode::Up => KeyCode::Up,
-		terminal::KeyCode::Down => KeyCode::Down,
-		terminal::KeyCode::Left => KeyCode::Left,
-		terminal::KeyCode::Right => KeyCode::Right,
-		terminal::KeyCode::Home => KeyCode::Home,
-		terminal::KeyCode::End => KeyCode::End,
-		terminal::KeyCode::PageUp => KeyCode::PageUp,
-		terminal::KeyCode::PageDown => KeyCode::PageDown,
-		terminal::KeyCode::Enter => KeyCode::Enter,
-		terminal::KeyCode::Esc => KeyCode::Esc,
-		terminal::KeyCode::Tab => KeyCode::Tab,
-		terminal::KeyCode::BackTab => KeyCode::BackTab,
-		terminal::KeyCode::Backspace => KeyCode::Backspace,
-		terminal::KeyCode::Delete => KeyCode::Delete,
-		terminal::KeyCode::Insert => KeyCode::Insert,
-		_ => return None,
-	};
-	let mut modifiers = KeyModifiers::NONE;
-	for (held, modifier) in [
-		(terminal::KeyModifiers::SHIFT, KeyModifiers::SHIFT),
-		(terminal::KeyModifiers::CONTROL, KeyModifiers::CONTROL),
-		(terminal::KeyModifiers::ALT, KeyModifiers::ALT),
-		(terminal::KeyModifiers::SUPER, KeyModifiers::SUPER),
-		(terminal::KeyModifiers::HYPER, KeyModifiers::SUPER),
-		(terminal::KeyModifiers::META, KeyModifiers::SUPER),
-	] {
-		if key.modifiers.contains(held) {
-			modifiers |= modifier;
-		}
-	}
-	let kind = match key.kind {
-		terminal::KeyEventKind::Press => KeyEventKind::Press,
-		terminal::KeyEventKind::Repeat => KeyEventKind::Repeat,
-		terminal::KeyEventKind::Release => KeyEventKind::Release,
-	};
-	Some(KeyEvent { code, modifiers, kind })
-}
-
-/// Runs the UI until the user quits. Input is polled with a timeout so the loop also wakes up to refresh meters.
-pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session) -> std::io::Result<()> {
-	let mut next_frame = Instant::now();
-	loop {
-		session.poll();
-		let now = Instant::now();
-		app.recording = session.recording_elapsed();
-		if let Some(request) = app.tick_keyboard(now) {
-			fulfil(request, app, session);
-		}
-		app.update_meters(session.shared.clips(), now);
-		if app.take_dirty() || now >= next_frame {
-			terminal.draw(|frame| screen::render(frame, app, &View::from_session(session)))?;
-			next_frame = now + FRAME_INTERVAL;
-		}
-		let timeout = next_frame.saturating_duration_since(Instant::now());
-		if terminal::poll(timeout)? {
-			match terminal::read()? {
-				Event::Key(key) => {
-					// Raw key stream for diagnosing terminal behaviour (auto-repeat, release events); spec N-07.
-					tracing::debug!(code = ?key.code, kind = ?key.kind, modifiers = ?key.modifiers, "key event");
-					let Some(key) = key_from_terminal(&key) else {
-						continue;
-					};
-					let request = if key.kind == KeyEventKind::Release {
-						app.handle_release(key)
-					} else {
-						app.handle_key(key)
-					};
-					if let Some(request) = request {
-						fulfil(request, app, session);
-					}
-				}
-				Event::Paste(text) => app.handle_paste(&text),
-				Event::Resize(_, _) => app.mark_dirty(),
-				_ => {}
-			}
-		}
-		if app.should_quit {
-			return Ok(());
 		}
 	}
 }

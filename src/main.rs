@@ -1,17 +1,10 @@
-use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::Parser;
-use ratatui::crossterm::event::{
-	DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
-};
-use ratatui::crossterm::execute;
-use ratatui::crossterm::terminal::supports_keyboard_enhancement;
 use sf2_player::cli::Cli;
 use sf2_player::config::{self, Config, Settings};
 use sf2_player::session::Session;
-use sf2_player::ui::glyphs::{Glyphs, terminal_prefers_ascii};
 use sf2_player::ui::keys::Bindings;
 use sf2_player::ui::text_keyboard::{NoteOffMode, TextKeyboard};
 use sf2_player::ui::window::{self, WindowOptions};
@@ -27,10 +20,6 @@ fn main() -> anyhow::Result<()> {
 	if cli.list_devices {
 		return print_devices();
 	}
-	// Fail fast before touching config, audio and MIDI: the TUI needs a real terminal on stdin/stdout.
-	if !cli.gterm && (!std::io::stdin().is_terminal() || !std::io::stdout().is_terminal()) {
-		anyhow::bail!("no interactive terminal: launch sf2_player from a terminal emulator (--list-devices works anywhere)");
-	}
 	let config_path = resolve_config_path(&cli)?;
 	let config = match &cli.config {
 		Some(_) => Config::load(&config_path)?,
@@ -41,68 +30,19 @@ fn main() -> anyhow::Result<()> {
 	let locale = ui::i18n::resolve_locale(config.ui.lang.as_deref(), ui::i18n::system_locale().as_deref());
 	tracing::info!(locale, "ui language");
 
-	let mut session = Session::start(&settings, config, config_path);
-	if cli.gterm {
-		return run_window(&cli, locale, session);
-	}
-	let kitty = supports_keyboard_enhancement().unwrap_or(false);
-	// The Windows console reports key releases natively; elsewhere the kitty keyboard protocol is needed (F-16).
-	let release_reported = cfg!(windows) || kitty;
-	let mode = if release_reported && !session.config.keyboard.force_gate {
-		NoteOffMode::Release
-	} else {
-		NoteOffMode::Gate(std::time::Duration::from_millis(u64::from(session.config.keyboard.gate_ms)))
-	};
-	tracing::info!(kitty, release_reported, ?mode, "text keyboard mode");
-	let mut app = App::with_keyboard(locale, TextKeyboard::new(&session.config.keyboard, mode));
-	// Key overrides are validated before the terminal is taken over, so a bad [keys] entry is a plain error (ADR 0007).
-	app.bindings = Bindings::from_config(&session.config.keys, &session.config.keyboard).context("invalid key configuration")?;
-	let ascii = cli.ascii
-		|| session
-			.config
-			.ui
-			.ascii
-			.unwrap_or_else(|| terminal_prefers_ascii(|name| std::env::var(name).ok()));
-	app.glyphs = Glyphs::select(ascii);
-	tracing::info!(ascii, "indicator glyphs");
-
-	// Nothing may print to stdout from here until `restore` (spec N-07); ratatui's init installs the panic hook (N-08).
-	let mut terminal = ratatui::init();
-	let paste = execute!(std::io::stdout(), EnableBracketedPaste);
-	let flags = kitty
-		&& execute!(
-			std::io::stdout(),
-			PushKeyboardEnhancementFlags(
-				KeyboardEnhancementFlags::REPORT_EVENT_TYPES | KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-			)
-		)
-		.is_ok();
-	let result = ui::run(&mut terminal, &mut app, &mut session);
-	if flags {
-		let _ = execute!(std::io::stdout(), PopKeyboardEnhancementFlags);
-	}
-	if paste.is_ok() {
-		let _ = execute!(std::io::stdout(), DisableBracketedPaste);
-	}
-	ratatui::restore();
-	result?;
-	session.stop_recording();
-	session.save_config();
-	tracing::info!(xruns = session.shared.xruns(), "sf2_player exiting");
-	Ok(())
-}
-
-/// The gterm window instead of the terminal UI (plan v1.2, stage 1; behind the hidden `--gterm` flag).
-fn run_window(cli: &Cli, locale: &'static str, session: Session) -> anyhow::Result<()> {
+	let session = Session::start(&settings, config, config_path);
 	log_panics();
 	// A window reports key releases itself, so notes always last as long as the key is held.
 	let mut app = App::with_keyboard(locale, TextKeyboard::new(&session.config.keyboard, NoteOffMode::Release));
+	// Key overrides are validated before the window opens, so a bad [keys] entry is a plain error (ADR 0007).
 	app.bindings = Bindings::from_config(&session.config.keys, &session.config.keyboard).context("invalid key configuration")?;
 	let options = WindowOptions {
 		font: session.config.ui.font.clone(),
 		font_size: session.config.ui.font_size,
 		backend: cli.backend.clone(),
 	};
+	// Nothing prints to stdout while the window is open (spec N-07); the window saves the config and
+	// finishes a running take when it closes.
 	window::run(app, session, &options)
 }
 

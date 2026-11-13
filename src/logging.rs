@@ -1,4 +1,4 @@
-//! File logging via `tracing` (spec N-07): nothing goes to stdout, the TUI owns the terminal.
+//! File logging via `tracing` (spec N-07): nothing goes to stdout while the window is open.
 
 use std::path::{Path, PathBuf};
 

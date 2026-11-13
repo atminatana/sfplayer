@@ -2,11 +2,11 @@
 
 [English](README.md) | [Русский](README.ru.md)
 
-Console cross-platform SoundFont synthesizer in Rust: notes from a MIDI keyboard (or from the two bottom rows of a regular keyboard) are played through the chosen audio output with a SoundFont 2 (.sf2) bank. The terminal UI lists the chosen devices, bank, preset, effects and recording settings on F-keys, shows the output level and the master volume, and keeps the counters in the bottom border; a session can be recorded to FLAC or Ogg Vorbis. Windows, Linux, macOS; the interface is in English or Russian.
+SoundFont synthesizer in Rust in its own window with a grid of character cells: notes from a MIDI keyboard (or from the two bottom rows of a regular keyboard) are played through the chosen audio output with a SoundFont 2 (.sf2) bank. The screen follows the signal path — MIDI sources, the processor, the output, recording to a file: it shows the chosen devices, bank, preset, effects, the output level and the master volume; a session can be recorded to FLAC or Ogg Vorbis. Windows and Linux; the interface is in English or Russian.
 
 ## Installation
 
-**Prebuilt binaries** — the Releases tab: archives for Windows x86_64, Linux x86_64, macOS arm64 and x86_64. Unpack and run `sf2_player`.
+**Prebuilt binaries** — the Releases tab: archives for Windows x86_64 and Linux x86_64. Unpack and run `sf2_player`.
 
 **Build from source** (Rust stable, edition 2024):
 
@@ -20,8 +20,9 @@ What the machine needs:
 | OS | Dependencies |
 |---|---|
 | Windows 10+ | Rust toolchain with MSVC (a C compiler is needed for Ogg Vorbis; it ships with Build Tools) |
-| Linux | `libasound2-dev` (ALSA, for cpal), `gcc` or `clang`, `pkg-config`; PipeWire and PulseAudio work through the ALSA compatibility layer |
-| macOS 14+ | Xcode Command Line Tools |
+| Linux | `libasound2-dev` (ALSA, for cpal), `gcc` or `clang`, `pkg-config`; for the window — X11 or Wayland and fontconfig with any monospace font; PipeWire and PulseAudio work through the ALSA compatibility layer |
+
+The program opens its own window, so it needs a graphical environment: it does not start in a bare console or over SSH. OpenGL is optional — without it the window is drawn in software.
 
 SF2 banks are not shipped with the program. Free General MIDI banks: GeneralUser GS, FluidR3, TimGM6mb.
 
@@ -30,14 +31,15 @@ SF2 banks are not shipped with the program. Free General MIDI banks: GeneralUser
 ```
 sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
            [--buffer FRAMES] [--sample-rate HZ] [--config PATH]
-           [--log-level LEVEL] [--ascii] [--list-devices]
+           [--log-level LEVEL] [--backend KIND] [--list-devices]
 ```
 
 - `--list-devices` prints MIDI inputs and audio outputs with their indices and exits.
 - Devices whose configuration cannot be read (an unsupported ALSA hint, a busy device) are skipped with a warning in the log instead of breaking the whole list.
-- Devices are selected by index or by a case-insensitive substring of the name; if a device is not found, the system default is used (the first port for MIDI) and a warning appears in the status line. If a device is found but cannot be opened (busy, unsupported configuration), the program runs without sound, the status line shows the cause, and another device is chosen with F3.
+- Devices are selected by index or by a case-insensitive substring of the name; if a device is not found, the system default is used (the first port for MIDI) and a warning appears in the message line. If a device is found but cannot be opened (busy, unsupported configuration), the program runs without sound, the audio output line shows the cause in red, and another device is chosen with F3.
 - The default buffer is 256 frames; if the device does not accept it, the device default is used.
 - Command-line values take precedence over the config file.
+- `--backend auto|gl|gles|soft` chooses how the window is drawn; by default — the `TERM_BACKEND` environment variable, otherwise automatically: OpenGL 3.3, then OpenGL ES 3.0, then software rendering.
 
 Without `--sf2` the program starts silent: a bank is chosen with F4.
 
@@ -80,6 +82,8 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 
 While a dialog is open, input goes to the dialog: ↑↓, PgUp/PgDn, Home/End move through lists and fields there, Enter applies, Esc cancels. On the main screen Home and End start and stop recording.
 
+F4 opens the bank path dialog: as you type, matching folders and `.sf2` files appear under the field; with an empty field — the recent banks. ↑↓ or a mouse click put a row into the field, Enter opens a folder or loads a bank, Tab moves between the field, the list and the `[OK]` and `[Cancel]` buttons, Esc or a click outside the dialog cancels. Selection and the clipboard work in the field (Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A).
+
 ### Text keyboard
 
 ```
@@ -87,12 +91,7 @@ While a dialog is open, input goes to the dialog: ↑↓, PgUp/PgDn, Home/End mo
  Z  X  C  V  B  N  M  ,  .  /     ← white keys (C4 D4 E4 F4 G4 A4 B4 C5 D5 E5)
 ```
 
-Notes play on MIDI channel 1 with the F5 preset. How a note is released depends on the terminal:
-
-- **release** — the terminal reports key release: the Windows console (including Windows Terminal) and terminals with the kitty keyboard protocol (kitty, WezTerm, foot, Ghostty). The note sounds while the key is held.
-- **gate** — other terminals: the note sounds for `keyboard.gate_ms` milliseconds (300 by default) or until the same key is pressed again.
-
-The mode is detected at startup and shown in the status line as `kbd: release` or `kbd: gate 300ms`. If notes "stick" in your terminal, set `force_gate = true` in the `[keyboard]` section.
+Notes play on MIDI channel 1 with the F5 preset and sound while the key is held. When the window loses focus, held notes are released.
 
 ## Configuration
 
@@ -102,9 +101,8 @@ A TOML file is created on the first exit and stores the selected devices, the ba
 |---|---|
 | Windows | `%APPDATA%\sf2_player\config\config.toml` |
 | Linux | `~/.config/sf2_player/config.toml` |
-| macOS | `~/Library/Application Support/sf2_player/config.toml` |
 
-The log is written to the local data directory (`%LOCALAPPDATA%\sf2_player\data\sf2_player.log`, `~/.local/share/sf2_player/`, `~/Library/Application Support/sf2_player/`); the level is set by `--log-level`. Each start removes the previous run's log, so the file always covers a single session.
+The log is written to the local data directory (`%LOCALAPPDATA%\sf2_player\data\sf2_player.log`, `~/.local/share/sf2_player/`); the level is set by `--log-level`. Each start removes the previous run's log, so the file always covers a single session.
 
 All fields are optional; unknown keys are ignored.
 
@@ -134,9 +132,7 @@ white = "zxcvbnm,./"       # white keys from C
 black = "sdghjl;"          # black keys C# D# F# G# A# C# D#
 base_octave = 4
 velocity = 100
-gate_ms = 300
-force_gate = false
-octave_up = "F11"          # alternatives for terminals without Ctrl+arrows
+octave_up = "F11"          # extra chords in addition to Ctrl+arrows
 velocity_down = "Alt+Down"
 
 [keys]                     # command = chord; several — comma-separated
@@ -146,7 +142,8 @@ rescan = "Alt+F3"
 
 [ui]
 lang = "en"                # "ru" | "en"; remove — system language
-ascii = false              # true — indicators without Unicode block characters
+font = "Consolas"          # monospace font family; remove — the system one
+font_size = 14             # font size in pixels
 
 [record]
 dir = "D:/Music/sf2"       # remove — the Music folder/sf2_player
@@ -162,10 +159,10 @@ F7 opens the recording settings: the folder (Tab completes directory names; empt
 
 ## Indicators
 
-- Settings lines `[F2]`–`[F7]`: the chosen MIDI input, audio output (green `OK` while the stream runs), bank file, preset, effects and recording folder/format. A problem is shown in red in the line it belongs to (no device, disconnected port, open error, missing bank); messages that belong to no line (device fallback, recording saved, config not saved) appear in yellow under the list.
-- Meter: peak and RMS of the left and right channels in dBFS, updated 30 times per second; a red `CLIP` stays for 1 s after clipping.
-- Status in the bottom border, fixed width so the fields never move: `voices 7/64` — the number of held notes and the engine's polyphony limit (rustysynth does not publish the active voice count, so release tails and layered presets are not counted); `cpu 3%` — audio callback time relative to the block duration; `xrun` — buffer underruns; `kbd:` — text keyboard mode, octave and velocity. Transposition, the omni channel and dropped-event counters appear on the right side of the border when active and fit.
-- `--ascii` (or `ui.ascii = true`) replaces block characters with `#`, `-`, `*` for terminals without Unicode; the legacy Windows console and `TERM=linux`/`dumb` are detected automatically.
+- The screen is divided into the sections "MIDI sources", "Processor", "Output" and "Audio file". The lines show the chosen MIDI input (green "open"), the bank file and the audio output (green `OK` while everything works), the preset, effects and the recording folder and format. A problem is shown in red in the line it belongs to (no device, disconnected port, open error, missing bank); messages that belong to no line (device fallback, recording saved, config not saved, font replaced) appear in yellow under the recording line. Labels in square brackets are buttons: the chosen option is highlighted, unavailable ones are dimmed.
+- Meter: the bar shows the RMS of the left and right channels with colour zones (green, amber from 78 %, red from 92 %), the number is the peak in dBFS; updated 30 times per second, a red `CLIP` stays for 1 s after clipping.
+- The bottom line, with counters of fixed width so the fields never move: `voices 7/64` — the number of held notes and the engine's polyphony limit (rustysynth does not publish the active voice count, so release tails and layered presets are not counted); `cpu 3%` — audio callback time relative to the block duration; `xrun` — buffer underruns. Transposition, the omni channel and dropped-event counters follow when active; on the right — the chosen processor and bank. The octave and velocity of the text keyboard are shown in the "Keyboard" line.
+- The window can be resized; the grid needs at least 96×31 cells, otherwise a request to enlarge the window is shown instead of the screen. The font and its size are set in the `[ui]` section; if the font is not found, the system monospace font is used.
 
 ## Latency
 
@@ -173,11 +170,13 @@ Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How t
 
 ## Limitations
 
-- MIDI file playback and recording, SF3 and a custom synthesizer are not part of version 1.0.
+- macOS is not supported: the gterm window library runs on Windows and Linux.
+- The buttons of the main screen only show state for now and cannot be clicked — commands are given with keys; the mouse works in the bank path dialog.
+- MIDI file playback and recording, SF3 and a custom synthesizer are not part of the current version; their lines and buttons on the screen are shown as unavailable.
 - The MIDI monitor and per-channel mixer strips of version 1.0 are not part of this screen; channel volume follows incoming CC 7 only.
-- The F5 preset applies to every channel except 10 (percussion); a Program Change from the MIDI keyboard still switches its own channel until the next F5 choice, and the header keeps showing the F5 choice.
+- The F5 preset applies to every channel except 10 (percussion); a Program Change from the MIDI keyboard still switches its own channel until the next F5 choice, and the "Preset" line keeps showing the F5 choice.
 - Toggling effects on or off (F6, Alt+R, Alt+C) recreates the synthesizer: sounding notes are cut off. Changing a send level in F6 does not.
 
 ## License
 
-MIT or Apache-2.0 at your option (`LICENSE-MIT`, `LICENSE-APACHE`). Dependencies are MIT/Apache-2.0, except the transitive `option-ext` (MPL-2.0) from the `directories` crate.
+MIT or Apache-2.0 at your option (`LICENSE-MIT`, `LICENSE-APACHE`). Dependencies are under permissive licences (MIT, Apache-2.0, BSD, ISC, Zlib, BSL-1.0), except the transitive `option-ext` (MPL-2.0) from the `directories` crate. The window is built on the [gterm](https://github.com/atminatana/gterm) library.

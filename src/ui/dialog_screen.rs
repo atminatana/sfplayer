@@ -1,8 +1,8 @@
-//! Drawing the modal windows of the window UI (spec §6, v1.1 §4): the list selector, the SoundFont path
-//! field, the effects and recording dialogs, the help table and the quit confirmation.
+//! Drawing the modal windows (spec §6, v1.1 §4): the list selector, the effects and recording dialogs,
+//! the help table and the quit confirmation.
 //!
-//! The dialogs themselves are the state machines the terminal UI uses (`App::modal`); this module only
-//! shows them, as a framed box over the middle of the main screen.
+//! The dialogs themselves are state machines kept in `App::modal`; this module only shows them, as a
+//! framed box over the middle of the main screen.
 
 use gterm::buffer::ScreenBuffer;
 use gterm::cell::Color;
@@ -15,10 +15,9 @@ use super::dialog::Dialog;
 use super::effects_dialog::{EffectRow, EffectsDialog};
 use super::keys::Bindings;
 use super::paint::{ERROR, HINT, LABEL, Pen, SELECTED, TEXT};
-use super::path_input::PathInput;
 use super::record_dialog::{RECORD_FORMATS, RecordDialog, RecordField};
 use super::view::format_name;
-use crate::config::{RECENT_BANKS_LIMIT, RecordFormat};
+use crate::config::RecordFormat;
 
 /// Rows of the list visible at once in a selector.
 const SELECTOR_LIST_ROWS: u16 = 10;
@@ -37,12 +36,12 @@ pub fn render(buf: &mut ScreenBuffer, app: &App) {
 	let locale = app.locale;
 	match &app.modal {
 		Some(Modal::Select(dialog)) => selector(buf, dialog, locale),
-		Some(Modal::Sf2Path(input)) => sf2_path(buf, input, locale),
+		// The window shows the path dialog as the input dialog on widget controls (`input_dialog`).
+		Some(Modal::Sf2Path(_)) | None => {}
 		Some(Modal::Effects(dialog)) => effects(buf, dialog, locale),
 		Some(Modal::Record(dialog)) => record(buf, dialog, locale),
 		Some(Modal::Help(scroll)) => help(buf, &app.bindings, *scroll, locale),
 		Some(Modal::ConfirmQuit) => confirm_quit(buf, locale),
-		None => {}
 	}
 }
 
@@ -122,35 +121,6 @@ fn selector(buf: &mut ScreenBuffer, dialog: &Dialog, locale: &str) {
 		Pen::within(buf, inner, 0, inner.height.saturating_sub(2)).text(detail, LABEL);
 	}
 	hint(buf, inner, &t!("dialog.hint", locale = locale));
-}
-
-/// SoundFont path dialog (spec §6 dialog type 2): editable field, error line, recent banks.
-fn sf2_path(buf: &mut ScreenBuffer, input: &PathInput, locale: &str) {
-	let rows = u16::try_from(RECENT_BANKS_LIMIT).unwrap_or(u16::MAX).saturating_add(7);
-	let inner = frame(buf, WIDE, rows, &t!("dialog.sf2_title", locale = locale), TEXT);
-	let label = t!("dialog.sf2_path", locale = locale);
-	Pen::within(buf, inner, 0, 0).styled(&label, bold_label());
-	let field_column = u16::try_from(label.chars().count() + 1).unwrap_or(u16::MAX);
-	field(buf, inner, field_column, 0, &input.text(), Some(input.cursor()));
-	if let Some(error) = input.error() {
-		Pen::within(buf, inner, 0, 1).text(error, ERROR);
-	}
-	Pen::within(buf, inner, 0, 2).styled(&t!("dialog.sf2_recent", locale = locale), bold_label());
-	if input.recent().is_empty() {
-		Pen::within(buf, inner, 0, 3).text(&t!("dialog.sf2_no_recent", locale = locale), HINT);
-	}
-	let list_rows = usize::from(inner.height.saturating_sub(4));
-	for (index, path) in input.recent().iter().enumerate().take(list_rows) {
-		let row = u16::try_from(index + 3).unwrap_or(u16::MAX);
-		list_row(
-			buf,
-			inner,
-			row,
-			&format!("  {}", path.display()),
-			input.recent_cursor() == Some(index),
-		);
-	}
-	hint(buf, inner, &t!("dialog.sf2_hint", locale = locale));
 }
 
 /// F6 (spec v1.1 §4.2): one row per effect — switch and send level; the current row is highlighted.
