@@ -198,3 +198,29 @@ fn a_running_take_redraws_once_per_blink_phase_and_per_second() {
 	assert!(!blink_phase(Duration::from_millis(500)));
 	assert!(blink_phase(Duration::from_millis(1_000)));
 }
+
+#[test]
+fn paste_is_ctrl_v_or_shift_insert_and_nothing_else() {
+	let chord = |code, modifiers| KeyEvent::new(code, modifiers);
+	assert!(is_paste_chord(&chord(KeyCode::Char('v'), KeyModifiers::CONTROL)));
+	assert!(is_paste_chord(&chord(KeyCode::Char('V'), KeyModifiers::CONTROL)));
+	assert!(is_paste_chord(&chord(KeyCode::Insert, KeyModifiers::SHIFT)));
+	// A held chord keeps pasting, as in any text field.
+	let mut repeat = chord(KeyCode::Char('v'), KeyModifiers::CONTROL);
+	repeat.kind = KeyEventKind::Repeat;
+	assert!(is_paste_chord(&repeat));
+
+	assert!(
+		!is_paste_chord(&chord(KeyCode::Char('v'), KeyModifiers::NONE)),
+		"a plain letter is text"
+	);
+	assert!(!is_paste_chord(&chord(
+		KeyCode::Char('v'),
+		KeyModifiers::CONTROL | KeyModifiers::ALT
+	)));
+	assert!(!is_paste_chord(&chord(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+	assert!(!is_paste_chord(&chord(KeyCode::Insert, KeyModifiers::NONE)));
+	let mut release = chord(KeyCode::Char('v'), KeyModifiers::CONTROL);
+	release.kind = KeyEventKind::Release;
+	assert!(!is_paste_chord(&release), "letting go of the chord does not paste again");
+}

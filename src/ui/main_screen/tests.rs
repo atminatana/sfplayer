@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use gterm::cell::CellFlags;
+use gterm::cell::{CellFlags, Color};
 
 use super::*;
 use crate::audio::{Levels, Mixer};

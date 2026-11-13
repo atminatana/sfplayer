@@ -12,11 +12,13 @@ use gterm::buffer::ScreenBuffer;
 use gterm::config::{BACKEND_ENV, Config as GridConfig};
 use gterm::font::{FONT_SCALE, FontFamily, glyph_px_for};
 use gterm::rasterizer::Rasterizer;
+use gterm_widgets::{Clipboard, SystemClipboard};
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use super::app::{App, FRAME_INTERVAL, Request, fulfil};
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use super::dialog_screen;
 use super::main_screen::{self, BACKGROUND, MIN_COLS, MIN_ROWS, TEXT};
 use super::view::View;
 use crate::session::{Notice, Session};
@@ -94,7 +96,12 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		tick_period: Some(FRAME_INTERVAL),
 		..AppOptions::default()
 	};
-	let window = Window { app, session, shown: None };
+	let window = Window {
+		app,
+		session,
+		shown: None,
+		clipboard: SystemClipboard::new(),
+	};
 	GridWindow::new(WINDOW_TITLE, screen, rasterizer, grid_config, window_options)
 		.run(window)
 		// The window error holds platform handles that cannot cross threads; its text is all the caller needs.
@@ -136,6 +143,8 @@ struct Window {
 	session: Session,
 	/// What the last drawn frame showed; `None` before the first frame.
 	shown: Option<FrameState>,
+	/// Where Ctrl+V takes text from for the fields of the dialogs.
+	clipboard: SystemClipboard,
 }
 
 impl Window {
@@ -153,6 +162,7 @@ impl Window {
 			return;
 		}
 		main_screen::render(ctx.screen, &self.app, &state.view);
+		dialog_screen::render(ctx.screen, &self.app);
 		self.shown = Some(state);
 		ctx.redraw();
 	}
@@ -174,7 +184,12 @@ impl AppHandler for Window {
 		};
 		// Raw key stream for diagnosing input (auto-repeat, release events); spec N-07.
 		tracing::debug!(code = ?key.code, kind = ?key.kind, modifiers = ?key.modifiers, "key event");
-		let request = if key.kind == KeyEventKind::Release {
+		let request = if is_paste_chord(&key) && self.app.modal.is_some() {
+			if let Some(text) = self.clipboard.get() {
+				self.app.handle_paste(&text);
+			}
+			None
+		} else if key.kind == KeyEventKind::Release {
 			self.app.handle_release(key)
 		} else {
 			self.app.handle_key(key)
@@ -218,6 +233,18 @@ impl Drop for Window {
 		self.session.stop_recording();
 		self.session.save_config();
 		tracing::info!(xruns = self.session.shared.xruns(), "sf2_player exiting");
+	}
+}
+
+/// Ctrl+V or Shift+Insert, pressed: paste the clipboard into the field being edited.
+fn is_paste_chord(key: &KeyEvent) -> bool {
+	if key.kind == KeyEventKind::Release {
+		return false;
+	}
+	match key.code {
+		KeyCode::Char('v' | 'V') => key.modifiers == KeyModifiers::CONTROL,
+		KeyCode::Insert => key.modifiers == KeyModifiers::SHIFT,
+		_ => false,
 	}
 }
 

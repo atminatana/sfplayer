@@ -8,13 +8,14 @@
 use std::time::Duration;
 
 use gterm::buffer::ScreenBuffer;
-use gterm::cell::Color;
 use gterm_widgets::widgets::Meter;
 use gterm_widgets::{BufferExt, Rect, Style, Widget};
 use rust_i18n::t;
 
 use super::app::App;
 use super::meter::{dbfs_text, level_ratio};
+pub use super::paint::{BACKGROUND, DISABLED, ERROR, GOOD, HINT, LABEL, MESSAGE, METER_TRACK, RULE, TEXT, VALUE};
+use super::paint::{Look, Pen};
 use super::view::{NoticeTarget, View, notice_target, notice_text};
 use crate::config::RecordFormat;
 use crate::midi::MidiStatus;
@@ -22,21 +23,6 @@ use crate::midi::MidiStatus;
 /// The smallest grid the screen fits in (spec v1.2 §3); below it only a hint is drawn.
 pub const MIN_COLS: u16 = 96;
 pub const MIN_ROWS: u16 = 31;
-
-// Palette of the mock-up: black background, light text, grey labels and rules, amber values and active
-// buttons, green for "fine", red for errors.
-pub const BACKGROUND: Color = Color::from_rgb(0x00, 0x00, 0x00);
-pub const TEXT: Color = Color::from_rgb(0xE5, 0xE5, 0xE5);
-pub const LABEL: Color = Color::from_rgb(0x73, 0x73, 0x73);
-pub const RULE: Color = Color::from_rgb(0x40, 0x40, 0x40);
-pub const HINT: Color = Color::from_rgb(0x60, 0x60, 0x60);
-pub const DISABLED: Color = Color::from_rgb(0x40, 0x40, 0x40);
-pub const VALUE: Color = Color::from_rgb(0xFC, 0xD3, 0x4D);
-pub const GOOD: Color = Color::from_rgb(0x22, 0xC5, 0x5E);
-pub const ERROR: Color = Color::from_rgb(0xEF, 0x44, 0x44);
-pub const MESSAGE: Color = Color::from_rgb(0xFA, 0xCC, 0x15);
-/// Unlit cells of a meter: a shade glyph covers a quarter of the cell, so a rule-dark colour would vanish.
-pub const METER_TRACK: Color = LABEL;
 
 /// Columns of a row: the label, an indented sub-label, and where values start (an 18-cell label column).
 const LABEL_X: u16 = 1;
@@ -64,55 +50,6 @@ const PLUS: &str = "+";
 const RECORD_DOT: &str = "●";
 /// Half of the blink period of the recording dot (spec v1.1 §4.3: period 1 s).
 const RECORD_BLINK_HALF_PERIOD_MS: u128 = 500;
-
-/// How a `[button]` looks (spec v1.2 §3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Look {
-	Normal,
-	/// The selected one of several: inverted on amber.
-	Active,
-	/// Not available now: dark, does not react.
-	Disabled,
-}
-
-/// Writes consecutive pieces of one row, advancing to the right.
-struct Pen<'a> {
-	buf: &'a mut ScreenBuffer,
-	x: u16,
-	y: u16,
-}
-
-impl<'a> Pen<'a> {
-	fn at(buf: &'a mut ScreenBuffer, x: u16, y: u16) -> Self {
-		Self { buf, x, y }
-	}
-
-	fn text(&mut self, text: &str, color: Color) -> &mut Self {
-		self.styled(text, Style::new().fg(color))
-	}
-
-	fn styled(&mut self, text: &str, style: Style) -> &mut Self {
-		let clip = self.buf.area();
-		self.buf.set_string(self.x, self.y, text, style, clip);
-		let width = u16::try_from(text.chars().count()).unwrap_or(u16::MAX);
-		self.x = self.x.saturating_add(width);
-		self
-	}
-
-	fn gap(&mut self, cells: u16) -> &mut Self {
-		self.x = self.x.saturating_add(cells);
-		self
-	}
-
-	fn button(&mut self, label: &str, look: Look) -> &mut Self {
-		let style = match look {
-			Look::Normal => Style::new().fg(TEXT),
-			Look::Active => Style::new().fg(BACKGROUND).bg(VALUE).bold(),
-			Look::Disabled => Style::new().fg(DISABLED),
-		};
-		self.styled(&format!("[{label}]"), style)
-	}
-}
 
 pub fn render(buf: &mut ScreenBuffer, app: &App, view: &View) {
 	let locale = app.locale;

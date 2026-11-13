@@ -3,6 +3,7 @@
 pub mod app;
 pub mod chord;
 pub mod dialog;
+pub mod dialog_screen;
 pub mod effects_dialog;
 pub mod glyphs;
 pub mod i18n;
@@ -10,6 +11,7 @@ pub mod keys;
 pub mod main_screen;
 pub mod meter;
 pub mod modals;
+pub mod paint;
 pub mod path_input;
 pub mod record_dialog;
 pub mod screen;
