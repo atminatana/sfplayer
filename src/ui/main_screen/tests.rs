@@ -10,6 +10,8 @@ use winit::keyboard::ModifiersState;
 use super::*;
 use crate::audio::{Levels, Mixer};
 use crate::config::{AdsrField, BuiltinConfig};
+use crate::midi::player::Transport;
+use crate::session::MidiFile;
 use crate::session::Notice;
 use crate::ui::buttons::Touch;
 use crate::ui::chord::{KeyCode, KeyEvent, KeyModifiers};
@@ -46,6 +48,12 @@ fn view() -> View {
 		midi_notes: 0,
 		engine: EngineKind::Sf2,
 		builtin: BuiltinConfig::default(),
+		file: FileView {
+			file: MidiFile::None,
+			transport: Transport::Stopped,
+			position_tenths: 0,
+			duration_tenths: 0,
+		},
 	}
 }
 
@@ -285,7 +293,7 @@ fn buttons_show_what_is_chosen_and_what_is_unavailable() {
 	assert_eq!(colour_of(&buf, "[Synth]"), TEXT, "the other processor can be chosen");
 	let (row, col) = find(&buf, "[Sound Font]");
 	assert_eq!(buf.cell(col, row).bg, VALUE);
-	assert_eq!(colour_of(&buf, "[MIDI-файл]"), DISABLED);
+	assert_eq!(colour_of(&buf, "[MIDI-файл]"), TEXT, "a file can be chosen");
 	assert_eq!(colour_of(&buf, "[Пауза]"), DISABLED);
 	assert_eq!(colour_of(&buf, "[MIDI-вход]"), TEXT);
 
@@ -513,6 +521,7 @@ fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
 	// The text of a button as it stands on the screen, with enough around it to be unique.
 	let available = [
 		(ButtonId::MidiIn, "[MIDI-вход]"),
+		(ButtonId::MidiFile, "[MIDI-файл]"),
 		(ButtonId::EngineSynth, "[Synth]"),
 		(ButtonId::EngineSf2, "[Sound Font]"),
 		(ButtonId::Sf2File, "[Файл Sound Font]"),
@@ -545,7 +554,6 @@ fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
 
 	// What the screen shows unavailable does not react.
 	for text in [
-		"[MIDI-файл]",
 		"[Старт] [Пауза] [Стоп]",
 		"[Пауза]",
 		"[Стоп]",
@@ -882,9 +890,10 @@ fn every_button_of_the_synth_section_is_pressed_by_a_click_and_stands_in_the_tab
 	click(&mut buttons, &buf, "[MIDI-вход]");
 	let stops = ring(&mut buttons);
 	assert_eq!(
-		stops[..19],
+		stops[..20],
 		[
 			ButtonId::MidiIn,
+			ButtonId::MidiFile,
 			ButtonId::EngineSynth,
 			ButtonId::EngineSf2,
 			ButtonId::WaveSine,
@@ -906,4 +915,167 @@ fn every_button_of_the_synth_section_is_pressed_by_a_click_and_stands_in_the_tab
 		]
 	);
 	assert!(!stops.contains(&ButtonId::Sf2File) && !stops.contains(&ButtonId::Preset));
+}
+
+/// The view with a MIDI file of 84 seconds chosen, 28 seconds into it.
+fn file_view(transport: Transport) -> View {
+	let mut view = view();
+	view.file = FileView {
+		file: MidiFile::Loaded("D:/midi/bach_bwv_846_prelude.mid".into()),
+		transport,
+		position_tenths: if transport == Transport::Stopped { 0 } else { 280 },
+		duration_tenths: 840,
+	};
+	view
+}
+
+/// The foreground colours of the three transport buttons of the MIDI file row.
+fn transport_colours(buf: &ScreenBuffer) -> [Color; 3] {
+	let (row, col) = find(buf, "[Старт] [Пауза] [Стоп]");
+	[0, 8, 16].map(|offset| buf.cell(col + offset, row).fg)
+}
+
+#[test]
+fn a_chosen_midi_file_shows_its_name_and_the_buttons_that_apply() {
+	let stopped = rendered_ru(&file_view(Transport::Stopped));
+	assert!(is_shown(
+		&stopped,
+		" MIDI-файл         [MIDI-файл]  bach_bwv_846_prelude.mid  [Старт] [Пауза] [Стоп]"
+	));
+	assert_eq!(colour_of(&stopped, "bach_bwv_846_prelude.mid"), TEXT, "the name without its folder");
+	assert_eq!(
+		transport_colours(&stopped),
+		[TEXT, DISABLED, DISABLED],
+		"a stopped file can only be started"
+	);
+	assert!(is_shown(
+		&stopped,
+		"   позиция         [························]  00:00 / 01:24  остановлен"
+	));
+	assert_eq!(colour_of(&stopped, "остановлен"), HINT);
+
+	let playing = rendered_ru(&file_view(Transport::Playing));
+	assert_eq!(
+		transport_colours(&playing),
+		[DISABLED, TEXT, TEXT],
+		"a playing file can be paused or stopped"
+	);
+	// 28 of 84 seconds: a third of the 24 cells.
+	assert!(is_shown(
+		&playing,
+		"   позиция         [████████················]  00:28 / 01:24  воспроизведение"
+	));
+	assert_eq!(colour_of(&playing, "воспроизведение"), GOOD);
+	let (row, col) = find(&playing, "[████████");
+	assert_eq!(playing.cell(col + 1, row).fg, VALUE, "the played part is amber");
+	assert_eq!(playing.cell(col + 9, row).fg, METER_TRACK);
+
+	let paused = rendered_ru(&file_view(Transport::Paused));
+	assert_eq!(
+		transport_colours(&paused),
+		[TEXT, DISABLED, TEXT],
+		"a paused file can go on or be stopped"
+	);
+	assert!(is_shown(&paused, "00:28 / 01:24  пауза"));
+	assert_eq!(colour_of(&paused, "пауза"), MESSAGE);
+
+	let english = rendered(&App::new("en"), &file_view(Transport::Playing));
+	assert!(is_shown(
+		&english,
+		"   position        [████████················]  00:28 / 01:24  playing"
+	));
+}
+
+#[test]
+fn the_position_row_is_there_only_for_a_chosen_file_and_counts_long_files_in_minutes() {
+	assert!(!is_shown(&rendered_ru(&view()), "позиция"), "no file, no position");
+	let mut long = file_view(Transport::Playing);
+	// 75 minutes and 9 seconds into a file of two hours: minutes run past 59.
+	long.file.position_tenths = (75 * 60 + 9) * 10 + 9;
+	long.file.duration_tenths = 120 * 60 * 10;
+	let buf = rendered_ru(&long);
+	assert!(is_shown(&buf, "75:09 / 120:00"));
+	// A file of no length does not divide by zero: the bar is empty.
+	long.file.duration_tenths = 0;
+	long.file.position_tenths = 0;
+	assert!(is_shown(&rendered_ru(&long), "[························]  00:00 / 00:00"));
+	// At the very end the bar is full.
+	long.file.duration_tenths = 100;
+	long.file.position_tenths = 100;
+	assert!(is_shown(&rendered_ru(&long), "[████████████████████████]  00:10 / 00:10"));
+}
+
+#[test]
+fn a_file_that_cannot_be_played_says_why_in_red_and_offers_no_transport() {
+	let mut missing = view();
+	missing.file.file = MidiFile::Missing("D:/midi/gone.mid".into());
+	let buf = rendered_ru(&missing);
+	assert!(is_shown(&buf, "[MIDI-файл]  файл не найден: D:/midi/gone.mid  [Старт]"));
+	assert_eq!(colour_of(&buf, "файл не найден"), ERROR);
+	assert_eq!(transport_colours(&buf), [DISABLED; 3]);
+	assert!(!is_shown(&buf, "позиция"));
+	assert!(is_shown(&rendered(&App::new("en"), &missing), "file not found: D:/midi/gone.mid"));
+
+	let mut broken = view();
+	broken.file.file = MidiFile::Broken {
+		path: "D:/midi/odd.mid".into(),
+		reason: "MIDI file format 2 is not supported (only 0 and 1 are)".into(),
+	};
+	let buf = rendered_ru(&broken);
+	assert!(is_shown(
+		&buf,
+		"[MIDI-файл]  MIDI file format 2 is not supported (o…  [Старт] [Пауза] [Стоп]"
+	));
+	assert_eq!(colour_of(&buf, "MIDI file format 2"), ERROR);
+	assert_eq!(
+		colour_of(&rendered_ru(&view()), "файл не выбран"),
+		HINT,
+		"no file chosen is not an error"
+	);
+}
+
+#[test]
+fn a_long_file_name_is_cut_so_that_the_transport_buttons_stay_on_the_screen() {
+	let mut long = file_view(Transport::Playing);
+	long.file.file =
+		MidiFile::Loaded("D:/midi/Johann Sebastian Bach - Das Wohltemperierte Klavier - Praeludium und Fuge C-Dur BWV 846.mid".into());
+	let buf = rendered_ru(&long);
+	let (row, _) = find(&buf, " MIDI-файл ");
+	let line = lines_of(&buf)[row].clone();
+	assert_eq!(
+		line,
+		" MIDI-файл         [MIDI-файл]  Johann Sebastian Bach - Das Wohltemper…  [Старт] [Пауза] [Стоп]"
+	);
+	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 1, "up to one cell short of the edge");
+	// The buttons are still where a click finds them.
+	let mut buttons = Buttons::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &App::new("ru"), &long, &mut buttons);
+	assert_eq!(click(&mut buttons, &buf, "[Пауза]"), Touch::Pressed(ButtonId::FilePause));
+	assert_eq!(click(&mut buttons, &buf, "[Стоп]"), Touch::Pressed(ButtonId::FileStop));
+	assert_eq!(
+		click(&mut buttons, &buf, "[Старт] [Пауза]"),
+		Touch::Missed,
+		"it plays: Start does not apply"
+	);
+}
+
+#[test]
+fn the_transport_buttons_stand_in_the_tab_ring_after_the_file_button() {
+	let mut buttons = Buttons::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &App::new("ru"), &file_view(Transport::Paused), &mut buttons);
+	click(&mut buttons, &buf, "[MIDI-вход]");
+	let stops = ring(&mut buttons);
+	assert_eq!(
+		stops[..5],
+		[
+			ButtonId::MidiIn,
+			ButtonId::MidiFile,
+			ButtonId::FileStart,
+			ButtonId::FileStop,
+			ButtonId::EngineSynth
+		]
+	);
+	assert_eq!(click(&mut buttons, &buf, "[Старт] [Пауза]"), Touch::Pressed(ButtonId::FileStart));
 }

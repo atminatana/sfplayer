@@ -10,6 +10,8 @@ pub enum InputKind {
 	Sf2File,
 	/// The folder takes are written to.
 	RecordDir,
+	/// A MIDI file to play.
+	MidiFile,
 }
 
 /// A request to show the input dialog: what to ask, what the field starts with, and the paths entered

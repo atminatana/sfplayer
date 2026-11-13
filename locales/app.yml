@@ -426,3 +426,30 @@ main.adsr_custom:
 main.seconds:
   en: "%{value} s"
   ru: "%{value} с"
+main.position:
+  en: "position"
+  ru: "позиция"
+main.file_missing:
+  en: "file not found: %{path}"
+  ru: "файл не найден: %{path}"
+main.playing:
+  en: "playing"
+  ru: "воспроизведение"
+main.paused:
+  en: "paused"
+  ru: "пауза"
+main.stopped:
+  en: "stopped"
+  ru: "остановлен"
+help.action.midi_file_dialog:
+  en: "Open a MIDI file"
+  ru: "Открыть MIDI-файл"
+help.action.file_play_pause:
+  en: "MIDI file: play / pause"
+  ru: "MIDI-файл: старт / пауза"
+help.action.file_stop:
+  en: "MIDI file: stop"
+  ru: "MIDI-файл: стоп"
+dialog.midi_file_title:
+  en: "MIDI file"
+  ru: "MIDI-файл"

@@ -28,19 +28,20 @@ impl InputKind {
 		match self {
 			Self::Sf2File => "dialog.sf2_title",
 			Self::RecordDir => "dialog.record_title",
+			Self::MidiFile => "dialog.midi_file_title",
 		}
 	}
 
 	fn label_key(self) -> &'static str {
 		match self {
-			Self::Sf2File => "dialog.sf2_path",
+			Self::Sf2File | Self::MidiFile => "dialog.sf2_path",
 			Self::RecordDir => "dialog.record_dir",
 		}
 	}
 
 	fn hint_key(self) -> &'static str {
 		match self {
-			Self::Sf2File => "dialog.input_hint",
+			Self::Sf2File | Self::MidiFile => "dialog.input_hint",
 			Self::RecordDir => "dialog.folder_hint",
 		}
 	}
@@ -48,7 +49,7 @@ impl InputKind {
 	/// What an empty field means, shown in it as a placeholder; `None` when an empty field means nothing.
 	fn empty_meaning_key(self) -> Option<&'static str> {
 		match self {
-			Self::Sf2File => None,
+			Self::Sf2File | Self::MidiFile => None,
 			Self::RecordDir => Some("dialog.record_dir_default"),
 		}
 	}
@@ -58,6 +59,7 @@ impl InputKind {
 		match self {
 			Self::Sf2File => &["sf2"],
 			Self::RecordDir => &[],
+			Self::MidiFile => &["mid", "midi"],
 		}
 	}
 

@@ -19,9 +19,11 @@ use super::meter::{dbfs_text, level_ratio};
 use super::paint::Pen;
 pub use super::paint::{BACKGROUND, DISABLED, ERROR, GOOD, HINT, LABEL, MESSAGE, METER_TRACK, RULE, TEXT, VALUE};
 use super::piano;
-use super::view::{NoticeTarget, View, note_names, notice_target, notice_text};
+use super::view::{FileView, NoticeTarget, View, note_names, notice_target, notice_text};
 use crate::config::{EngineKind, RecordFormat};
 use crate::midi::MidiStatus;
+use crate::midi::player::Transport;
+use crate::session::MidiFile;
 use crate::synth::{AdsrPreset, Wave};
 
 /// The smallest grid the screen fits in (spec v1.2 §3); below it only a hint is drawn.
@@ -34,6 +36,9 @@ const SUB_LABEL_X: u16 = 3;
 const VALUE_X: u16 = 19;
 /// Column of the octave / velocity read-out in the keyboard row.
 const KEYBOARD_STATE_X: u16 = 69;
+/// The position bar of the MIDI file: its cells and the mark of the part not played yet.
+const POSITION_CELLS: u16 = 24;
+const POSITION_TRACK: char = '·';
 /// Level meters L / R and the master strip, in cells (spec v1.2 §3).
 const METER_CELLS: u16 = 26;
 const MASTER_CELLS: u16 = 20;
@@ -183,35 +188,102 @@ fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View,
 	let right_edge = buf.area().width.saturating_sub(1);
 	notes(buf, y + 5, view.midi_notes, right_edge);
 
-	// The MIDI file source arrives with plan stage 5; until then its controls are shown unavailable.
-	let midi_file = t!("main.midi_file", locale = locale);
-	label(buf, y + 6, &midi_file);
-	let mut pen = Pen::at(buf, VALUE_X, y + 6);
-	put(&mut pen, buttons, ButtonId::MidiFile, &midi_file, Look::Disabled);
-	pen.gap(2).text(&t!("main.no_file", locale = locale), HINT).gap(2);
-	put(
-		&mut pen,
-		buttons,
-		ButtonId::FileStart,
-		&t!("main.start", locale = locale),
-		Look::Disabled,
-	);
+	midi_file(buf, y + 6, locale, &view.file, buttons);
+}
+
+/// The MIDI file row — the file, or why there is none to play, and the transport buttons at the right
+/// end — and under it, once a file is chosen, where its playback is.
+fn midi_file(buf: &mut ScreenBuffer, y: u16, locale: &str, file: &FileView, buttons: &mut Buttons) {
+	let title = t!("main.midi_file", locale = locale);
+	label(buf, y, &title);
+	let transport = [
+		(ButtonId::FileStart, t!("main.start", locale = locale)),
+		(ButtonId::FilePause, t!("main.pause", locale = locale)),
+		(ButtonId::FileStop, t!("main.stop", locale = locale)),
+	];
+	// Brackets and the gap before each of the three.
+	let transport_width: usize = transport.iter().map(|(_, name)| name.chars().count() + 3).sum();
+	let mut pen = Pen::at(buf, VALUE_X, y);
+	put(&mut pen, buttons, ButtonId::MidiFile, &title, Look::Normal);
+	pen.gap(2);
+	// What is said about the file ends where the buttons begin, one cell short of the right edge.
+	let room = usize::from(buf_width(&pen)).saturating_sub(usize::from(pen.x) + transport_width + 2);
+	let is_loaded = matches!(file.file, MidiFile::Loaded(_));
+	match &file.file {
+		MidiFile::None => pen.text(&t!("main.no_file", locale = locale), HINT),
+		MidiFile::Loaded(path) => pen.text(&fitted(&file_name(path), room), TEXT),
+		MidiFile::Missing(path) => {
+			let missing = t!("main.file_missing", locale = locale, path = path.display());
+			pen.text(&fitted(&missing, room), ERROR)
+		}
+		MidiFile::Broken { reason, .. } => pen.text(&fitted(reason, room), ERROR),
+	};
 	pen.gap(1);
-	put(
-		&mut pen,
-		buttons,
-		ButtonId::FilePause,
-		&t!("main.pause", locale = locale),
-		Look::Disabled,
-	);
-	pen.gap(1);
-	put(
-		&mut pen,
-		buttons,
-		ButtonId::FileStop,
-		&t!("main.stop", locale = locale),
-		Look::Disabled,
-	);
+	for (id, name) in &transport {
+		let is_available = is_loaded
+			&& match id {
+				ButtonId::FileStart => file.transport != Transport::Playing,
+				ButtonId::FilePause => file.transport == Transport::Playing,
+				_ => file.transport != Transport::Stopped,
+			};
+		pen.gap(1);
+		put(
+			&mut pen,
+			buttons,
+			*id,
+			name,
+			if is_available { Look::Normal } else { Look::Disabled },
+		);
+	}
+	if !is_loaded {
+		return;
+	}
+
+	sub_label(buf, y + 1, &t!("main.position", locale = locale));
+	let ratio = if file.duration_tenths == 0 {
+		0.0
+	} else {
+		f64::from(file.position_tenths) / f64::from(file.duration_tenths)
+	};
+	Pen::at(buf, VALUE_X, y + 1).text("[", LABEL);
+	Meter::new()
+		.ratio(ratio)
+		.zones(&[(0.0, Style::new().fg(VALUE))])
+		.unfilled_symbol(POSITION_TRACK)
+		.unfilled_style(Style::new().fg(METER_TRACK))
+		.render(Rect::new(VALUE_X + 1, y + 1, POSITION_CELLS, 1), buf);
+	let clock = |tenths: u32| format!("{:02}:{:02}", tenths / 600, tenths / 10 % 60);
+	let (state, colour) = match file.transport {
+		Transport::Playing => (t!("main.playing", locale = locale), GOOD),
+		Transport::Paused => (t!("main.paused", locale = locale), MESSAGE),
+		Transport::Stopped => (t!("main.stopped", locale = locale), HINT),
+	};
+	Pen::at(buf, VALUE_X + 1 + POSITION_CELLS, y + 1)
+		.text("]", LABEL)
+		.gap(2)
+		.text(&format!("{} / {}", clock(file.position_tenths), clock(file.duration_tenths)), TEXT)
+		.gap(2)
+		.text(&state, colour);
+}
+
+/// The name of a file without its folder.
+fn file_name(path: &std::path::Path) -> String {
+	path.file_name()
+		.map_or_else(|| path.display().to_string(), |name| name.to_string_lossy().into_owned())
+}
+
+/// `text` cut to `room` cells; what is cut off is marked with `…`.
+fn fitted(text: &str, room: usize) -> String {
+	if text.chars().count() <= room {
+		return text.to_owned();
+	}
+	let kept: String = text.chars().take(room.saturating_sub(1)).collect();
+	format!("{kept}…")
+}
+
+/// The width of the grid the pen writes into.
+fn buf_width(pen: &Pen<'_>) -> u16 {
+	pen.clip_width()
 }
 
 /// "PROCESSOR  [Synth] [Sound Font] ──" and, under it, the rows of the chosen processor; both end

@@ -31,6 +31,12 @@ pub enum Request {
 	Mixer(MixerAction),
 	OpenDialog(DialogKind),
 	OpenSf2Dialog,
+	/// The MIDI file (spec v1.2, F-21): the dialog that chooses one, and the transport.
+	OpenMidiFileDialog,
+	FilePlay,
+	FilePause,
+	FilePlayPause,
+	FileStop,
 	OpenEffectsDialog,
 	OpenRecordDialog,
 	Apply(Choice),
@@ -254,14 +260,13 @@ impl App {
 			ButtonId::SustainUp => self.ask(Request::AdjustAdsr(AdsrField::Sustain, 1)),
 			ButtonId::ReleaseDown => self.ask(Request::AdjustAdsr(AdsrField::Release, -1)),
 			ButtonId::ReleaseUp => self.ask(Request::AdjustAdsr(AdsrField::Release, 1)),
-			// The MIDI file, recording MIDI and cancelling a take arrive with plan stages 5 and 6; until
-			// then the screen shows these buttons unavailable.
-			ButtonId::MidiFile
-			| ButtonId::FileStart
-			| ButtonId::FilePause
-			| ButtonId::FileStop
-			| ButtonId::FormatMidi
-			| ButtonId::RecordCancel => None,
+			ButtonId::MidiFile => self.perform(Action::MidiFileDialog),
+			ButtonId::FileStart => self.ask(Request::FilePlay),
+			ButtonId::FilePause => self.ask(Request::FilePause),
+			ButtonId::FileStop => self.perform(Action::FileStop),
+			// Recording MIDI and cancelling a take arrive with plan stage 6; until then the screen shows
+			// these buttons unavailable.
+			ButtonId::FormatMidi | ButtonId::RecordCancel => None,
 		}
 	}
 
@@ -306,6 +311,9 @@ impl App {
 				Some(Request::Panic)
 			}
 			Action::EngineToggle => Some(Request::ToggleEngine),
+			Action::MidiFileDialog => Some(Request::OpenMidiFileDialog),
+			Action::FilePlayPause => Some(Request::FilePlayPause),
+			Action::FileStop => Some(Request::FileStop),
 			Action::OctaveUp => {
 				self.keyboard.octave_up();
 				None
@@ -490,6 +498,22 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 				history: session.config.synth.recent_banks.clone(),
 			});
 		}
+		Request::OpenMidiFileDialog => {
+			let source = &session.config.source;
+			app.path_request = Some(PathRequest {
+				kind: InputKind::MidiFile,
+				initial: source
+					.midi_file
+					.as_ref()
+					.map(|path| path.to_string_lossy().into_owned())
+					.unwrap_or_default(),
+				history: source.recent_midi_files.clone(),
+			});
+		}
+		Request::FilePlay => session.file_play(),
+		Request::FilePause => session.file_pause(),
+		Request::FilePlayPause => session.file_play_pause(),
+		Request::FileStop => session.file_stop(),
 		Request::Apply(Choice::ConnectMidi(index)) => {
 			session.connect_midi(index);
 			session.save_config();

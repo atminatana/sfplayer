@@ -59,6 +59,11 @@ impl<'a> Pen<'a> {
 		self
 	}
 
+	/// The column just past the right edge of what the pen may write into.
+	pub(super) fn clip_width(&self) -> u16 {
+		self.clip.x.saturating_add(self.clip.width)
+	}
+
 	pub(super) fn gap(&mut self, cells: u16) -> &mut Self {
 		self.x = self.x.saturating_add(cells);
 		self

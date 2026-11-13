@@ -270,3 +270,38 @@ fn blank_selector_in_config_is_error() {
 		Err(ConfigError::DeviceSelector { key: "audio.output", .. })
 	));
 }
+
+#[test]
+fn the_midi_file_and_the_recent_ones_are_kept_in_the_source_section() {
+	let mut config = Config::default();
+	assert_eq!(config.source, SourceConfig::default());
+	assert_eq!((config.source.midi_file.clone(), config.source.recent_midi_files.len()), (None, 0));
+	for index in 0..RECENT_MIDI_FILES_LIMIT + 2 {
+		config.set_midi_file(Path::new(&format!("song{index}.mid")));
+	}
+	config.set_midi_file(Path::new("song3.mid"));
+	assert_eq!(config.source.midi_file, Some(PathBuf::from("song3.mid")));
+	assert_eq!(config.source.recent_midi_files.len(), RECENT_MIDI_FILES_LIMIT);
+	assert_eq!(RECENT_MIDI_FILES_LIMIT, 10, "the spec keeps ten");
+	assert_eq!(config.source.recent_midi_files[0], PathBuf::from("song3.mid"));
+	assert_eq!(
+		config
+			.source
+			.recent_midi_files
+			.iter()
+			.filter(|path| path.as_path() == Path::new("song3.mid"))
+			.count(),
+		1
+	);
+
+	let path = temp_path("source").join("config.toml");
+	config.save(&path).expect("save");
+	let written = std::fs::read_to_string(&path).expect("read back");
+	assert!(written.lines().any(|line| line == "[source]"), "{written}");
+	assert!(written.lines().any(|line| line == "midi_file = \"song3.mid\""), "{written}");
+	assert_eq!(Config::load(&path).expect("load"), config);
+	std::fs::remove_dir_all(path.parent().unwrap()).ok();
+	// A config from before the section existed opens without a file.
+	let old: Config = toml::from_str("[midi]\ninput = \"KeyStep\"\n").expect("parse");
+	assert_eq!(old.source, SourceConfig::default());
+}

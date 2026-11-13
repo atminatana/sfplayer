@@ -20,6 +20,7 @@ use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, Mixer, S
 use crate::cli::DeviceSelector;
 use crate::config::{Config, EngineKind, Settings};
 use crate::midi::player::Player;
+use crate::midi::smf::Song;
 use crate::midi::{self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus};
 use crate::record::{RecordParams, Recorder, file_name};
 use crate::synth::{SoundFontBank, SynthEngine, SynthError, Timbre};
@@ -39,6 +40,21 @@ pub enum Notice {
 	RecordError(String),
 	/// The configured window font could not be loaded; carries its name (spec v1.2 N-14).
 	FontFallback(String),
+}
+
+/// The MIDI file chosen to play, as the screen shows it (spec v1.2 §3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MidiFile {
+	/// No file has been chosen.
+	None,
+	Loaded(PathBuf),
+	/// The file remembered in the config is not there any more.
+	Missing(PathBuf),
+	/// The file is there and cannot be played; `reason` says why.
+	Broken {
+		path: PathBuf,
+		reason: String,
+	},
 }
 
 pub struct LoadedBank {
@@ -76,6 +92,9 @@ pub struct Session {
 	player: Option<Player>,
 	/// The player's count of stops the session has already cleaned up after.
 	handled_stops: u32,
+	pub midi_file: MidiFile,
+	/// The chosen file, parsed: kept so that a player started later can be given it.
+	song: Option<Arc<Song>>,
 	_hotplug: Option<HotplugWatcher>,
 	hotplug_rx: Receiver<Vec<MidiPortInfo>>,
 	pub bank: Option<LoadedBank>,
@@ -119,6 +138,8 @@ impl Session {
 			midi_dropped: Arc::new(AtomicU32::new(0)),
 			player: None,
 			handled_stops: 0,
+			midi_file: MidiFile::None,
+			song: None,
 			_hotplug: None,
 			hotplug_rx,
 			bank: None,
@@ -170,6 +191,13 @@ impl Session {
 		if !is_bank_loaded && let Err(error) = session.install_engine() {
 			session.notice = Some(Notice::Sf2Error(error.to_string()));
 		}
+		// The MIDI file of the last session is chosen again, not played; if it is gone or broken,
+		// its row says so.
+		if let Some(path) = session.config.source.midi_file.clone()
+			&& let Err(error) = session.load_midi_file(&path)
+		{
+			session.midi_file = control::midi_file_problem(&path, &error);
+		}
 		session
 	}
 
@@ -193,7 +221,13 @@ impl Session {
 				// A file that is playing goes on into the ring of the new stream.
 				match &self.player {
 					Some(player) => player.set_output(file_events),
-					None => self.player = Some(Player::spawn(file_events)),
+					None => {
+						let player = Player::spawn(file_events);
+						if let Some(song) = &self.song {
+							player.load(Arc::clone(song));
+						}
+						self.player = Some(player);
+					}
 				}
 			}
 			Err(error) => self.notice = Some(Notice::NoAudioDevice(error.to_string())),

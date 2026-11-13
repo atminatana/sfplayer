@@ -15,6 +15,8 @@ pub const APP_NAME: &str = "sf2_player";
 const CONFIG_FILE_NAME: &str = "config.toml";
 /// How many folders for takes are remembered (spec v1.2 §4.2).
 pub const RECENT_DIRS_LIMIT: usize = 10;
+/// How many recently played MIDI files are remembered (spec v1.2 §7).
+pub const RECENT_MIDI_FILES_LIMIT: usize = 10;
 /// How many recently used banks are remembered (spec F-05).
 pub const RECENT_BANKS_LIMIT: usize = 10;
 
@@ -52,6 +54,8 @@ pub enum ConfigError {
 #[serde(default)]
 pub struct Config {
 	pub midi: MidiConfig,
+	/// The MIDI file source (spec v1.2, F-21).
+	pub source: SourceConfig,
 	pub audio: AudioConfig,
 	pub synth: SynthConfig,
 	pub mixer: MixerConfig,
@@ -69,6 +73,14 @@ pub struct MidiConfig {
 	pub input: Option<String>,
 	/// 1-based channel all incoming notes are redirected to (F-15 omni); `None` = off.
 	pub omni_channel: Option<u8>,
+}
+
+/// `[source]`: the MIDI file chosen to play and the ones chosen before it, most recent first.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SourceConfig {
+	pub midi_file: Option<PathBuf>,
+	pub recent_midi_files: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -353,6 +365,12 @@ impl Config {
 	/// Puts `path` at the front of the recent list, deduplicated and truncated to `RECENT_BANKS_LIMIT`.
 	pub fn remember_bank(&mut self, path: &Path) {
 		remember(&mut self.synth.recent_banks, path, RECENT_BANKS_LIMIT);
+	}
+
+	/// Makes `path` the MIDI file to play and puts it at the front of the recent list.
+	pub fn set_midi_file(&mut self, path: &Path) {
+		remember(&mut self.source.recent_midi_files, path, RECENT_MIDI_FILES_LIMIT);
+		self.source.midi_file = Some(path.to_owned());
 	}
 
 	/// Sets where takes go; `None` is the OS music directory. A chosen folder goes to the front of the

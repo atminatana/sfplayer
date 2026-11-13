@@ -125,10 +125,19 @@ fn master_keys_work_everywhere() {
 }
 
 #[test]
-fn f9_and_space_request_panic() {
+fn f9_requests_panic_and_the_midi_file_has_its_own_keys() {
 	let mut app = App::new("en");
 	assert_eq!(app.handle_key(plain(KeyCode::F(9))), Some(Request::Panic));
-	assert_eq!(app.handle_key(plain(KeyCode::Char(' '))), Some(Request::Panic));
+	// Space no longer silences everything: it plays and pauses the file (spec v1.2, decision ОР-3).
+	assert_eq!(app.handle_key(plain(KeyCode::Char(' '))), Some(Request::FilePlayPause));
+	assert_eq!(app.handle_key(plain(KeyCode::Backspace)), Some(Request::FileStop));
+	assert_eq!(app.handle_key(plain(KeyCode::F(11))), Some(Request::OpenMidiFileDialog));
+	// In a dialog these keys belong to the dialog: nothing is asked of the file.
+	app.open_dialog(midi_dialog());
+	assert_eq!(app.handle_key(plain(KeyCode::Char(' '))), None);
+	assert_eq!(app.handle_key(plain(KeyCode::Backspace)), None);
+	assert_eq!(app.handle_key(plain(KeyCode::F(11))), None);
+	assert!(app.modal.is_some());
 }
 
 #[test]
@@ -309,6 +318,10 @@ fn every_available_button_gives_the_command_of_its_hotkey() {
 		(ButtonId::FormatOgg, Request::SetRecordFormat(RecordFormat::OggVorbis)),
 		(ButtonId::RecordStart, Request::StartRecord),
 		(ButtonId::RecordStop, Request::StopRecord),
+		(ButtonId::MidiFile, Request::OpenMidiFileDialog),
+		(ButtonId::FileStart, Request::FilePlay),
+		(ButtonId::FilePause, Request::FilePause),
+		(ButtonId::FileStop, Request::FileStop),
 		(ButtonId::EngineSynth, Request::SetEngine(EngineKind::Builtin)),
 		(ButtonId::EngineSf2, Request::SetEngine(EngineKind::Sf2)),
 		(ButtonId::WaveSine, Request::SetWave(Wave::Sine)),

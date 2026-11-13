@@ -225,7 +225,7 @@ fn hotkeys_work_in_a_russian_layout() {
 	let named = |named, physical| command(physical, &Key::Named(named), NONE).and_then(|key| bindings.action_for(&key));
 	assert_eq!(named(NamedKey::F1, PhysicalCode::F1), Some(Action::Help));
 	assert_eq!(named(NamedKey::F10, PhysicalCode::F10), Some(Action::Quit));
-	assert_eq!(named(NamedKey::Space, PhysicalCode::Space), Some(Action::Panic));
+	assert_eq!(named(NamedKey::Space, PhysicalCode::Space), Some(Action::FilePlayPause));
 	assert_eq!(named(NamedKey::Home, PhysicalCode::Home), Some(Action::RecordStart));
 }
 

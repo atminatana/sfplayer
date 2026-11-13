@@ -9,7 +9,8 @@ use super::dialog::preset_label;
 use crate::audio::{Levels, Mixer, Source};
 use crate::config::{BuiltinConfig, EngineKind, RecordFormat};
 use crate::midi::MidiStatus;
-use crate::session::{Notice, Session};
+use crate::midi::player::Transport;
+use crate::session::{MidiFile, Notice, Session};
 
 /// Everything the screen shows, decoupled from live handles so rendering is testable.
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +42,19 @@ pub struct View {
 	/// The chosen processor and the timbre of the built-in synthesizer (F-22).
 	pub engine: EngineKind,
 	pub builtin: BuiltinConfig,
+	/// The MIDI file and where its playback is (F-21).
+	pub file: FileView,
+}
+
+/// The MIDI file source as the screen shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileView {
+	pub file: MidiFile,
+	pub transport: Transport,
+	/// Tenths of a second into the song and its whole length: a finer position would redraw the
+	/// window on every tick for a bar that moves much more slowly.
+	pub position_tenths: u32,
+	pub duration_tenths: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +113,16 @@ impl View {
 			midi_notes: session.shared.notes(Source::MidiIn),
 			engine: session.config.synth.engine,
 			builtin: session.config.synth.builtin.clone(),
+			file: {
+				let status = session.file_status();
+				let tenths = |time: std::time::Duration| u32::try_from(time.as_millis() / 100).unwrap_or(u32::MAX);
+				FileView {
+					file: session.midi_file.clone(),
+					transport: status.transport,
+					position_tenths: tenths(status.position),
+					duration_tenths: tenths(status.duration),
+				}
+			},
 		}
 	}
 }

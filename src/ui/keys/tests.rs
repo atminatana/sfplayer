@@ -24,7 +24,14 @@ fn function_keys_and_ctrl_c_map_to_actions() {
 	assert_eq!(action_for(&press(KeyCode::End, KeyModifiers::NONE)), Some(Action::RecordStop));
 	assert_eq!(action_for(&press(KeyCode::F(8), KeyModifiers::NONE)), Some(Action::Rescan));
 	assert_eq!(action_for(&press(KeyCode::F(9), KeyModifiers::NONE)), Some(Action::Panic));
-	assert_eq!(action_for(&press(KeyCode::Char(' '), KeyModifiers::NONE)), Some(Action::Panic));
+	assert_eq!(
+		action_for(&press(KeyCode::Char(' '), KeyModifiers::NONE)),
+		Some(Action::FilePlayPause),
+		"Space plays and pauses the MIDI file; panic is F9 alone (spec v1.2)"
+	);
+	assert_eq!(action_for(&press(KeyCode::Backspace, KeyModifiers::NONE)), Some(Action::FileStop));
+	assert_eq!(action_for(&press(KeyCode::F(11), KeyModifiers::NONE)), Some(Action::MidiFileDialog));
+	assert_eq!(action_for(&press(KeyCode::F(12), KeyModifiers::NONE)), Some(Action::EngineToggle));
 	assert_eq!(action_for(&press(KeyCode::Up, KeyModifiers::CONTROL)), Some(Action::OctaveUp));
 	assert_eq!(action_for(&press(KeyCode::Left, KeyModifiers::CONTROL)), Some(Action::VelocityDown));
 	assert_eq!(action_for(&press(KeyCode::Esc, KeyModifiers::NONE)), Some(Action::NotesOff));
@@ -207,15 +214,12 @@ fn config_overrides_replace_default_chords() {
 #[test]
 fn keyboard_alternatives_are_added_on_top_of_the_defaults() {
 	let keyboard = KeyboardConfig {
-		octave_up: Some("F11".to_owned()),
+		octave_up: Some("Alt+Up".to_owned()),
 		velocity_down: Some("Alt+Down".to_owned()),
 		..KeyboardConfig::default()
 	};
 	let bindings = Bindings::from_config(&BTreeMap::new(), &keyboard).expect("valid");
-	assert_eq!(
-		bindings.action_for(&press(KeyCode::F(11), KeyModifiers::NONE)),
-		Some(Action::OctaveUp)
-	);
+	assert_eq!(bindings.action_for(&press(KeyCode::Up, KeyModifiers::ALT)), Some(Action::OctaveUp));
 	assert_eq!(
 		bindings.action_for(&press(KeyCode::Up, KeyModifiers::CONTROL)),
 		Some(Action::OctaveUp),

@@ -289,8 +289,19 @@ impl Rig {
 	}
 
 	/// Waits until the player reports `transport`.
-	fn wait_for(&self, transport: Transport) -> PlayerStatus {
-		wait_until(|| Some(self.player.status()).filter(|status| status.transport == transport))
+	fn wait_for(&self, transport: Transport) {
+		wait_until(|| (self.player.status().transport == transport).then_some(()));
+	}
+
+	/// Waits until the player reports exactly this. The three values are published one after the
+	/// other, so a reader may catch them half-way; what is waited for is the whole of it.
+	fn wait_for_status(&self, transport: Transport, position_ms: u64, duration_ms: u64) {
+		let expected = PlayerStatus {
+			transport,
+			position: Duration::from_millis(position_ms),
+			duration: Duration::from_millis(duration_ms),
+		};
+		wait_until(|| (self.player.status() == expected).then_some(()));
 	}
 }
 
@@ -323,19 +334,17 @@ fn the_player_thread_sends_the_song_into_its_ring_as_its_clock_moves() {
 	rig.player.load(two_notes());
 	rig.player.play();
 	assert_eq!(rig.received(1), [on(0, 60)]);
-	let status = rig.wait_for(Transport::Playing);
-	assert_eq!(status.duration, Duration::from_secs(3));
+	rig.wait_for_status(Transport::Playing, 0, 3000);
 
 	rig.set_time(1.2);
 	assert_eq!(rig.received(2), [off(0, 60), on(1, 64)]);
-	wait_until(|| (rig.player.status().position == Duration::from_millis(1200)).then_some(()));
+	rig.wait_for_status(Transport::Playing, 1200, 3000);
 	assert_eq!(rig.player.stops(), 0);
 
 	// At the end the player stops by itself and counts the stop.
 	rig.set_time(3.0);
 	assert_eq!(rig.received(1), [off(1, 64)]);
-	let status = rig.wait_for(Transport::Stopped);
-	assert_eq!(status.position, Duration::ZERO);
+	rig.wait_for_status(Transport::Stopped, 0, 3000);
 	wait_until(|| (rig.player.stops() == 1).then_some(()));
 }
 
@@ -348,8 +357,7 @@ fn pause_and_stop_reach_the_thread_and_only_stops_are_counted() {
 	rig.set_time(0.2);
 	rig.player.pause();
 	assert_eq!(rig.received(1), [off(0, 60)]);
-	let status = rig.wait_for(Transport::Paused);
-	assert_eq!(status.position, Duration::from_millis(200));
+	rig.wait_for_status(Transport::Paused, 200, 3000);
 	assert_eq!(rig.player.stops(), 0, "a pause is not a stop");
 
 	rig.player.play();

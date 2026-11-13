@@ -4,6 +4,9 @@ use super::*;
 use crate::audio::{Levels, Mixer};
 use crate::config::{BuiltinConfig, EngineKind, RecordFormat};
 use crate::midi::MidiStatus;
+use crate::midi::player::Transport;
+use crate::session::MidiFile;
+use crate::ui::view::FileView;
 
 fn view() -> View {
 	View {
@@ -29,6 +32,12 @@ fn view() -> View {
 		midi_notes: 0,
 		engine: EngineKind::Sf2,
 		builtin: BuiltinConfig::default(),
+		file: FileView {
+			file: MidiFile::None,
+			transport: Transport::Stopped,
+			position_tenths: 0,
+			duration_tenths: 0,
+		},
 	}
 }
 

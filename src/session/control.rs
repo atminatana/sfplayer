@@ -1,16 +1,18 @@
 //! Applying UI requests to the running session: mixer, effects, presets, panic, text-keyboard notes.
 //! Mechanically split from `session.rs`; everything here talks to the audio thread through the command ring.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ringbuf::HeapProd;
 use ringbuf::traits::Producer;
 
-use super::{MIDI_CHANNELS, Notice, Session};
+use super::{MIDI_CHANNELS, MidiFile, Notice, Session};
 use crate::audio::Command;
 use crate::audio::mixer::{MASTER_STEP, MASTER_STEP_FAST};
 use crate::config::{AdsrField, EngineKind, RecordFormat, SynthConfig};
+use crate::midi::player::{PlayerStatus, Transport};
+use crate::midi::smf::{self, SmfError};
 use crate::midi::{MidiEvent, controller};
 use crate::synth::{AdsrPreset, BuiltinSynth, PresetInfo, RustySynthEngine, SoundFontBank, SynthEngine, SynthError, Timbre, Wave};
 
@@ -123,6 +125,62 @@ impl Session {
 		self.timbre.set_adsr(self.config.synth.builtin.adsr());
 	}
 
+	/// Chooses the MIDI file to play (spec v1.2, F-21): one that is playing is stopped and replaced.
+	/// A file that cannot be read or is not a MIDI file leaves the current choice as it was; the
+	/// error is for the dialog to show.
+	pub fn load_midi_file(&mut self, path: &Path) -> Result<(), SmfError> {
+		let song = Arc::new(smf::load(path).inspect_err(|error| {
+			tracing::warn!(%error, path = %path.display(), "MIDI file not loaded");
+		})?);
+		tracing::info!(path = %path.display(), events = song.events.len(), seconds = song.duration, "MIDI file loaded");
+		if let Some(player) = &self.player {
+			player.load(Arc::clone(&song));
+		}
+		self.song = Some(song);
+		self.midi_file = MidiFile::Loaded(path.to_owned());
+		self.config.set_midi_file(path);
+		Ok(())
+	}
+
+	/// Plays the file from its start, or goes on from where it is paused.
+	pub fn file_play(&mut self) {
+		if let Some(player) = &self.player {
+			player.play();
+		}
+	}
+
+	pub fn file_pause(&mut self) {
+		if let Some(player) = &self.player {
+			player.pause();
+		}
+	}
+
+	pub fn file_stop(&mut self) {
+		if let Some(player) = &self.player {
+			player.stop();
+		}
+	}
+
+	/// The one key for both: pauses a file that plays, plays one that does not.
+	pub fn file_play_pause(&mut self) {
+		match self.file_status().transport {
+			Transport::Playing => self.file_pause(),
+			Transport::Stopped | Transport::Paused => self.file_play(),
+		}
+	}
+
+	/// Where playback is; stopped at zero while there is no audio stream to play into.
+	pub fn file_status(&self) -> PlayerStatus {
+		self.player.as_ref().map_or(
+			PlayerStatus {
+				transport: Transport::Stopped,
+				position: std::time::Duration::ZERO,
+				duration: std::time::Duration::ZERO,
+			},
+			|player| player.status(),
+		)
+	}
+
 	/// What the F6 dialog starts from.
 	pub fn effects(&self) -> EffectsSettings {
 		EffectsSettings::from_config(&self.config.synth)
@@ -210,6 +268,18 @@ impl Session {
 
 /// MIDI channel 10 (0-based 9): percussion in General MIDI and in SF2 (bank 128), left out of the global preset.
 pub const PERCUSSION_CHANNEL: u8 = 9;
+
+/// How a MIDI file that could not be loaded shows on the screen: a file that is not there is told
+/// apart from one that is there and cannot be played.
+pub(super) fn midi_file_problem(path: &Path, error: &SmfError) -> MidiFile {
+	match error {
+		SmfError::Read { source, .. } if source.kind() == std::io::ErrorKind::NotFound => MidiFile::Missing(path.to_owned()),
+		other => MidiFile::Broken {
+			path: path.to_owned(),
+			reason: other.to_string(),
+		},
+	}
+}
 
 /// Whether a change of the effect switches calls for a new engine. It does for a SoundFont when the
 /// first effect goes on or the last one goes off: rustysynth decides at construction whether its effect
@@ -483,6 +553,30 @@ mod tests {
 		let events = sent(&mut received);
 		assert!(!events.iter().any(|event| matches!(event, MidiEvent::ProgramChange { .. })));
 		assert_eq!(events.len(), 16 * 3 + 16 * 2);
+	}
+
+	#[test]
+	fn a_midi_file_that_is_not_there_is_told_apart_from_one_that_cannot_be_played() {
+		let directory = std::env::temp_dir().join(format!("sf2_player-control-test-{}", std::process::id()));
+		std::fs::create_dir_all(&directory).expect("scratch directory");
+		let missing = directory.join("gone.mid");
+		let error = smf::load(&missing).expect_err("no such file");
+		assert_eq!(midi_file_problem(&missing, &error), MidiFile::Missing(missing.clone()));
+
+		let not_midi = directory.join("text.mid");
+		std::fs::write(&not_midi, b"not a MIDI file at all").expect("write");
+		let error = smf::load(&not_midi).expect_err("not a MIDI file");
+		assert_eq!(
+			midi_file_problem(&not_midi, &error),
+			MidiFile::Broken {
+				path: not_midi.clone(),
+				reason: "not a MIDI file: it does not start with the MThd header".to_owned(),
+			}
+		);
+		// A folder in the place of a file is there, and is not a file that can be played.
+		let error = smf::load(&directory).expect_err("a folder");
+		assert!(matches!(midi_file_problem(&directory, &error), MidiFile::Broken { .. }));
+		std::fs::remove_dir_all(&directory).ok();
 	}
 
 	#[test]

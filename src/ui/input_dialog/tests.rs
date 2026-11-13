@@ -436,3 +436,51 @@ fn the_folder_dialog_takes_whatever_the_field_holds_as_the_answer() {
 	// The file dialog still treats the same input its own way.
 	assert_eq!(press(&mut self::dialog(""), NamedKey::Enter), InputOutcome::Pending);
 }
+
+#[test]
+fn the_midi_file_dialog_offers_folders_and_midi_files_under_its_own_title() {
+	let list_dir = |_: &Path| {
+		[
+			("Bach", true),
+			("prelude.mid", false),
+			("Fugue.MIDI", false),
+			("piano.sf2", false),
+			("notes.txt", false),
+		]
+		.into_iter()
+		.map(|(name, is_dir)| DirEntry {
+			name: name.to_owned(),
+			is_dir,
+		})
+		.collect::<Vec<_>>()
+	};
+	let mut dialog = InputDialog::new(InputKind::MidiFile, "D:/midi/", &[PathBuf::from("D:/midi/last.mid")], list_dir);
+	assert_eq!(dialog.kind(), InputKind::MidiFile);
+	assert_eq!(
+		dialog.rows(),
+		[
+			format!("D:/midi/Bach{SEP}"),
+			"D:/midi/prelude.mid".to_owned(),
+			"D:/midi/Fugue.MIDI".to_owned()
+		],
+		"banks and other files are not offered; the extension is matched without regard to case"
+	);
+	let (_, buf) = drawn(&mut dialog, "ru");
+	let lines = lines_of(&buf);
+	assert!(lines[0].starts_with("┌ MIDI-файл ─"), "{}", lines[0]);
+	assert!(lines[1].starts_with("│Путь: D:/midi/"));
+	let (_, english) = drawn(&mut dialog, "en");
+	assert!(lines_of(&english)[0].starts_with("┌ MIDI file ─"));
+
+	// Enter on a file is the answer; on a folder it looks inside, as with a bank.
+	let mut dialog = InputDialog::new(InputKind::MidiFile, "D:/midi/prelude.mid", &[], list_dir);
+	assert_eq!(
+		press(&mut dialog, NamedKey::Enter),
+		InputOutcome::Submit(PathBuf::from("D:/midi/prelude.mid"))
+	);
+	let mut dialog = InputDialog::new(InputKind::MidiFile, "D:/midi/", &[], list_dir);
+	assert_eq!(press(&mut dialog, NamedKey::Enter), InputOutcome::Pending);
+	// With an empty field the history of MIDI files is listed.
+	let dialog = InputDialog::new(InputKind::MidiFile, "", &[PathBuf::from("D:/midi/last.mid")], list_dir);
+	assert_eq!(dialog.rows(), ["D:/midi/last.mid"]);
+}

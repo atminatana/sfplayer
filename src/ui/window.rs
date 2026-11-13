@@ -249,6 +249,7 @@ impl Window {
 		};
 		let applied = match dialog.kind() {
 			InputKind::Sf2File => self.session.load_bank(&path).map_err(|error| error.to_string()),
+			InputKind::MidiFile => self.session.load_midi_file(&path).map_err(|error| error.to_string()),
 			InputKind::RecordDir => match record_dir_from(&path) {
 				Some(dir) => {
 					self.session.set_record_dir(dir);
