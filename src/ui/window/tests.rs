@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::audio::{Levels, Mixer};
-use crate::config::RecordFormat;
+use crate::config::{BuiltinConfig, EngineKind, RecordFormat};
 use crate::midi::MidiStatus;
 
 fn view() -> View {
@@ -27,6 +27,8 @@ fn view() -> View {
 		notice: None,
 		keyboard_notes: 0,
 		midi_notes: 0,
+		engine: EngineKind::Sf2,
+		builtin: BuiltinConfig::default(),
 	}
 }
 

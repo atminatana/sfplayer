@@ -387,3 +387,42 @@ help.chord.press:
 help.action.press:
   en: "Press the button under the focus (or click it)"
   ru: "Нажать кнопку под фокусом (или щёлкнуть по ней мышью)"
+help.action.engine_toggle:
+  en: "Switch the processor: Synth / Sound Font"
+  ru: "Переключить обработчик: Synth / Sound Font"
+main.wave:
+  en: "Waveform"
+  ru: "Форма сигнала"
+main.wave_sine:
+  en: "Sine"
+  ru: "Синусоида"
+main.wave_saw:
+  en: "Saw"
+  ru: "Пила"
+main.wave_triangle:
+  en: "Triangle"
+  ru: "Треугольник"
+main.adsr_preset:
+  en: "preset:"
+  ru: "пресет:"
+main.adsr_values:
+  en: "values"
+  ru: "значения"
+main.adsr_piano:
+  en: "Piano"
+  ru: "Пианино"
+main.adsr_harpsichord:
+  en: "Harpsichord"
+  ru: "Клавесин"
+main.adsr_organ:
+  en: "Organ"
+  ru: "Орган"
+main.adsr_flute:
+  en: "Flute"
+  ru: "Флейта"
+main.adsr_custom:
+  en: "Custom"
+  ru: "Своё"
+main.seconds:
+  en: "%{value} s"
+  ru: "%{value} с"

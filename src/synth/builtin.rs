@@ -10,6 +10,8 @@ use std::f32::consts::TAU;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
+use serde::{Deserialize, Serialize};
+
 use super::SynthEngine;
 use super::effects::Effects;
 use crate::midi::controller;
@@ -29,8 +31,10 @@ const PEDAL_DOWN: u8 = 64;
 const CONCERT_A_KEY: f32 = 69.0;
 const CONCERT_A_HZ: f32 = 440.0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Wave {
+	#[default]
 	Sine,
 	Saw,
 	Triangle,
@@ -96,6 +100,40 @@ impl Adsr {
 			sustain: if self.sustain.is_nan() { 0.0 } else { self.sustain.clamp(0.0, 1.0) },
 			release: time(self.release),
 		}
+	}
+}
+
+/// The envelopes offered ready-made (spec v1.2, F-22); `Custom` is whatever the user has set by hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdsrPreset {
+	#[default]
+	Piano,
+	Harpsichord,
+	Organ,
+	Flute,
+	Custom,
+}
+
+impl AdsrPreset {
+	/// The four ready-made ones, in the order the screen shows them.
+	pub const READY_MADE: [Self; 4] = [Self::Piano, Self::Harpsichord, Self::Organ, Self::Flute];
+
+	/// The envelope of a ready-made preset; `Custom` has none of its own.
+	pub fn adsr(self) -> Option<Adsr> {
+		let (attack, decay, sustain, release) = match self {
+			Self::Piano => (0.003, 0.5, 0.35, 0.35),
+			Self::Harpsichord => (0.002, 0.28, 0.2, 0.18),
+			Self::Organ => (0.03, 0.06, 1.0, 0.09),
+			Self::Flute => (0.12, 0.09, 0.85, 0.22),
+			Self::Custom => return None,
+		};
+		Some(Adsr {
+			attack,
+			decay,
+			sustain,
+			release,
+		})
 	}
 }
 

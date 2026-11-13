@@ -8,7 +8,7 @@ mod effects;
 mod rusty;
 
 pub use bank::{PresetInfo, SoundFontBank, SynthError};
-pub use builtin::{Adsr, BuiltinSynth, MAX_VOICES, Timbre, Wave};
+pub use builtin::{Adsr, AdsrPreset, BuiltinSynth, MAX_VOICES, Timbre, Wave};
 pub use rusty::RustySynthEngine;
 
 /// A polyphonic synthesizer driven by MIDI-like events and rendering stereo f32 audio.

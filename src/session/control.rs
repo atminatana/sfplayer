@@ -2,6 +2,7 @@
 //! Mechanically split from `session.rs`; everything here talks to the audio thread through the command ring.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use ringbuf::HeapProd;
 use ringbuf::traits::Producer;
@@ -9,9 +10,9 @@ use ringbuf::traits::Producer;
 use super::{MIDI_CHANNELS, Notice, Session};
 use crate::audio::Command;
 use crate::audio::mixer::{MASTER_STEP, MASTER_STEP_FAST};
-use crate::config::{RecordFormat, SynthConfig};
+use crate::config::{AdsrField, EngineKind, RecordFormat, SynthConfig};
 use crate::midi::{MidiEvent, controller};
-use crate::synth::PresetInfo;
+use crate::synth::{AdsrPreset, BuiltinSynth, PresetInfo, RustySynthEngine, SoundFontBank, SynthEngine, SynthError, Timbre, Wave};
 
 /// Reverb / chorus switches (F-13): Alt+R / Alt+C toggle one effect, the F6 dialog sets everything at once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,8 +73,9 @@ impl Session {
 		self.config.mixer.master = self.mixer.master;
 	}
 
-	/// Changes the effects (F-13). Turning the last effect off or the first one on rebuilds the engine,
-	/// because rustysynth decides at construction whether the effect units exist; otherwise only the sends change.
+	/// Changes the effects (F-13). With a SoundFont, turning the last effect off or the first one on
+	/// rebuilds the engine, because rustysynth decides at construction whether the effect units exist;
+	/// otherwise, and always with the built-in synthesizer, only the sends change.
 	pub fn apply_effects(&mut self, action: EffectsAction) {
 		let had_effects = self.config.synth.reverb || self.config.synth.chorus;
 		match action {
@@ -82,13 +84,43 @@ impl Session {
 			EffectsAction::Set(settings) => settings.apply_to(&mut self.config.synth),
 		}
 		let has_effects = self.config.synth.reverb || self.config.synth.chorus;
-		if has_effects != had_effects {
+		if needs_new_engine(self.config.synth.engine, had_effects, has_effects) {
 			if let Err(error) = self.install_engine() {
 				self.notice = Some(Notice::Sf2Error(error.to_string()));
 			}
 		} else if let Some(commands) = self.commands.as_mut() {
 			push_effect_sends(commands, &self.config.synth);
 		}
+	}
+
+	/// Switches the processor (spec v1.2, F-22): the new engine replaces the old one on the audio
+	/// thread, and the notes that were sounding end with it. Without a bank the SoundFont processor is silent.
+	pub fn set_engine(&mut self, kind: EngineKind) {
+		if self.config.synth.engine == kind {
+			return;
+		}
+		self.config.synth.engine = kind;
+		if let Err(error) = self.install_engine() {
+			self.notice = Some(Notice::Sf2Error(error.to_string()));
+		}
+	}
+
+	/// The wave of the built-in synthesizer, for the notes that start from now on.
+	pub fn set_wave(&mut self, wave: Wave) {
+		self.config.synth.builtin.wave = wave;
+		self.timbre.set_wave(wave);
+	}
+
+	/// A ready-made envelope for the built-in synthesizer.
+	pub fn set_adsr_preset(&mut self, preset: AdsrPreset) {
+		self.config.synth.builtin.apply_preset(preset);
+		self.timbre.set_adsr(self.config.synth.builtin.adsr());
+	}
+
+	/// One value of the envelope moved by a step; the envelope is the user's own from then on.
+	pub fn adjust_adsr(&mut self, field: AdsrField, steps: i8) {
+		self.config.synth.builtin.adjust(field, steps);
+		self.timbre.set_adsr(self.config.synth.builtin.adsr());
 	}
 
 	/// What the F6 dialog starts from.
@@ -179,6 +211,29 @@ impl Session {
 /// MIDI channel 10 (0-based 9): percussion in General MIDI and in SF2 (bank 128), left out of the global preset.
 pub const PERCUSSION_CHANNEL: u8 = 9;
 
+/// Whether a change of the effect switches calls for a new engine. It does for a SoundFont when the
+/// first effect goes on or the last one goes off: rustysynth decides at construction whether its effect
+/// units exist. The built-in synthesizer always has them and only follows the send levels.
+pub(super) fn needs_new_engine(kind: EngineKind, had_effects: bool, has_effects: bool) -> bool {
+	kind == EngineKind::Sf2 && had_effects != has_effects
+}
+
+/// The engine for the chosen processor. A SoundFont needs its bank: without one there is no engine,
+/// which is silence. The built-in synthesizer needs nothing but the timbre it shares with the UI.
+pub(super) fn build_engine(
+	kind: EngineKind,
+	bank: Option<&SoundFontBank>,
+	timbre: &Arc<Timbre>,
+	sample_rate: u32,
+	effects: bool,
+) -> Result<Option<Box<dyn SynthEngine>>, SynthError> {
+	Ok(match (kind, bank) {
+		(EngineKind::Builtin, _) => Some(Box::new(BuiltinSynth::new(sample_rate, Arc::clone(timbre)))),
+		(EngineKind::Sf2, Some(bank)) => Some(Box::new(RustySynthEngine::new(bank, sample_rate, effects)?)),
+		(EngineKind::Sf2, None) => None,
+	})
+}
+
 /// What was played in the window goes as `Command::Play`, so the audio thread counts it among the notes
 /// of the keyboard source; an event that does not fit the ring is dropped and logged.
 pub(super) fn push_played(commands: &mut HeapProd<Command>, events: &[MidiEvent]) {
@@ -259,6 +314,62 @@ mod tests {
 		assert!(programs.iter().all(|(_, program)| *program == 5));
 		assert!(bank_selects.iter().all(|(_, bank)| *bank == 8));
 		assert!(!programs.iter().any(|(channel, _)| *channel == 9), "channel 10 keeps its drum kit");
+	}
+
+	/// RMS of what an engine renders for one note held a tenth of a second.
+	fn loudness_of_a_note(engine: &mut dyn SynthEngine) -> f32 {
+		engine.note_on(0, 60, 100);
+		let mut left = vec![0.0f32; 4_800];
+		let mut right = vec![0.0f32; 4_800];
+		engine.render(&mut left, &mut right);
+		(left.iter().map(|sample| sample * sample).sum::<f32>() / left.len() as f32).sqrt()
+	}
+
+	#[test]
+	fn the_builtin_synth_needs_no_bank_and_a_sound_font_is_silent_without_one() {
+		let timbre = Arc::new(Timbre::new(Wave::Saw, crate::config::BuiltinConfig::default().adsr()));
+		let mut engine = build_engine(EngineKind::Builtin, None, &timbre, 48_000, true)
+			.expect("nothing to fail")
+			.expect("an engine without a bank");
+		assert_eq!(engine.max_voices(), 64);
+		assert!(loudness_of_a_note(engine.as_mut()) > 0.01);
+		// The engine shares the timbre it was given: a change reaches its next note.
+		assert_eq!(Arc::strong_count(&timbre), 2);
+
+		assert!(
+			build_engine(EngineKind::Sf2, None, &timbre, 48_000, true)
+				.expect("no error")
+				.is_none()
+		);
+
+		let bank = SoundFontBank::load(std::path::Path::new(crate::synth::test_support::TEST_BANK_PATH)).expect("test bank");
+		let mut engine = build_engine(EngineKind::Sf2, Some(&bank), &timbre, 48_000, true)
+			.expect("the bank fits the rate")
+			.expect("an engine for the bank");
+		assert!(loudness_of_a_note(engine.as_mut()) > 0.01);
+		// With a bank at hand the built-in synthesizer is still the built-in synthesizer.
+		let engine = build_engine(EngineKind::Builtin, Some(&bank), &timbre, 48_000, false).expect("no error");
+		assert_eq!(engine.map(|engine| engine.max_voices()), Some(64));
+		assert_eq!(Arc::strong_count(&timbre), 2, "the dropped engines let go of the timbre");
+		// A rate the SoundFont engine cannot work at is an error, not a silent processor.
+		assert!(build_engine(EngineKind::Sf2, Some(&bank), &timbre, 1_000, true).is_err());
+	}
+
+	#[test]
+	fn only_a_sound_font_needs_a_new_engine_when_its_effects_appear_or_go() {
+		assert!(needs_new_engine(EngineKind::Sf2, false, true), "the first effect goes on");
+		assert!(needs_new_engine(EngineKind::Sf2, true, false), "the last effect goes off");
+		assert!(
+			!needs_new_engine(EngineKind::Sf2, true, true),
+			"a level changed, or one of two effects"
+		);
+		assert!(!needs_new_engine(EngineKind::Sf2, false, false));
+		for (had, has) in [(false, true), (true, false), (true, true), (false, false)] {
+			assert!(
+				!needs_new_engine(EngineKind::Builtin, had, has),
+				"the built-in synthesizer keeps its engine"
+			);
+		}
 	}
 
 	#[test]

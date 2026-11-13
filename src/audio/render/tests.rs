@@ -7,7 +7,7 @@ use ringbuf::traits::Split;
 
 use super::*;
 use crate::synth::test_support::{TEST_BANK_PATH, rms};
-use crate::synth::{RustySynthEngine, SoundFontBank};
+use crate::synth::{Adsr, BuiltinSynth, RustySynthEngine, SoundFontBank, Timbre, Wave};
 
 const SAMPLE_RATE: u32 = 48_000;
 const FRAMES: usize = 4_800;
@@ -515,4 +515,51 @@ fn replacing_the_engine_drops_the_notes_of_every_source() {
 	render(&mut h);
 	assert_eq!((h.shared.notes(Source::Keyboard), h.shared.notes(Source::MidiIn)), (0, 0));
 	assert_eq!(h.shared.held_notes(), 0);
+}
+
+/// The built-in synthesizer with an envelope that is at full level at once and gone at once.
+fn builtin_engine() -> Box<dyn SynthEngine> {
+	let organ = Adsr {
+		attack: 0.001,
+		decay: 0.001,
+		sustain: 1.0,
+		release: 0.001,
+	};
+	Box::new(BuiltinSynth::new(SAMPLE_RATE, Arc::new(Timbre::new(Wave::Saw, organ))))
+}
+
+#[test]
+fn the_processor_is_switched_on_the_fly_between_the_two_engines() {
+	let mut h = harness();
+	let mut output = vec![0.0; FRAMES * 2];
+	// A Sound Font note sounds.
+	h.events.try_push(NOTE_ON).unwrap();
+	h.renderer.fill(&mut output, 2);
+	assert!(rms(&output) > 0.01);
+	assert_eq!(keys(h.shared.notes(Source::MidiIn)), [60]);
+
+	// The built-in synthesizer takes over in the same stream: the old engine goes back to the UI
+	// thread, the note that sounded is gone with it, and the next one is played by the new engine.
+	h.commands.try_push(Command::ReplaceEngine(Some(builtin_engine()))).ok().unwrap();
+	h.renderer.fill(&mut output, 2);
+	assert!(h.retired.try_pop().is_some(), "the Sound Font engine is handed back");
+	assert!(
+		output.iter().all(|sample| *sample == 0.0),
+		"nothing sounds over from the old engine"
+	);
+	assert_eq!(h.shared.notes(Source::MidiIn), 0);
+	assert_eq!(h.shared.max_voices(), 64);
+	h.commands.try_push(Command::Play(note_on(0, 69))).ok().unwrap();
+	h.renderer.fill(&mut output, 2);
+	let (left, right) = deinterleave(&output, 2);
+	assert!(rms(&left) > 0.01 && left == right, "the synthesizer plays, the same on both sides");
+	assert_eq!(keys(h.shared.notes(Source::Keyboard)), [69]);
+
+	// And back: the Sound Font plays again.
+	h.commands.try_push(Command::ReplaceEngine(Some(engine()))).ok().unwrap();
+	h.events.try_push(NOTE_ON).unwrap();
+	h.renderer.fill(&mut output, 2);
+	assert!(h.retired.try_pop().is_some(), "the synthesizer is handed back");
+	assert!(rms(&output) > 0.01);
+	assert_eq!(h.shared.notes(Source::Keyboard), 0, "its note did not survive the switch");
 }

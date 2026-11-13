@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md)
 
-SoundFont synthesizer in Rust in its own window with a grid of character cells: notes from a MIDI keyboard (or from the two bottom rows of a regular keyboard) are played through the chosen audio output with a SoundFont 2 (.sf2) bank. The screen follows the signal path — MIDI sources, the processor, the output, recording to a file: it shows the chosen devices, bank, preset, effects, the output level and the master volume; a session can be recorded to FLAC or Ogg Vorbis. Windows and Linux; the interface is in English or Russian.
+SoundFont synthesizer in Rust in its own window with a grid of character cells: notes from a MIDI keyboard (or from the two bottom rows of a regular keyboard) are played through the chosen audio output with a SoundFont 2 (.sf2) bank or with the built-in synthesizer. The screen follows the signal path — MIDI sources, the processor, the output, recording to a file: it shows the chosen devices, bank, preset, effects, the output level and the master volume; a session can be recorded to FLAC or Ogg Vorbis. Windows and Linux; the interface is in English or Russian.
 
 ## Installation
 
@@ -41,7 +41,7 @@ sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
 - Command-line values take precedence over the config file.
 - `--backend auto|gl|gles|soft` chooses how the window is drawn; by default — the `TERM_BACKEND` environment variable, otherwise automatically: OpenGL 3.3, then OpenGL ES 3.0, then software rendering.
 
-Without `--sf2` the program starts silent: a bank is chosen with F4.
+Without `--sf2` the program starts silent: a bank is chosen with F4. You can also do without a bank — switch to the built-in synthesizer with F12.
 
 ## Hotkeys
 
@@ -62,6 +62,7 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | F8 | Rescan MIDI ports |
 | F9 / Space | Panic: all notes off + all sound off |
 | F10 / Ctrl+C | Quit |
+| F12 | Switch the processor: Synth / Sound Font |
 | Ctrl+↓ | Text keyboard octave −1 |
 | Ctrl+↑ | Text keyboard octave +1 |
 | Ctrl+← | Text keyboard velocity −10 |
@@ -103,9 +104,22 @@ The screen shows a piano of the same range — from the C of the base octave to 
 
 Notes and hotkeys go by the position of the key, not by its character: the input language (Russian, German) does not get in their way. In the config and in the help, keys are named by the characters of the US layout. Text in dialogs — the list filter, a path — is typed in the current layout.
 
+## Processor: Sound Font or Synth
+
+Notes are turned into sound by one of two processors, chosen with the `[Synth]` `[Sound Font]` buttons in the heading of the "Processor" section or with F12. The switch happens on the fly; the notes that were sounding end. The choice is remembered: the next time the program plays with the same processor.
+
+**Sound Font** plays an `.sf2` bank — with all its instruments, the F5 preset and percussion on channel 10.
+
+**Synth** is the built-in synthesizer; it needs no bank. One timbre serves all 16 channels (channel 10 plays the same notes, not percussion) and is set on the screen:
+
+- the waveform — `[Sine]`, `[Saw]` or `[Triangle]`;
+- the ADSR envelope — the ready-made sets `[Piano]`, `[Harpsichord]`, `[Organ]`, `[Flute]`, or your own values: the `[−]` and `[+]` buttons change Attack, Decay and Release in steps of 0.005 s within 0.001–2 s, and Sustain in steps of 5 % from 0 to 100 %. After a manual change the set is marked "Custom".
+
+New values are taken by the next note; the sounding ones finish with the old. Polyphony is 64 voices, an extra note takes the voice of the oldest. Velocity, channel volume (CC 7), the pedal (CC 64) and a Pitch Bend of ±2 semitones are understood; a program change selects nothing. Reverb and chorus work as with a Sound Font and are controlled by the same F6, Alt+R and Alt+C.
+
 ## Configuration
 
-A TOML file is created on the first exit and stores the selected devices, the bank and the last 10 banks, master volume, effects, the recording folder, the last 10 folders and the recording format:
+A TOML file is created on the first exit and stores the selected devices, the processor and the timbre of the built-in synthesizer, the bank and the last 10 banks, master volume, effects, the recording folder, the last 10 folders and the recording format:
 
 | OS | Path |
 |---|---|
@@ -133,6 +147,15 @@ reverb = true
 chorus = false
 reverb_level = 40          # CC 91 send, 0–127
 chorus_level = 20          # CC 93 send, 0–127
+engine = "sf2"             # "sf2" | "builtin" — the built-in synthesizer
+
+[synth.builtin]
+wave = "sine"              # "sine" | "saw" | "triangle"
+adsr_preset = "piano"      # "piano" | "harpsichord" | "organ" | "flute" | "custom"
+attack = 0.003             # seconds, 0.001–2
+decay = 0.5
+sustain = 0.35             # share of the peak, 0–1
+release = 0.35
 
 [mixer]
 master = 80                # 0–100 %
@@ -162,7 +185,7 @@ vorbis_quality = 0.5       # 0.0–1.0
 recent_dirs = ["D:/Music/sf2"]  # folders chosen before, up to 10; kept by the program
 ```
 
-Command names for `[keys]`: `help`, `quit`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `effects_dialog`, `record_dialog`, `rescan`, `record_start`, `record_stop`, `panic`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`. Chords: `Ctrl`, `Alt`, `Shift`, then `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` or a single character. A bare letter is rejected (letters belong to the notes); two commands on the same key is a startup error that names the key. Tab, Shift+Tab and Enter on the main screen are not commands and have no `[keys]` names; if a command is bound to one of these keys, the key runs that command and does not act on the buttons.
+Command names for `[keys]`: `help`, `quit`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `effects_dialog`, `record_dialog`, `rescan`, `record_start`, `record_stop`, `panic`, `engine_toggle`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`. Chords: `Ctrl`, `Alt`, `Shift`, then `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` or a single character. A bare letter is rejected (letters belong to the notes); two commands on the same key is a startup error that names the key. Tab, Shift+Tab and Enter on the main screen are not commands and have no `[keys]` names; if a command is bound to one of these keys, the key runs that command and does not act on the buttons. If your `[keys]` already binds another command to F12, after the update the program reports a conflict with `engine_toggle` — move one of the chords.
 
 ## Recording
 
@@ -184,10 +207,10 @@ Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How t
 
 - macOS is not supported: the gterm window library runs on Windows and Linux.
 - In the selection windows (MIDI input, audio output, preset), the effects window and the help the mouse does not act — choices are made with keys; a click outside the window closes it. The mouse works on the buttons of the main screen and in the path dialogs (F4, F7).
-- MIDI file playback and recording, SF3 and a custom synthesizer are not part of the current version; their lines and buttons on the screen are shown as unavailable.
+- MIDI file playback and recording and SF3 are not part of the current version; their lines and buttons on the screen are shown as unavailable.
 - The MIDI monitor and per-channel mixer strips of version 1.0 are not part of this screen; channel volume follows incoming CC 7 only.
 - The F5 preset applies to every channel except 10 (percussion); a Program Change from the MIDI keyboard still switches its own channel until the next F5 choice, and the "Preset" line keeps showing the F5 choice.
-- Toggling effects on or off (F6, Alt+R, Alt+C) recreates the synthesizer: sounding notes are cut off. Changing a send level in F6 does not.
+- With the Sound Font processor, toggling effects on or off (F6, Alt+R, Alt+C) recreates the synthesizer: sounding notes are cut off. Changing a send level in F6 does not; with the built-in synthesizer notes are cut off in neither case.
 
 ## License
 

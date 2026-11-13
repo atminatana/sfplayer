@@ -17,10 +17,10 @@ use ringbuf::{HeapCons, HeapProd};
 
 use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, Mixer, StreamParams};
 use crate::cli::DeviceSelector;
-use crate::config::{Config, Settings};
+use crate::config::{Config, EngineKind, Settings};
 use crate::midi::{self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus};
 use crate::record::{RecordParams, Recorder, file_name};
-use crate::synth::{RustySynthEngine, SoundFontBank, SynthEngine, SynthError};
+use crate::synth::{SoundFontBank, SynthEngine, SynthError, Timbre};
 
 /// Something the status line should tell the user (translated by the UI, spec N-07).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +73,8 @@ pub struct Session {
 	_hotplug: Option<HotplugWatcher>,
 	hotplug_rx: Receiver<Vec<MidiPortInfo>>,
 	pub bank: Option<LoadedBank>,
+	/// The timbre of the built-in synthesizer, shared with its engine on the audio thread.
+	timbre: Arc<Timbre>,
 	/// Preset chosen with F5 for every channel except percussion (spec v1.1 §4.1, ADR 0011);
 	/// `None` = the engine default. Mirrors `config.synth.preset` while the bank it was chosen for is loaded.
 	preset: Option<(u16, u8)>,
@@ -89,6 +91,7 @@ impl Session {
 		let master_percent = config.mixer.master.min(100);
 		let shared = Arc::new(AudioShared::new(f32::from(master_percent) / 100.0));
 		let (hotplug_tx, hotplug_rx) = mpsc::channel();
+		let timbre = Arc::new(Timbre::new(config.synth.builtin.wave, config.synth.builtin.adsr()));
 		let mut session = Self {
 			config,
 			config_path,
@@ -111,6 +114,7 @@ impl Session {
 			_hotplug: None,
 			hotplug_rx,
 			bank: None,
+			timbre,
 			preset: None,
 			mixer: Mixer::new(master_percent),
 			transpose: 0,
@@ -151,10 +155,12 @@ impl Session {
 			},
 		));
 
-		if let Some(path) = &settings.sf2 {
-			let path = path.clone();
-			// The failure is already a notice; the UI comes up so the user can pick another file with F4.
-			let _ = session.load_bank(&path);
+		// A bank that fails to load is already a notice; the UI comes up so the user can pick another
+		// file with F4. Loading a bank installs the engine; without one the built-in synthesizer still
+		// has to be installed, if it is the chosen processor — it needs no bank (spec v1.2, F-22).
+		let is_bank_loaded = settings.sf2.clone().is_some_and(|path| session.load_bank(&path).is_ok());
+		if !is_bank_loaded && let Err(error) = session.install_engine() {
+			session.notice = Some(Notice::Sf2Error(error.to_string()));
 		}
 		session
 	}
@@ -318,18 +324,23 @@ impl Session {
 		Ok(())
 	}
 
-	/// Creates an engine for the current bank at the stream's sample rate and swaps it in; re-applies the preset.
+	/// Creates the engine of the chosen processor at the stream's sample rate and swaps it in; re-applies
+	/// the preset (a SoundFont has presets, the built-in synthesizer has none) and the effect sends.
 	fn install_engine(&mut self) -> Result<(), SynthError> {
-		let (Some(stream), Some(commands), Some(loaded)) = (&self.audio, self.commands.as_mut(), &self.bank) else {
+		let (Some(stream), Some(commands)) = (&self.audio, self.commands.as_mut()) else {
 			return Ok(());
 		};
+		let kind = self.config.synth.engine;
+		let bank = self.bank.as_ref().map(|loaded| &loaded.bank);
 		let effects = self.config.synth.reverb || self.config.synth.chorus;
-		let engine = RustySynthEngine::new(&loaded.bank, stream.sample_rate, effects)?;
-		if commands.try_push(Command::ReplaceEngine(Some(Box::new(engine)))).is_err() {
+		let engine = control::build_engine(kind, bank, &self.timbre, stream.sample_rate, effects)?;
+		if commands.try_push(Command::ReplaceEngine(engine)).is_err() {
 			tracing::error!("command ring full, engine not installed");
 			return Ok(());
 		}
-		if let Some((bank, program)) = self.preset {
+		if kind == EngineKind::Sf2
+			&& let Some((bank, program)) = self.preset
+		{
 			control::push_global_preset(commands, bank, program);
 		}
 		control::push_effect_sends(commands, &self.config.synth);

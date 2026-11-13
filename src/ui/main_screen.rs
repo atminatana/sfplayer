@@ -20,8 +20,9 @@ use super::paint::Pen;
 pub use super::paint::{BACKGROUND, DISABLED, ERROR, GOOD, HINT, LABEL, MESSAGE, METER_TRACK, RULE, TEXT, VALUE};
 use super::piano;
 use super::view::{NoticeTarget, View, note_names, notice_target, notice_text};
-use crate::config::RecordFormat;
+use crate::config::{EngineKind, RecordFormat};
 use crate::midi::MidiStatus;
+use crate::synth::{AdsrPreset, Wave};
 
 /// The smallest grid the screen fits in (spec v1.2 §3); below it only a hint is drawn.
 pub const MIN_COLS: u16 = 96;
@@ -45,6 +46,15 @@ const METER_ZONES: [(f64, Style); 3] = [
 /// Row of the "MIDI sources" section, and of the piano within it.
 const SOURCES_Y: u16 = 2;
 const PIANO_ROW: u16 = 2;
+/// Row of the "Processor" section; the sections under it start lower by the rows the processor
+/// has beyond the three of a SoundFont.
+const HANDLER_Y: u16 = 10;
+const OUTPUT_Y: u16 = 15;
+const AUDIO_FILE_Y: u16 = 21;
+/// The built-in synthesizer takes five rows where a SoundFont takes three (spec v1.2 §3).
+const SYNTH_EXTRA_ROWS: u16 = 2;
+/// Where the second value of an envelope row starts, from the value column.
+const SECOND_VALUE_X: u16 = VALUE_X + 26;
 const RULE_GLYPH: char = '─';
 const NOTHING: &str = "—";
 const MINUS: &str = "−";
@@ -68,9 +78,13 @@ pub fn render(buf: &mut ScreenBuffer, app: &App, view: &View, buttons: &mut Butt
 
 	title(buf, locale);
 	sources(buf, SOURCES_Y, app, locale, view, buttons);
-	handler(buf, 10, locale, view, buttons);
-	output(buf, 15, app, locale, view, buttons);
-	audio_file(buf, 21, app, locale, view, buttons);
+	let extra = match view.engine {
+		EngineKind::Sf2 => 0,
+		EngineKind::Builtin => SYNTH_EXTRA_ROWS,
+	};
+	handler(buf, HANDLER_Y, locale, view, buttons);
+	output(buf, OUTPUT_Y + extra, app, locale, view, buttons);
+	audio_file(buf, AUDIO_FILE_Y + extra, app, locale, view, buttons);
 	status(buf, area.height - 1, locale, view);
 	buttons.finish_frame(buf);
 }
@@ -200,17 +214,18 @@ fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View,
 	);
 }
 
+/// "PROCESSOR  [Synth] [Sound Font] ──" and, under it, the rows of the chosen processor; both end
+/// with the effects row, which the two share.
 fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &mut Buttons) {
 	let after_title = section(buf, y, &t!("main.section_handler", locale = locale));
-	// The built-in synth arrives with plan stage 4; until then Sound Font is the only processor, and
-	// there is nothing to switch.
+	let chosen = |kind: EngineKind| if view.engine == kind { Look::Active } else { Look::Normal };
 	let mut pen = Pen::at(buf, after_title + 1, y);
 	put(
 		&mut pen,
 		buttons,
 		ButtonId::EngineSynth,
 		&t!("main.engine_synth", locale = locale),
-		Look::Disabled,
+		chosen(EngineKind::Builtin),
 	);
 	pen.gap(1);
 	put(
@@ -218,15 +233,121 @@ fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &
 		buttons,
 		ButtonId::EngineSf2,
 		&t!("main.engine_sf2", locale = locale),
-		Look::ActiveLocked,
+		chosen(EngineKind::Sf2),
 	);
 	pen.gap(1);
 	let after_buttons = pen.x;
 	rule(buf, after_buttons, y);
 
-	let sf2_file = t!("main.sf2_file", locale = locale);
-	label(buf, y + 1, &sf2_file);
+	let effects_y = match view.engine {
+		EngineKind::Sf2 => {
+			sound_font(buf, y + 1, locale, view, buttons);
+			y + 3
+		}
+		EngineKind::Builtin => {
+			synth(buf, y + 1, locale, view, buttons);
+			y + 3 + SYNTH_EXTRA_ROWS
+		}
+	};
+	let effects = t!("main.effects", locale = locale);
+	label(buf, effects_y, &effects);
+	let off = t!("mixer.off", locale = locale);
+	let level = |value: Option<u8>| value.map_or_else(|| off.to_string(), |level| level.to_string());
+	let sends = format!(
+		"{} {}  {} {}",
+		t!("mixer.reverb", locale = locale),
+		level(view.reverb),
+		t!("mixer.chorus", locale = locale),
+		level(view.chorus)
+	);
+	let mut pen = Pen::at(buf, VALUE_X, effects_y);
+	put(&mut pen, buttons, ButtonId::Effects, &effects, Look::Normal);
+	pen.gap(2).text(&sends, TEXT);
+}
+
+/// The four rows of the built-in synthesizer: the wave, the ready-made envelopes, the envelope's values.
+fn synth(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &mut Buttons) {
+	let timbre = &view.builtin;
+	label(buf, y, &t!("main.wave", locale = locale));
+	let mut pen = Pen::at(buf, VALUE_X, y);
+	for (id, wave, key) in [
+		(ButtonId::WaveSine, Wave::Sine, "main.wave_sine"),
+		(ButtonId::WaveSaw, Wave::Saw, "main.wave_saw"),
+		(ButtonId::WaveTriangle, Wave::Triangle, "main.wave_triangle"),
+	] {
+		let look = if timbre.wave == wave { Look::Active } else { Look::Normal };
+		put(&mut pen, buttons, id, &t!(key, locale = locale), look);
+		pen.gap(1);
+	}
+
+	label(buf, y + 1, "ADSR");
 	let mut pen = Pen::at(buf, VALUE_X, y + 1);
+	pen.text(&t!("main.adsr_preset", locale = locale), LABEL).gap(1);
+	for (id, preset, key) in [
+		(ButtonId::AdsrPiano, AdsrPreset::Piano, "main.adsr_piano"),
+		(ButtonId::AdsrHarpsichord, AdsrPreset::Harpsichord, "main.adsr_harpsichord"),
+		(ButtonId::AdsrOrgan, AdsrPreset::Organ, "main.adsr_organ"),
+		(ButtonId::AdsrFlute, AdsrPreset::Flute, "main.adsr_flute"),
+	] {
+		let look = if timbre.adsr_preset == preset { Look::Active } else { Look::Normal };
+		put(&mut pen, buttons, id, &t!(key, locale = locale), look);
+		pen.gap(1);
+	}
+	// Values set by hand belong to no preset (spec v1.2, F-22).
+	if timbre.adsr_preset == AdsrPreset::Custom {
+		pen.gap(1).text(&t!("main.adsr_custom", locale = locale), VALUE);
+	}
+
+	sub_label(buf, y + 2, &t!("main.adsr_values", locale = locale));
+	let seconds = |value: f32| t!("main.seconds", locale = locale, value = format!("{value:.3}")).into_owned();
+	let per_cent = |share: f32| format!("{:>3}%", (share * 100.0).round() as u32);
+	for (row, x, name, value, down, up) in [
+		(
+			y + 2,
+			VALUE_X,
+			"Attack:",
+			seconds(timbre.attack),
+			ButtonId::AttackDown,
+			ButtonId::AttackUp,
+		),
+		(
+			y + 2,
+			SECOND_VALUE_X,
+			"Decay:",
+			seconds(timbre.decay),
+			ButtonId::DecayDown,
+			ButtonId::DecayUp,
+		),
+		(
+			y + 3,
+			VALUE_X,
+			"Sustain:",
+			per_cent(timbre.sustain),
+			ButtonId::SustainDown,
+			ButtonId::SustainUp,
+		),
+		(
+			y + 3,
+			SECOND_VALUE_X,
+			"Release:",
+			seconds(timbre.release),
+			ButtonId::ReleaseDown,
+			ButtonId::ReleaseUp,
+		),
+	] {
+		let mut pen = Pen::at(buf, x, row);
+		pen.text(name, LABEL).gap(1);
+		put(&mut pen, buttons, down, MINUS, Look::Normal);
+		pen.gap(1).text(&value, VALUE).gap(1);
+		put(&mut pen, buttons, up, PLUS, Look::Normal);
+	}
+}
+
+/// The two rows of a SoundFont: the bank file and the preset.
+fn sound_font(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &mut Buttons) {
+	let sf2_file = t!("main.sf2_file", locale = locale);
+	label(buf, y, &sf2_file);
+	let mut pen = Pen::at(buf, VALUE_X, y);
 	put(&mut pen, buttons, ButtonId::Sf2File, &sf2_file, Look::Normal);
 	pen.gap(2);
 	let sf2_error = view.line_error(NoticeTarget::Sf2);
@@ -248,8 +369,8 @@ fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &
 	}
 
 	let preset = t!("main.preset", locale = locale);
-	label(buf, y + 2, &preset);
-	let mut pen = Pen::at(buf, VALUE_X, y + 2);
+	label(buf, y + 1, &preset);
+	let mut pen = Pen::at(buf, VALUE_X, y + 1);
 	match &view.bank {
 		Some(bank) => {
 			put(&mut pen, buttons, ButtonId::Preset, &preset, Look::Normal);
@@ -260,21 +381,6 @@ fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &
 			pen.gap(2).text(NOTHING, DISABLED);
 		}
 	}
-
-	let effects = t!("main.effects", locale = locale);
-	label(buf, y + 3, &effects);
-	let off = t!("mixer.off", locale = locale);
-	let level = |value: Option<u8>| value.map_or_else(|| off.to_string(), |level| level.to_string());
-	let sends = format!(
-		"{} {}  {} {}",
-		t!("mixer.reverb", locale = locale),
-		level(view.reverb),
-		t!("mixer.chorus", locale = locale),
-		level(view.chorus)
-	);
-	let mut pen = Pen::at(buf, VALUE_X, y + 3);
-	put(&mut pen, buttons, ButtonId::Effects, &effects, Look::Normal);
-	pen.gap(2).text(&sends, TEXT);
 }
 
 fn output(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, buttons: &mut Buttons) {
@@ -474,8 +580,21 @@ fn status(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View) {
 	pen.text(&fields.join("  "), LABEL);
 	let left_end = pen.x;
 
-	let bank = view.bank.as_ref().map_or(NOTHING, |bank| bank.file_name.as_str());
-	let engine = t!("status.engine", locale = locale, name = format!("SF2 · {bank}"));
+	let summary = match view.engine {
+		EngineKind::Sf2 => {
+			let bank = view.bank.as_ref().map_or(NOTHING, |bank| bank.file_name.as_str());
+			format!("SF2 · {bank}")
+		}
+		EngineKind::Builtin => {
+			let wave = match view.builtin.wave {
+				Wave::Sine => t!("main.wave_sine", locale = locale),
+				Wave::Saw => t!("main.wave_saw", locale = locale),
+				Wave::Triangle => t!("main.wave_triangle", locale = locale),
+			};
+			format!("Synth · {wave}")
+		}
+	};
+	let engine = t!("status.engine", locale = locale, name = summary);
 	let width = u16::try_from(engine.chars().count()).unwrap_or(u16::MAX);
 	let x = buf.area().width.saturating_sub(width.saturating_add(1));
 	// The counters always win: the summary is drawn only when it does not touch them.

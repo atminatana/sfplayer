@@ -9,6 +9,7 @@ use winit::keyboard::ModifiersState;
 
 use super::*;
 use crate::audio::{Levels, Mixer};
+use crate::config::{AdsrField, BuiltinConfig};
 use crate::session::Notice;
 use crate::ui::buttons::Touch;
 use crate::ui::chord::{KeyCode, KeyEvent, KeyModifiers};
@@ -43,6 +44,8 @@ fn view() -> View {
 		notice: None,
 		keyboard_notes: 0,
 		midi_notes: 0,
+		engine: EngineKind::Sf2,
+		builtin: BuiltinConfig::default(),
 	}
 }
 
@@ -279,7 +282,7 @@ fn buttons_show_what_is_chosen_and_what_is_unavailable() {
 	let (row, col) = find(&buf, "[OGG]");
 	assert_eq!((buf.cell(col, row).fg, buf.cell(col, row).bg), (TEXT, BACKGROUND));
 	assert_eq!(colour_of(&buf, "[MIDI]"), DISABLED);
-	assert_eq!(colour_of(&buf, "[Synth]"), DISABLED);
+	assert_eq!(colour_of(&buf, "[Synth]"), TEXT, "the other processor can be chosen");
 	let (row, col) = find(&buf, "[Sound Font]");
 	assert_eq!(buf.cell(col, row).bg, VALUE);
 	assert_eq!(colour_of(&buf, "[MIDI-файл]"), DISABLED);
@@ -510,6 +513,8 @@ fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
 	// The text of a button as it stands on the screen, with enough around it to be unique.
 	let available = [
 		(ButtonId::MidiIn, "[MIDI-вход]"),
+		(ButtonId::EngineSynth, "[Synth]"),
+		(ButtonId::EngineSf2, "[Sound Font]"),
 		(ButtonId::Sf2File, "[Файл Sound Font]"),
 		(ButtonId::Preset, "[Пресет]"),
 		(ButtonId::Effects, "[Эффекты]"),
@@ -544,8 +549,6 @@ fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
 		"[Старт] [Пауза] [Стоп]",
 		"[Пауза]",
 		"[Стоп]",
-		"[Synth]",
-		"[Sound Font]",
 		"[MIDI]",
 		"[Стоп] [Отмена]",
 		"[Отмена]",
@@ -697,4 +700,210 @@ fn a_long_list_of_notes_is_cut_at_a_whole_name_and_marked() {
 	playing.midi_notes = sounding(&naturals[..25]);
 	let buf = rendered_ru(&playing);
 	assert!(lines_of(&buf)[midi_row].ends_with("E5 F5"));
+}
+
+/// The view with the built-in synthesizer chosen.
+fn synth_view() -> View {
+	let mut view = view();
+	view.engine = EngineKind::Builtin;
+	view
+}
+
+#[test]
+fn the_synth_screen_matches_the_layout_mockup() {
+	let expected = [
+		"ОБРАБОТЧИК  [Synth] [Sound Font] ───────────────────────────────────────────────────────────────",
+		" Форма сигнала     [Синусоида] [Пила] [Треугольник]",
+		" ADSR              пресет: [Пианино] [Клавесин] [Орган] [Флейта]",
+		"   значения        Attack: [−] 0.003 с [+]   Decay: [−] 0.500 с [+]",
+		"                   Sustain: [−]  35% [+]     Release: [−] 0.350 с [+]",
+		" Эффекты           [Эффекты]  рев 40  хор выкл",
+		"",
+		"ВЫХОД ──────────────────────────────────────────────────────────────────────────────────────────",
+		" Аудио выход       [Аудио выход]  Speakers  48000 Hz / 256 кадров  OK",
+		" L                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS",
+		" R                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS",
+		" Мастер            [−] ████████████████░░░░  80% [+]",
+		"",
+		"АУДИО-ФАЙЛ ─────────────────────────────────────────────────────────────────────────────────────",
+		" Папка             [Папка для файлов]  D:/Music/sf2_player",
+		" Формат            [FLAC] [OGG] [MIDI]  запись аудиопотока",
+		" Запись            [Старт] [Стоп] [Отмена]  записей ещё не было",
+		"",
+		"",
+		"",
+		" голоса   7/64   cpu   3%  xrun     0                                 движок: Synth · Синусоида",
+	];
+	let buf = rendered_ru(&synth_view());
+	let lines = lines_of(&buf);
+	// The sections above the processor are the same for both; the synthesizer takes two rows more,
+	// and the screen still fits the smallest grid.
+	assert_eq!(lines[..10], lines_of(&rendered_ru(&view()))[..10]);
+	assert_eq!(lines[10..], expected, "{}", lines[10..].join("|"));
+	assert_eq!(lines.len(), usize::from(MIN_ROWS));
+}
+
+#[test]
+fn the_processor_buttons_show_which_one_plays_and_each_has_its_own_rows() {
+	let sound_font = rendered_ru(&view());
+	let synth = rendered_ru(&synth_view());
+	let background = |buf: &ScreenBuffer, text: &str| {
+		let (row, col) = find(buf, text);
+		buf.cell(col, row).bg
+	};
+	assert_eq!(
+		(background(&sound_font, "[Synth]"), background(&sound_font, "[Sound Font]")),
+		(BACKGROUND, VALUE)
+	);
+	assert_eq!(
+		(background(&synth, "[Synth]"), background(&synth, "[Sound Font]")),
+		(VALUE, BACKGROUND)
+	);
+	for text in ["Файл Sound Font", "[Пресет]"] {
+		assert!(
+			is_shown(&sound_font, text) && !is_shown(&synth, text),
+			"{text} belongs to the Sound Font"
+		);
+	}
+	for text in ["Форма сигнала", "ADSR", "Attack:"] {
+		assert!(
+			is_shown(&synth, text) && !is_shown(&sound_font, text),
+			"{text} belongs to the synthesizer"
+		);
+	}
+	// The effects row is shared, the summary names the processor.
+	assert!(is_shown(&synth, "[Эффекты]  рев 40  хор выкл"));
+	assert!(is_shown(&sound_font, "движок: SF2 · GeneralUser GS.sf2"));
+	// The synthesizer needs no bank: without one nothing on its screen is red.
+	let mut bare = synth_view();
+	bare.bank = None;
+	let buf = rendered_ru(&bare);
+	let has_red = (0..buf.rows()).any(|row| (0..buf.cols()).any(|col| buf.cell(col, row).fg == ERROR));
+	assert!(!has_red);
+}
+
+#[test]
+fn the_synth_rows_show_the_timbre_and_mark_a_hand_made_envelope() {
+	let mut timbre = synth_view();
+	timbre.builtin.wave = Wave::Saw;
+	timbre.builtin.apply_preset(AdsrPreset::Organ);
+	let buf = rendered_ru(&timbre);
+	let is_lit = |buf: &ScreenBuffer, text: &str| {
+		let (row, col) = find(buf, text);
+		buf.cell(col, row).bg == VALUE
+	};
+	assert!(is_lit(&buf, "[Пила]") && !is_lit(&buf, "[Синусоида]") && !is_lit(&buf, "[Треугольник]"));
+	assert!(is_lit(&buf, "[Орган]") && !is_lit(&buf, "[Пианино]"));
+	assert!(is_shown(&buf, "Attack: [−] 0.030 с [+]   Decay: [−] 0.060 с [+]"));
+	assert!(is_shown(&buf, "Sustain: [−] 100% [+]     Release: [−] 0.090 с [+]"));
+	assert_eq!(colour_of(&buf, "0.030 с"), VALUE);
+	assert!(!is_shown(&buf, "Своё"));
+	assert!(is_shown(&buf, "движок: Synth · Пила"));
+
+	// A value moved by hand: no preset is lit, the envelope is marked as the user's own.
+	timbre.builtin.adjust(AdsrField::Sustain, -1);
+	let buf = rendered_ru(&timbre);
+	assert!(!is_lit(&buf, "[Орган]"));
+	assert!(is_shown(&buf, "[Флейта]  Своё"));
+	assert_eq!(colour_of(&buf, "Своё"), VALUE);
+	assert!(
+		is_shown(&buf, "Sustain: [−]  95% [+]     Release:"),
+		"the second value stays in its column"
+	);
+
+	// The longest values still leave the columns where they are.
+	timbre.builtin.sustain = 0.05;
+	timbre.builtin.attack = 2.0;
+	let buf = rendered_ru(&timbre);
+	assert!(is_shown(&buf, "Attack: [−] 2.000 с [+]   Decay:"));
+	assert!(is_shown(&buf, "Sustain: [−]   5% [+]     Release:"));
+
+	let english = rendered(&App::new("en"), &synth_view());
+	for text in [
+		" Waveform          [Sine] [Saw] [Triangle]",
+		" ADSR              preset: [Piano] [Harpsichord] [Organ] [Flute]",
+		"   values          Attack: [−] 0.003 s [+]   Decay: [−] 0.500 s [+]",
+		"engine: Synth · Sine",
+	] {
+		assert!(is_shown(&english, text), "{text:?}");
+	}
+}
+
+#[test]
+fn every_button_of_the_synth_section_is_pressed_by_a_click_and_stands_in_the_tab_ring() {
+	let mut buttons = Buttons::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &App::new("ru"), &synth_view(), &mut buttons);
+	let section = [
+		(ButtonId::EngineSynth, "[Synth]"),
+		(ButtonId::EngineSf2, "[Sound Font]"),
+		(ButtonId::WaveSine, "[Синусоида]"),
+		(ButtonId::WaveSaw, "[Пила]"),
+		(ButtonId::WaveTriangle, "[Треугольник]"),
+		(ButtonId::AdsrPiano, "[Пианино]"),
+		(ButtonId::AdsrHarpsichord, "[Клавесин]"),
+		(ButtonId::AdsrOrgan, "[Орган]"),
+		(ButtonId::AdsrFlute, "[Флейта]"),
+		(ButtonId::AttackDown, "[−] 0.003"),
+		(ButtonId::AttackUp, "[+]   Decay"),
+		(ButtonId::DecayDown, "[−] 0.500"),
+		(ButtonId::DecayUp, "[+]"),
+		(ButtonId::SustainDown, "[−]  35%"),
+		(ButtonId::SustainUp, "[+]     Release"),
+		(ButtonId::ReleaseDown, "[−] 0.350"),
+		(ButtonId::Effects, "[Эффекты]"),
+	];
+	for (id, text) in section {
+		if id == ButtonId::DecayUp {
+			continue;
+		}
+		assert_eq!(click(&mut buttons, &buf, text), Touch::Pressed(id), "{text}");
+	}
+	// The two buttons that end a row are found by their place: right after their value.
+	let after = |text: &str| {
+		let (row, col) = find(&buf, text);
+		(row, col + text.chars().count() + 1)
+	};
+	for (id, value) in [(ButtonId::DecayUp, "0.500 с"), (ButtonId::ReleaseUp, "0.350 с")] {
+		let (row, col) = after(value);
+		let at = |kind| MouseMsg {
+			kind,
+			button: Some(MouseButton::Left),
+			col: i32::try_from(col).expect("column"),
+			row: i32::try_from(row).expect("row"),
+			modifiers: ModifiersState::empty(),
+		};
+		buttons.handle_mouse(&at(MouseKind::Down));
+		assert_eq!(buttons.handle_mouse(&at(MouseKind::Up)), Touch::Pressed(id));
+	}
+
+	// Tab walks them between the MIDI input and the output, in the order they stand on the screen;
+	// the buttons of the Sound Font are not in the ring.
+	click(&mut buttons, &buf, "[MIDI-вход]");
+	let stops = ring(&mut buttons);
+	assert_eq!(
+		stops[..19],
+		[
+			ButtonId::MidiIn,
+			ButtonId::EngineSynth,
+			ButtonId::EngineSf2,
+			ButtonId::WaveSine,
+			ButtonId::WaveSaw,
+			ButtonId::WaveTriangle,
+			ButtonId::AdsrPiano,
+			ButtonId::AdsrHarpsichord,
+			ButtonId::AdsrOrgan,
+			ButtonId::AdsrFlute,
+			ButtonId::AttackDown,
+			ButtonId::AttackUp,
+			ButtonId::DecayDown,
+			ButtonId::DecayUp,
+			ButtonId::SustainDown,
+			ButtonId::SustainUp,
+			ButtonId::ReleaseDown,
+			ButtonId::ReleaseUp,
+			ButtonId::Effects,
+		]
+	);
+	assert!(!stops.contains(&ButtonId::Sf2File) && !stops.contains(&ButtonId::Preset));
 }

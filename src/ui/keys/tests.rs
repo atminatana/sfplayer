@@ -177,14 +177,17 @@ fn chords_parse_in_any_case_and_label_round_trips() {
 #[test]
 fn config_overrides_replace_default_chords() {
 	let mut keys = BTreeMap::new();
-	keys.insert("quit".to_owned(), "Ctrl+Q, F12".to_owned());
+	keys.insert("quit".to_owned(), "Ctrl+Q, Ctrl+F12".to_owned());
 	keys.insert("rescan".to_owned(), "Alt+F3".to_owned());
 	let bindings = Bindings::from_config(&keys, &KeyboardConfig::default()).expect("valid overrides");
 	assert_eq!(
 		bindings.action_for(&press(KeyCode::Char('q'), KeyModifiers::CONTROL)),
 		Some(Action::Quit)
 	);
-	assert_eq!(bindings.action_for(&press(KeyCode::F(12), KeyModifiers::NONE)), Some(Action::Quit));
+	assert_eq!(
+		bindings.action_for(&press(KeyCode::F(12), KeyModifiers::CONTROL)),
+		Some(Action::Quit)
+	);
 	assert_eq!(
 		bindings.action_for(&press(KeyCode::F(10), KeyModifiers::NONE)),
 		None,
@@ -198,7 +201,7 @@ fn config_overrides_replace_default_chords() {
 		.into_iter()
 		.find(|(_, description)| description == "Quit")
 		.expect("quit row");
-	assert_eq!(quit_row.0, "Ctrl+Q / F12", "help follows the overrides");
+	assert_eq!(quit_row.0, "Ctrl+Q / Ctrl+F12", "help follows the overrides");
 }
 
 #[test]

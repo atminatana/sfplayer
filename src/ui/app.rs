@@ -14,9 +14,10 @@ use super::path_input::{InputKind, PathRequest};
 use super::selector::SelectorOutcome;
 use super::text_keyboard::TextKeyboard;
 use crate::audio;
-use crate::config::{KeyboardConfig, RecordFormat};
+use crate::config::{AdsrField, EngineKind, KeyboardConfig, RecordFormat};
 use crate::midi::MidiEvent;
 use crate::session::{EffectsAction, EffectsSettings, MixerAction, Notice, Session};
+use crate::synth::{AdsrPreset, Wave};
 
 /// Spec §6: redraw at most 30 frames per second.
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(33);
@@ -35,6 +36,14 @@ pub enum Request {
 	Apply(Choice),
 	/// A format button of the main screen.
 	SetRecordFormat(RecordFormat),
+	/// The processor buttons and F12 (spec v1.2, F-22).
+	SetEngine(EngineKind),
+	ToggleEngine,
+	/// The timbre of the built-in synthesizer: the wave, a ready-made envelope, one value a step
+	/// down (-1) or up (+1).
+	SetWave(Wave),
+	SetAdsrPreset(AdsrPreset),
+	AdjustAdsr(AdsrField, i8),
 	Rescan,
 	Panic,
 	/// Home / End (spec v1.1 §4.3).
@@ -73,6 +82,21 @@ pub enum ButtonId {
 	FileStop,
 	EngineSynth,
 	EngineSf2,
+	WaveSine,
+	WaveSaw,
+	WaveTriangle,
+	AdsrPiano,
+	AdsrHarpsichord,
+	AdsrOrgan,
+	AdsrFlute,
+	AttackDown,
+	AttackUp,
+	DecayDown,
+	DecayUp,
+	SustainDown,
+	SustainUp,
+	ReleaseDown,
+	ReleaseUp,
 	Sf2File,
 	Preset,
 	Effects,
@@ -89,7 +113,7 @@ pub enum ButtonId {
 }
 
 impl ButtonId {
-	pub const ALL: [Self; 20] = [
+	pub const ALL: [Self; 35] = [
 		Self::MidiIn,
 		Self::MidiFile,
 		Self::FileStart,
@@ -97,6 +121,21 @@ impl ButtonId {
 		Self::FileStop,
 		Self::EngineSynth,
 		Self::EngineSf2,
+		Self::WaveSine,
+		Self::WaveSaw,
+		Self::WaveTriangle,
+		Self::AdsrPiano,
+		Self::AdsrHarpsichord,
+		Self::AdsrOrgan,
+		Self::AdsrFlute,
+		Self::AttackDown,
+		Self::AttackUp,
+		Self::DecayDown,
+		Self::DecayUp,
+		Self::SustainDown,
+		Self::SustainUp,
+		Self::ReleaseDown,
+		Self::ReleaseUp,
 		Self::Sf2File,
 		Self::Preset,
 		Self::Effects,
@@ -198,17 +237,38 @@ impl App {
 			ButtonId::FormatOgg => self.choose_format(RecordFormat::OggVorbis),
 			ButtonId::RecordStart => self.perform(Action::RecordStart),
 			ButtonId::RecordStop => self.perform(Action::RecordStop),
-			// The MIDI file, the built-in synth, recording MIDI and cancelling a take arrive with plan
-			// stages 4-6; until then the screen shows these buttons unavailable.
+			ButtonId::EngineSynth => self.ask(Request::SetEngine(EngineKind::Builtin)),
+			ButtonId::EngineSf2 => self.ask(Request::SetEngine(EngineKind::Sf2)),
+			ButtonId::WaveSine => self.ask(Request::SetWave(Wave::Sine)),
+			ButtonId::WaveSaw => self.ask(Request::SetWave(Wave::Saw)),
+			ButtonId::WaveTriangle => self.ask(Request::SetWave(Wave::Triangle)),
+			ButtonId::AdsrPiano => self.ask(Request::SetAdsrPreset(AdsrPreset::Piano)),
+			ButtonId::AdsrHarpsichord => self.ask(Request::SetAdsrPreset(AdsrPreset::Harpsichord)),
+			ButtonId::AdsrOrgan => self.ask(Request::SetAdsrPreset(AdsrPreset::Organ)),
+			ButtonId::AdsrFlute => self.ask(Request::SetAdsrPreset(AdsrPreset::Flute)),
+			ButtonId::AttackDown => self.ask(Request::AdjustAdsr(AdsrField::Attack, -1)),
+			ButtonId::AttackUp => self.ask(Request::AdjustAdsr(AdsrField::Attack, 1)),
+			ButtonId::DecayDown => self.ask(Request::AdjustAdsr(AdsrField::Decay, -1)),
+			ButtonId::DecayUp => self.ask(Request::AdjustAdsr(AdsrField::Decay, 1)),
+			ButtonId::SustainDown => self.ask(Request::AdjustAdsr(AdsrField::Sustain, -1)),
+			ButtonId::SustainUp => self.ask(Request::AdjustAdsr(AdsrField::Sustain, 1)),
+			ButtonId::ReleaseDown => self.ask(Request::AdjustAdsr(AdsrField::Release, -1)),
+			ButtonId::ReleaseUp => self.ask(Request::AdjustAdsr(AdsrField::Release, 1)),
+			// The MIDI file, recording MIDI and cancelling a take arrive with plan stages 5 and 6; until
+			// then the screen shows these buttons unavailable.
 			ButtonId::MidiFile
 			| ButtonId::FileStart
 			| ButtonId::FilePause
 			| ButtonId::FileStop
-			| ButtonId::EngineSynth
-			| ButtonId::EngineSf2
 			| ButtonId::FormatMidi
 			| ButtonId::RecordCancel => None,
 		}
+	}
+
+	/// A request that changes what the screen shows.
+	fn ask(&mut self, request: Request) -> Option<Request> {
+		self.dirty = true;
+		Some(request)
 	}
 
 	/// The format cannot change under a running take (spec v1.2, F-23).
@@ -245,6 +305,7 @@ impl App {
 				self.keyboard.clear();
 				Some(Request::Panic)
 			}
+			Action::EngineToggle => Some(Request::ToggleEngine),
 			Action::OctaveUp => {
 				self.keyboard.octave_up();
 				None
@@ -445,6 +506,22 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 			session.set_record_format(format);
 			session.save_config();
 		}
+		// The engine changes under the keys: the notes the text keyboard holds end with the old one.
+		Request::SetEngine(kind) => {
+			app.keyboard.clear();
+			session.set_engine(kind);
+			session.save_config();
+		}
+		Request::ToggleEngine => {
+			app.keyboard.clear();
+			session.set_engine(session.config.synth.engine.other());
+			session.save_config();
+		}
+		// The timbre is written with the rest of the config when the program closes, like the master
+		// volume: these are stepped many times in a row.
+		Request::SetWave(wave) => session.set_wave(wave),
+		Request::SetAdsrPreset(preset) => session.set_adsr_preset(preset),
+		Request::AdjustAdsr(field, steps) => session.adjust_adsr(field, steps),
 		Request::Rescan => session.rescan(),
 		Request::StartRecord => session.start_recording(),
 		Request::StopRecord | Request::StopRecordingAndQuit => session.stop_recording(),

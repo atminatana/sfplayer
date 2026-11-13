@@ -73,6 +73,7 @@ fn function_keys_request_dialogs_and_rescan() {
 	assert_eq!(app.handle_key(plain(KeyCode::F(6))), Some(Request::OpenEffectsDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(7))), Some(Request::OpenRecordDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(8))), Some(Request::Rescan));
+	assert_eq!(app.handle_key(plain(KeyCode::F(12))), Some(Request::ToggleEngine));
 }
 
 #[test]
@@ -308,6 +309,23 @@ fn every_available_button_gives_the_command_of_its_hotkey() {
 		(ButtonId::FormatOgg, Request::SetRecordFormat(RecordFormat::OggVorbis)),
 		(ButtonId::RecordStart, Request::StartRecord),
 		(ButtonId::RecordStop, Request::StopRecord),
+		(ButtonId::EngineSynth, Request::SetEngine(EngineKind::Builtin)),
+		(ButtonId::EngineSf2, Request::SetEngine(EngineKind::Sf2)),
+		(ButtonId::WaveSine, Request::SetWave(Wave::Sine)),
+		(ButtonId::WaveSaw, Request::SetWave(Wave::Saw)),
+		(ButtonId::WaveTriangle, Request::SetWave(Wave::Triangle)),
+		(ButtonId::AdsrPiano, Request::SetAdsrPreset(AdsrPreset::Piano)),
+		(ButtonId::AdsrHarpsichord, Request::SetAdsrPreset(AdsrPreset::Harpsichord)),
+		(ButtonId::AdsrOrgan, Request::SetAdsrPreset(AdsrPreset::Organ)),
+		(ButtonId::AdsrFlute, Request::SetAdsrPreset(AdsrPreset::Flute)),
+		(ButtonId::AttackDown, Request::AdjustAdsr(AdsrField::Attack, -1)),
+		(ButtonId::AttackUp, Request::AdjustAdsr(AdsrField::Attack, 1)),
+		(ButtonId::DecayDown, Request::AdjustAdsr(AdsrField::Decay, -1)),
+		(ButtonId::DecayUp, Request::AdjustAdsr(AdsrField::Decay, 1)),
+		(ButtonId::SustainDown, Request::AdjustAdsr(AdsrField::Sustain, -1)),
+		(ButtonId::SustainUp, Request::AdjustAdsr(AdsrField::Sustain, 1)),
+		(ButtonId::ReleaseDown, Request::AdjustAdsr(AdsrField::Release, -1)),
+		(ButtonId::ReleaseUp, Request::AdjustAdsr(AdsrField::Release, 1)),
 	];
 	for (button, request) in &cases {
 		let mut app = App::new("en");
@@ -362,7 +380,7 @@ fn dismissing_a_dialog_does_what_esc_does_in_it() {
 
 	// Esc bound to something else changes nothing: a click outside is not a key.
 	app.bindings = Bindings::from_config(
-		&[("notes_off", "F12"), ("quit", "Esc")]
+		&[("notes_off", "Ctrl+F2"), ("quit", "Esc")]
 			.into_iter()
 			.map(|(command, chord)| (command.to_owned(), chord.to_owned()))
 			.collect(),

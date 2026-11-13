@@ -7,7 +7,7 @@ use rust_i18n::t;
 
 use super::dialog::preset_label;
 use crate::audio::{Levels, Mixer, Source};
-use crate::config::RecordFormat;
+use crate::config::{BuiltinConfig, EngineKind, RecordFormat};
 use crate::midi::MidiStatus;
 use crate::session::{Notice, Session};
 
@@ -38,6 +38,9 @@ pub struct View {
 	/// from the MIDI input (F-24).
 	pub keyboard_notes: u128,
 	pub midi_notes: u128,
+	/// The chosen processor and the timbre of the built-in synthesizer (F-22).
+	pub engine: EngineKind,
+	pub builtin: BuiltinConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +97,8 @@ impl View {
 			notice: session.notice.clone(),
 			keyboard_notes: session.shared.notes(Source::Keyboard),
 			midi_notes: session.shared.notes(Source::MidiIn),
+			engine: session.config.synth.engine,
+			builtin: session.config.synth.builtin.clone(),
 		}
 	}
 }
