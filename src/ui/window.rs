@@ -53,6 +53,8 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 	let grid_config =
 		GridConfig::parse(backend_argument.iter(), backend_from_environment.as_deref()).context("invalid rendering backend")?;
 
+	// Choosing a system font reads every installed font; how long that took goes to the log.
+	let font_search = Instant::now();
 	let family = match options.font.as_deref().filter(|name| !name.is_empty()) {
 		Some(name) => match FontFamily::system(name) {
 			Ok(family) => family,
@@ -65,7 +67,8 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		None => FontFamily::system_monospace().context("no monospace font found in the system")?,
 	};
 	let font_size = options.font_size.unwrap_or(DEFAULT_FONT_SIZE_PX);
-	tracing::info!(font = family.family(), font_size, "window font");
+	let search_ms = font_search.elapsed().as_millis();
+	tracing::info!(font = family.family(), font_size, search_ms, "window font");
 	let rasterizer = Rasterizer::new_at(family, glyph_px_for(font_size, FONT_SCALE, 1.0)).context("cannot prepare the window font")?;
 
 	let screen = ScreenBuffer::with_default_colors(usize::from(MIN_COLS), usize::from(MIN_ROWS), TEXT, BACKGROUND);

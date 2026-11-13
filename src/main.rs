@@ -31,6 +31,8 @@ fn main() -> anyhow::Result<()> {
 	tracing::info!(locale, "ui language");
 
 	let session = Session::start(&settings, config, config_path);
+	// A mark between the devices and the window: a slow start shows in the log on which side it was slow.
+	tracing::debug!("session started");
 	log_panics();
 	let mut app = App::with_keyboard(locale, TextKeyboard::new(&session.config.keyboard));
 	// Key overrides are validated before the window opens, so a bad [keys] entry is a plain error (ADR 0007).
