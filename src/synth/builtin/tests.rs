@@ -1,6 +1,7 @@
 //! Offline tests of the built-in synthesizer: what it renders is measured, nothing is listened to.
 
 use super::*;
+use crate::synth::Adsr;
 use crate::synth::test_support::rms;
 
 const SAMPLE_RATE: u32 = 48_000;

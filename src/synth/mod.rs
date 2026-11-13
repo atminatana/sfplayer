@@ -6,10 +6,12 @@ mod bank;
 mod builtin;
 mod effects;
 mod rusty;
+mod timbre;
 
 pub use bank::{PresetInfo, SoundFontBank, SynthError};
-pub use builtin::{Adsr, AdsrPreset, BuiltinSynth, MAX_VOICES, Timbre, Wave};
+pub use builtin::{BuiltinSynth, MAX_VOICES};
 pub use rusty::RustySynthEngine;
+pub use timbre::{Adsr, AdsrPreset, Timbre, Wave};
 
 /// A polyphonic synthesizer driven by MIDI-like events and rendering stereo f32 audio.
 ///
