@@ -1,10 +1,13 @@
-//! Synthesis layer: the `SynthEngine` trait (spec §3) and the SoundFont bank model.
+//! Synthesis layer: the `SynthEngine` trait (spec §3), its two engines — SoundFont through rustysynth and
+//! the built-in synthesizer — and the SoundFont bank model.
 //! Engine choice and isolation rationale: ADR 0001.
 
 mod bank;
+mod builtin;
 mod rusty;
 
 pub use bank::{PresetInfo, SoundFontBank, SynthError};
+pub use builtin::{Adsr, BuiltinSynth, MAX_VOICES, Timbre, Wave};
 pub use rusty::RustySynthEngine;
 
 /// A polyphonic synthesizer driven by MIDI-like events and rendering stereo f32 audio.

@@ -11,7 +11,7 @@ SoundFont-синтезатор на Rust в окне с сеткой симво�
 | `src/session.rs` | `Session`: аудиопоток и его смена, кольца, MIDI, hot-plug, банк, глобальный пресет (ADR 0011), запись (`start_recording`/`stop_recording`, `record_dir`), `save_config`, `Notice`; применение запросов (мастер → гейн, эффекты `EffectsSettings`, пресет на все каналы кроме 10, panic, ноты, транспонирование, настройки записи) — `session/control.rs` | v1.1 шаг 4 |
 | `src/cli.rs` | Аргументы командной строки (ТЗ §5), `DeviceSelector` имя/индекс + `find` | шаг 1.1, 1.5 |
 | `src/logging.rs` | `tracing` в файл в локальном каталоге данных ОС (N-07) | шаг 1.1 |
-| `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` с флагом эффектов (rusty.rs) (ADR 0001) | шаг 5.1 |
+| `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` с флагом эффектов (rusty.rs), встроенный `BuiltinSynth` — 64 голоса, синусоида / пила / треугольник, ADSR, тембр `Timbre` на атомиках; к приложению пока не подключён (builtin.rs, тесты в builtin/tests.rs) (ADR 0001) | v1.2 шаг 4.1 |
 | `src/midi/` | `MidiEvent` + `parse_message` (parse.rs), порты midir и `connect_input` (ports.rs), `HotplugWatcher` + `MidiStatus` (hotplug.rs); монитор MIDI удалён в v1.1 (ADR 0010) | v1.1 шаг 4 |
 | `src/audio/` | `AudioShared` атомики: гейн, xrun, уровни, клипы, карты звучащих нот по источникам `Source` (shared.rs), `measure` peak/RMS/клипы (meter.rs), `Mixer` мастер с mute (mixer.rs; полосы каналов удалены в v1.1, ADR 0010), `BlockRenderer` + `Command` ядро коллбэка: ноты по источникам (окно — `Command::Play`, MIDI-вход — кольцо событий; служебные сообщения `Command::Midi` — ничьи), нагрузка, транспонирование и omni (render.rs, тесты в render/tests.rs), устройства и `select_output_device` с fallback, пропуск устройств с нечитаемой конфигурацией (device.rs), `open_output_stream` (stream.rs) и тексты ошибок открытия с причиной (mod.rs) (ADR 0002); | шаг 4.3 |
 | `src/config.rs` | `Config` (все секции, ADR 0007), load/save, `Settings::resolve` CLI > конфиг > умолчания, `project_dirs` | шаг 2.1 |
@@ -19,6 +19,7 @@ SoundFont-синтезатор на Rust в окне с сеткой симво�
 | `src/record/` | `Recorder` поток + кольцо, `flac.rs` потоковый FLAC 24 бит, `vorbis.rs` Ogg Vorbis (ADR 0005) | шаг 5.3 |
 | `locales/app.yml` | Словарь rust-i18n v2, en и ru рядом для каждого ключа | v1.1 шаг 4 |
 | `tests/i18n_completeness.rs` | Полнота словаря: обе локали, все ключи из кода существуют, нет кириллицы в коде | шаг 5.5 |
+| `tests/no_alloc.rs` | N-03: считающий аллокатор — встроенный движок и ядро коллбэка с обоими движками не выделяют и не освобождают память | v1.2 шаг 4.1 |
 | `tests/readme_keys.rs` | README.md (en) и README.ru.md (ru): таблицы клавиш совпадают с `Bindings::help_rows` | шаг 6.3 |
 | `README.md`, `README.ru.md` | Установка, запуск, клавиши, конфиг, запись, индикаторы, задержка, ограничения, лицензия — английская и русская версии с взаимными ссылками (конвенция GitHub); с v1.2 описывают оконное приложение для Windows и Linux | v1.2 шаг 1.4 |
 | `assets/sin_wave.sf2` | Минимальный банк для оффлайн-тестов | есть |
@@ -71,6 +72,7 @@ SoundFont-синтезатор на Rust в окне с сеткой симво�
 - v1.2, шаг 2.1: кнопки главного экрана нажимаются мышью и Tab + Enter (`ui/buttons.rs`); формат записи — кнопки на экране; F7 — диалог папки записей с историей (`record.recent_dirs`); клик вне диалога закрывает его; удалены `ui/record_dialog.rs` и старый редактор пути.
 - v1.2, шаг 3.1: у события в ядре рендера есть источник; карты звучащих нот по источникам публикуются в `AudioShared` (читать их будет пианино шага 3.2).
 - v1.2, шаг 3.2: экранное пианино (`ui/piano.rs`) подсвечивает ноты окна и MIDI-входа и играет мышью; строки «Клавиатура» и «→ ноты» называют звучащие ноты.
+- v1.2, шаг 4.1: встроенный синтезатор `synth/builtin.rs` и тест отсутствия аллокаций `tests/no_alloc.rs`; в приложении движок появится на шаге 4.3.
 
 ## Дальше (открытые пункты для владельца)
 
