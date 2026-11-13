@@ -1,8 +1,10 @@
-//! MIDI input layer: message parsing (parse.rs), midir ports (ports.rs) and hot-plug polling (hotplug.rs).
+//! MIDI layer: message parsing (parse.rs), midir ports (ports.rs), hot-plug polling (hotplug.rs) and
+//! Standard MIDI Files (smf.rs).
 
 mod hotplug;
 mod parse;
 mod ports;
+pub mod smf;
 
 pub use hotplug::{DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiStatus};
 pub use parse::{MidiEvent, MidiParseError, PITCH_BEND_CENTRE, controller, parse_message};
