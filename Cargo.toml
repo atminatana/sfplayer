@@ -12,6 +12,10 @@ clap = { version = "4.6", features = ["derive"] }
 cpal = "0.18"
 directories = "6.0"
 flacenc = "0.5"
+# Window with a cell grid and immediate-mode widgets (spec v1.2, ADR pending step 1.4). Both crates must
+# point at the same revision; it carries the application tick and the Meter widget (gterm ADR-0033, ADR-0034).
+gterm = { git = "https://github.com/atminatana/gterm", rev = "e7c04032b72b18980afd67e813955a621db4babb" }
+gterm-widgets = { git = "https://github.com/atminatana/gterm", rev = "e7c04032b72b18980afd67e813955a621db4babb" }
 midir = "0.11"
 ratatui = "0.30"
 ringbuf = "0.5"
@@ -25,6 +29,8 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = "0.3"
 vorbis_rs = "0.5"
+# Key and modifier types of gterm events arrive untranslated; same version and features as gterm uses.
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
 
 [dev-dependencies]
 claxon = "0.4.3"

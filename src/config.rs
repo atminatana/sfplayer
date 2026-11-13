@@ -173,6 +173,10 @@ pub struct UiConfig {
 	pub lang: Option<String>,
 	/// Force ASCII indicators; `None` = auto-detect (spec §9). `--ascii` always wins.
 	pub ascii: Option<bool>,
+	/// Font family of the window; `None` or an unavailable family = the system monospace font (spec v1.2 N-14).
+	pub font: Option<String>,
+	/// Logical font size of the window in pixels; `None` = the built-in default (spec v1.2 N-14).
+	pub font_size: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

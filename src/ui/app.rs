@@ -20,6 +20,7 @@ use super::record_dialog::{RecordDialog, RecordOutcome};
 use super::screen;
 use super::selector::SelectorOutcome;
 use super::text_keyboard::{NoteOffMode, TextKeyboard};
+use super::view::View;
 use crate::audio;
 use crate::config::KeyboardConfig;
 use crate::midi::MidiEvent;
@@ -458,7 +459,7 @@ pub fn run(terminal: &mut DefaultTerminal, app: &mut App, session: &mut Session)
 		}
 		app.update_meters(session.shared.clips(), now);
 		if app.take_dirty() || now >= next_frame {
-			terminal.draw(|frame| screen::render(frame, app, &screen::View::from_session(session)))?;
+			terminal.draw(|frame| screen::render(frame, app, &View::from_session(session)))?;
 			next_frame = now + FRAME_INTERVAL;
 		}
 		let timeout = next_frame.saturating_duration_since(Instant::now());

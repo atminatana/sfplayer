@@ -14,6 +14,7 @@ use sf2_player::session::Session;
 use sf2_player::ui::glyphs::{Glyphs, terminal_prefers_ascii};
 use sf2_player::ui::keys::Bindings;
 use sf2_player::ui::text_keyboard::{NoteOffMode, TextKeyboard};
+use sf2_player::ui::window::{self, WindowOptions};
 use sf2_player::ui::{self, App};
 use sf2_player::{audio, logging, midi};
 
@@ -27,7 +28,7 @@ fn main() -> anyhow::Result<()> {
 		return print_devices();
 	}
 	// Fail fast before touching config, audio and MIDI: the TUI needs a real terminal on stdin/stdout.
-	if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+	if !cli.gterm && (!std::io::stdin().is_terminal() || !std::io::stdout().is_terminal()) {
 		anyhow::bail!("no interactive terminal: launch sf2_player from a terminal emulator (--list-devices works anywhere)");
 	}
 	let config_path = resolve_config_path(&cli)?;
@@ -41,6 +42,9 @@ fn main() -> anyhow::Result<()> {
 	tracing::info!(locale, "ui language");
 
 	let mut session = Session::start(&settings, config, config_path);
+	if cli.gterm {
+		return run_window(&cli, locale, session);
+	}
 	let kitty = supports_keyboard_enhancement().unwrap_or(false);
 	// The Windows console reports key releases natively; elsewhere the kitty keyboard protocol is needed (F-16).
 	let release_reported = cfg!(windows) || kitty;
@@ -86,6 +90,29 @@ fn main() -> anyhow::Result<()> {
 	session.save_config();
 	tracing::info!(xruns = session.shared.xruns(), "sf2_player exiting");
 	Ok(())
+}
+
+/// The gterm window instead of the terminal UI (plan v1.2, stage 1; behind the hidden `--gterm` flag).
+fn run_window(cli: &Cli, locale: &'static str, session: Session) -> anyhow::Result<()> {
+	log_panics();
+	// A window reports key releases itself, so notes always last as long as the key is held.
+	let mut app = App::with_keyboard(locale, TextKeyboard::new(&session.config.keyboard, NoteOffMode::Release));
+	app.bindings = Bindings::from_config(&session.config.keys, &session.config.keyboard).context("invalid key configuration")?;
+	let options = WindowOptions {
+		font: session.config.ui.font.clone(),
+		font_size: session.config.ui.font_size,
+		backend: cli.backend.clone(),
+	};
+	window::run(app, session, &options)
+}
+
+/// Sends a panic to the log before the default report: with a window there may be no console to read it from.
+fn log_panics() {
+	let default_hook = std::panic::take_hook();
+	std::panic::set_hook(Box::new(move |panic| {
+		tracing::error!(%panic, "panic");
+		default_hook(panic);
+	}));
 }
 
 fn resolve_config_path(cli: &Cli) -> anyhow::Result<PathBuf> {

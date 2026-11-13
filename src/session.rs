@@ -35,6 +35,8 @@ pub enum Notice {
 	ConfigError(String),
 	RecordSaved(String),
 	RecordError(String),
+	/// The configured window font could not be loaded; carries its name (spec v1.2 N-14).
+	FontFallback(String),
 }
 
 pub struct LoadedBank {

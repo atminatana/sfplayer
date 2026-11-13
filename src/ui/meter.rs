@@ -46,6 +46,12 @@ pub fn level_bar(level: f32, width: usize, glyphs: &Glyphs) -> String {
 	glyphs.bar(filled, width)
 }
 
+/// Share of a level bar to fill, 0..=1: linear in decibels between `BAR_FLOOR_DB` and 0 dBFS.
+pub fn level_ratio(level: f32) -> f64 {
+	let db = to_dbfs(level).unwrap_or(DBFS_FLOOR).clamp(BAR_FLOOR_DB, 0.0);
+	f64::from((db - BAR_FLOOR_DB) / -BAR_FLOOR_DB)
+}
+
 /// "-6.2 dBFS" or the silence symbol; width is fixed so columns stay aligned.
 pub fn dbfs_text(level: f32, silence: &str) -> String {
 	match to_dbfs(level) {

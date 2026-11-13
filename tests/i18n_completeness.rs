@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 const LOCALES: [&str; 2] = ["en", "ru"];
 /// Dictionary namespaces; a string literal starting with one of these followed by a dot is treated as a key.
-const NAMESPACES: [&str; 11] = [
-	"app", "header", "panel", "status", "hint", "notice", "dialog", "help", "mixer", "meter", "confirm",
+const NAMESPACES: [&str; 12] = [
+	"app", "header", "panel", "status", "hint", "notice", "dialog", "help", "mixer", "meter", "confirm", "main",
 ];
 
 fn root() -> PathBuf {

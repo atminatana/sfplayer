@@ -335,3 +335,95 @@ dialog.effects_level:
 dialog.effects_hint:
   en: "↑↓ row · Space on/off · ←→ level ±5 · Enter save · Esc cancel"
   ru: "↑↓ — строка · Space — вкл/выкл · ←→ — уровень ±5 · Enter — сохранить · Esc — отмена"
+
+# Main screen of the windowed UI (spec v1.2 §3).
+main.section_sources:
+  en: "MIDI SOURCES"
+  ru: "ИСТОЧНИКИ MIDI"
+main.section_handler:
+  en: "PROCESSOR"
+  ru: "ОБРАБОТЧИК"
+main.section_output:
+  en: "OUTPUT"
+  ru: "ВЫХОД"
+main.section_record:
+  en: "AUDIO FILE"
+  ru: "АУДИО-ФАЙЛ"
+main.keyboard:
+  en: "Keyboard"
+  ru: "Клавиатура"
+main.midi_in:
+  en: "MIDI input"
+  ru: "MIDI-вход"
+main.notes:
+  en: "→ notes"
+  ru: "→ ноты"
+main.midi_file:
+  en: "MIDI file"
+  ru: "MIDI-файл"
+main.sf2_file:
+  en: "Sound Font file"
+  ru: "Файл Sound Font"
+main.preset:
+  en: "Preset"
+  ru: "Пресет"
+main.effects:
+  en: "Effects"
+  ru: "Эффекты"
+main.audio_out:
+  en: "Audio output"
+  ru: "Аудио выход"
+main.master:
+  en: "Master"
+  ru: "Мастер"
+main.folder:
+  en: "Folder"
+  ru: "Папка"
+main.folder_button:
+  en: "Folder for files"
+  ru: "Папка для файлов"
+main.format:
+  en: "Format"
+  ru: "Формат"
+main.record:
+  en: "Recording"
+  ru: "Запись"
+main.start:
+  en: "Start"
+  ru: "Старт"
+main.pause:
+  en: "Pause"
+  ru: "Пауза"
+main.stop:
+  en: "Stop"
+  ru: "Стоп"
+main.cancel:
+  en: "Cancel"
+  ru: "Отмена"
+main.engine_synth:
+  en: "Synth"
+  ru: "Synth"
+main.engine_sf2:
+  en: "Sound Font"
+  ru: "Sound Font"
+main.opened:
+  en: "open"
+  ru: "открыто"
+main.no_file:
+  en: "no file selected"
+  ru: "файл не выбран"
+main.no_takes:
+  en: "no takes yet"
+  ru: "записей ещё не было"
+main.format_audio:
+  en: "records the audio stream"
+  ru: "запись аудиопотока"
+status.engine:
+  en: "engine: %{name}"
+  ru: "движок: %{name}"
+notice.window_too_small:
+  en: "Enlarge the window to %{width}×%{height}"
+  ru: "Увеличьте окно до %{width}×%{height}"
+notice.font_fallback:
+  en: "Font %{font} is unavailable, using the system monospace font"
+  ru: "Шрифт %{font} недоступен, взят системный моноширинный"

@@ -5,6 +5,9 @@ use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 
 use super::*;
+use crate::audio::{Levels, Mixer};
+use crate::config::RecordFormat;
+use crate::session::Notice;
 use crate::ui::dialog::Dialog;
 use crate::ui::path_input::PathInput;
 
@@ -14,7 +17,7 @@ fn view() -> View {
 		audio: Some(AudioView {
 			device: "Speakers".into(),
 			sample_rate: 48_000,
-			buffer: BufferSize::Fixed(256),
+			buffer: Some(256),
 		}),
 		bank: Some(BankView {
 			file_name: "GeneralUser GS.sf2".into(),

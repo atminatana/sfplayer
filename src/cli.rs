@@ -51,6 +51,15 @@ pub struct Cli {
 	/// Draw meters and markers with ASCII characters (for terminals without Unicode block glyphs)
 	#[arg(long)]
 	pub ascii: bool,
+
+	/// Open the gterm window instead of the terminal UI. Temporary while the window is being built
+	/// (plan v1.2, stage 1): hidden from --help and removed when the window becomes the only UI.
+	#[arg(long, hide = true)]
+	pub gterm: bool,
+
+	/// Rendering backend of the window: auto, gl, gles or soft. Hidden together with --gterm.
+	#[arg(long, hide = true, value_name = "KIND")]
+	pub backend: Option<String>,
 }
 
 /// How the user refers to a MIDI port or audio device: by list index or by a name substring.
