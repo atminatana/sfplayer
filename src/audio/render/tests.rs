@@ -24,7 +24,7 @@ struct Harness {
 	file_events: HeapProd<MidiEvent>,
 	commands: HeapProd<Command>,
 	retired: HeapCons<Box<dyn SynthEngine>>,
-	recording: HeapCons<f32>,
+	recording: RecordSource,
 	shared: Arc<AudioShared>,
 }
 
@@ -46,7 +46,7 @@ fn empty_harness() -> Harness {
 	let (file_events, file_events_rx) = HeapRb::<MidiEvent>::new(RING_CAPACITY).split();
 	let (commands, commands_rx) = HeapRb::<Command>::new(RING_CAPACITY).split();
 	let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(RING_CAPACITY).split();
-	let (recording_tx, recording) = HeapRb::<f32>::new(FRAMES * 2 + 16).split();
+	let (recording_tx, recording) = record_rings(FRAMES * 2 + 16, RING_CAPACITY);
 	let renderer = BlockRenderer::new(
 		events_rx,
 		file_events_rx,
@@ -319,11 +319,11 @@ fn recording_ring_gets_the_output_only_while_recording_and_counts_overflow() {
 	h.events.try_push(NOTE_ON).unwrap();
 	let mut output = vec![0.0; FRAMES * 2];
 	h.renderer.fill(&mut output, 2);
-	assert_eq!(h.recording.try_pop(), None, "nothing recorded while off");
-	h.shared.set_recording(true);
+	assert_eq!(h.recording.samples.try_pop(), None, "nothing recorded while off");
+	h.shared.set_recording(RecordMode::Audio);
 	h.renderer.fill(&mut output, 2);
 	let mut recorded = vec![0.0; FRAMES * 2];
-	assert_eq!(h.recording.pop_slice(&mut recorded), FRAMES * 2);
+	assert_eq!(h.recording.samples.pop_slice(&mut recorded), FRAMES * 2);
 	assert_eq!(recorded, output, "the recording is exactly what went to the device");
 	assert_eq!(h.shared.record_dropped(), 0);
 	h.renderer.fill(&mut output, 2);
@@ -637,4 +637,109 @@ fn what_the_file_sent_is_applied_before_what_the_ui_sends_in_the_same_callback()
 		"the note was cut by the message sent after it"
 	);
 	assert_eq!(h.shared.notes(Source::File), 0);
+}
+
+/// What the renderer has put into the ring of a MIDI take.
+fn recorded_events(h: &mut Harness) -> Vec<StampedEvent> {
+	std::iter::from_fn(|| h.recording.events.try_pop()).collect()
+}
+
+fn stamped(frame: usize, event: MidiEvent) -> StampedEvent {
+	StampedEvent {
+		frame: frame as u64,
+		event,
+	}
+}
+
+#[test]
+fn a_midi_take_gets_what_the_engine_is_fed_stamped_with_the_frame_of_the_take() {
+	let mut h = harness();
+	h.events.try_push(note_on(0, 60)).unwrap();
+	render(&mut h);
+	assert!(recorded_events(&mut h).is_empty(), "nothing is recorded before the take");
+
+	h.shared.set_recording(RecordMode::Midi);
+	h.shared.set_transpose(2);
+	h.shared.set_omni_channel(Some(5));
+	// One note from each source and a service message of the UI, all in the first callback of the take.
+	let silence_channel = MidiEvent::ControlChange {
+		channel: 3,
+		controller: controller::ALL_NOTES_OFF,
+		value: 0,
+	};
+	h.events.try_push(note_on(0, 70)).unwrap();
+	h.commands.try_push(Command::Play(note_on(0, 50))).ok().unwrap();
+	h.commands.try_push(Command::Midi(silence_channel)).ok().unwrap();
+	h.file_events.try_push(note_on(1, 40)).unwrap();
+	render(&mut h);
+	h.events.try_push(note_off(0, 70)).unwrap();
+	render(&mut h);
+	render(&mut h);
+	let bend = MidiEvent::PitchBend { channel: 4, value: 9_000 };
+	h.events.try_push(bend).unwrap();
+	render(&mut h);
+	assert_eq!(
+		recorded_events(&mut h),
+		[
+			// In the order the engine got them: the file, the window, the MIDI input. Keys are the
+			// ones that sound (transposed); what comes from outside is on the omni channel.
+			stamped(0, note_on(5, 42)),
+			stamped(0, note_on(0, 52)),
+			stamped(0, silence_channel),
+			stamped(0, note_on(5, 72)),
+			stamped(FRAMES, note_off(5, 72)),
+			stamped(FRAMES * 3, bend),
+		]
+	);
+	assert_eq!(h.recording.samples.try_pop(), None, "a MIDI take records no sound");
+	assert_eq!(h.shared.record_dropped(), 0);
+
+	// Another take counts its frames from its own start.
+	h.shared.set_recording(RecordMode::Off);
+	h.events.try_push(note_on(0, 61)).unwrap();
+	render(&mut h);
+	assert!(recorded_events(&mut h).is_empty(), "nothing is recorded between takes");
+	h.shared.set_recording(RecordMode::Midi);
+	render(&mut h);
+	h.events.try_push(bend).unwrap();
+	render(&mut h);
+	assert_eq!(recorded_events(&mut h), [stamped(FRAMES, bend)]);
+}
+
+#[test]
+fn an_audio_take_records_no_events_and_a_full_event_ring_is_counted() {
+	let mut h = harness();
+	h.shared.set_recording(RecordMode::Audio);
+	h.events.try_push(note_on(0, 60)).unwrap();
+	render(&mut h);
+	assert!(
+		recorded_events(&mut h).is_empty(),
+		"an audio take records the sound, not the events"
+	);
+	assert!(h.recording.samples.try_pop().is_some());
+
+	// Nobody reads the ring of the MIDI take: what does not fit is counted, the callback goes on.
+	h.shared.set_recording(RecordMode::Midi);
+	let before = h.shared.record_dropped();
+	for key in 0..RING_CAPACITY as u8 {
+		h.events.try_push(note_on(0, key)).unwrap();
+	}
+	render(&mut h);
+	assert_eq!(h.shared.record_dropped(), before, "the ring holds this many");
+	for key in 0..5 {
+		h.events.try_push(note_off(0, key)).unwrap();
+	}
+	render(&mut h);
+	assert_eq!(h.shared.record_dropped(), before + 5);
+	assert_eq!(recorded_events(&mut h).len(), RING_CAPACITY);
+}
+
+#[test]
+fn the_record_mode_is_published_as_it_was_set() {
+	let shared = AudioShared::default();
+	assert_eq!(shared.recording(), RecordMode::Off);
+	for mode in [RecordMode::Audio, RecordMode::Midi, RecordMode::Off] {
+		shared.set_recording(mode);
+		assert_eq!(shared.recording(), mode);
+	}
 }

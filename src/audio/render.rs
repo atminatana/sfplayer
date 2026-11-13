@@ -12,11 +12,11 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use ringbuf::traits::{Consumer, Producer};
-use ringbuf::{HeapCons, HeapProd};
+use ringbuf::traits::{Consumer, Producer, Split};
+use ringbuf::{HeapCons, HeapProd, HeapRb};
 
 use super::meter::measure;
-use super::{AudioShared, Source};
+use super::{AudioShared, RecordMode, Source};
 use crate::midi::{MidiEvent, controller};
 use crate::synth::SynthEngine;
 
@@ -38,6 +38,44 @@ pub enum Command {
 	ReplaceEngine(Option<Box<dyn SynthEngine>>),
 }
 
+/// An event the engine was fed during a MIDI take, and the audio frame of the take it fell on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StampedEvent {
+	pub frame: u64,
+	pub event: MidiEvent,
+}
+
+/// The audio thread's ends of the two rings a take is recorded through.
+pub struct RecordSink {
+	/// Interleaved stereo f32: the output, while an audio take runs.
+	pub samples: HeapProd<f32>,
+	/// What the engine is fed, while a MIDI take runs.
+	pub events: HeapProd<StampedEvent>,
+}
+
+/// The recorder's ends of the same rings. They travel together: the session lends them to a take
+/// and gets them back when it ends.
+pub struct RecordSource {
+	pub samples: HeapCons<f32>,
+	pub events: HeapCons<StampedEvent>,
+}
+
+/// The two recording rings, for `samples` samples and `events` events.
+pub fn record_rings(samples: usize, events: usize) -> (RecordSink, RecordSource) {
+	let (samples_tx, samples_rx) = HeapRb::<f32>::new(samples).split();
+	let (events_tx, events_rx) = HeapRb::<StampedEvent>::new(events).split();
+	(
+		RecordSink {
+			samples: samples_tx,
+			events: events_tx,
+		},
+		RecordSource {
+			samples: samples_rx,
+			events: events_rx,
+		},
+	)
+}
+
 pub struct BlockRenderer {
 	engine: Option<Box<dyn SynthEngine>>,
 	events: HeapCons<MidiEvent>,
@@ -45,8 +83,12 @@ pub struct BlockRenderer {
 	file_events: HeapCons<MidiEvent>,
 	commands: HeapCons<Command>,
 	retired: HeapProd<Box<dyn SynthEngine>>,
-	/// audio → recorder thread: interleaved stereo f32 while `shared.is_recording()`.
-	recording: HeapProd<f32>,
+	/// audio → recorder thread: the output or the events of a take, by what is being recorded.
+	recording: RecordSink,
+	/// What this callback records; read once a callback, so a take changes between callbacks only.
+	record_mode: RecordMode,
+	/// Frames rendered since the MIDI take began: the time stamp of its events.
+	take_frames: u64,
 	shared: Arc<AudioShared>,
 	sample_rate: u32,
 	left: Vec<f32>,
@@ -67,7 +109,7 @@ impl BlockRenderer {
 		file_events: HeapCons<MidiEvent>,
 		commands: HeapCons<Command>,
 		retired: HeapProd<Box<dyn SynthEngine>>,
-		recording: HeapProd<f32>,
+		recording: RecordSink,
 		shared: Arc<AudioShared>,
 		sample_rate: u32,
 	) -> Self {
@@ -78,6 +120,8 @@ impl BlockRenderer {
 			commands,
 			retired,
 			recording,
+			record_mode: RecordMode::Off,
+			take_frames: 0,
 			shared,
 			sample_rate,
 			left: vec![0.0; MAX_CHUNK_FRAMES],
@@ -129,6 +173,10 @@ impl BlockRenderer {
 	pub fn fill(&mut self, output: &mut [f32], channels: usize) {
 		// Clock reads are user-mode on every supported platform (QPC / vDSO), so they are allowed here (N-03).
 		let started = Instant::now();
+		self.record_mode = self.shared.recording();
+		if self.record_mode != RecordMode::Midi {
+			self.take_frames = 0;
+		}
 		// The file first: when playback stops, the UI sends what puts the synthesizer back in order
 		// after the player has sent the last of the file — and it must find that already applied.
 		self.drain_file_events();
@@ -145,14 +193,18 @@ impl BlockRenderer {
 					let (levels, clipped) = measure(&self.left[..frames], &self.right[..frames], gain);
 					self.shared.publish_levels(levels, clipped);
 					interleave(&self.left[..frames], &self.right[..frames], gain, chunk, channels);
-					if self.shared.is_recording() {
+					if self.record_mode == RecordMode::Audio {
 						let scratch = &mut self.record_scratch[..frames * 2];
 						interleave(&self.left[..frames], &self.right[..frames], gain, scratch, 2);
-						let pushed = self.recording.push_slice(scratch);
+						let pushed = self.recording.samples.push_slice(scratch);
 						self.shared.add_record_dropped((scratch.len() - pushed) as u32);
 					}
 				}
 			}
+		}
+		// Events are applied at the start of a callback: everything in the next one is this much later.
+		if self.record_mode == RecordMode::Midi {
+			self.take_frames += total_frames as u64;
 		}
 		for source in Source::ALL {
 			self.shared.publish_notes(source, self.keys_of(source));
@@ -208,13 +260,22 @@ impl BlockRenderer {
 
 	/// One event on its way to the engine. With a source it is a played note or controller: omni and
 	/// transposition apply and the note is tracked for that source. Without one it is a service
-	/// message of the UI and goes to the engine as it is.
+	/// message of the UI and goes to the engine as it is. A MIDI take records it as the engine gets it.
 	fn feed(&mut self, event: MidiEvent, source: Option<Source>) {
 		let event = match source {
 			Some(source) => self.prepare(event, source),
 			None => event,
 		};
 		self.track(event, source);
+		if self.record_mode == RecordMode::Midi {
+			let stamped = StampedEvent {
+				frame: self.take_frames,
+				event,
+			};
+			if self.recording.events.try_push(stamped).is_err() {
+				self.shared.add_record_dropped(1);
+			}
+		}
 		if let Some(engine) = self.engine.as_mut() {
 			apply_event(engine.as_mut(), event);
 		}

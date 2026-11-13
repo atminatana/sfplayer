@@ -1,6 +1,6 @@
 //! State shared between the audio callback and other threads through atomics only (spec N-03).
 
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
 use super::meter::Levels;
 
@@ -44,12 +44,23 @@ pub struct AudioShared {
 	transpose: AtomicI32,
 	/// Channel (0-based) all hardware MIDI is redirected to; −1 = off (F-15 omni).
 	omni_channel: AtomicI32,
-	/// While set, the callback copies its output into the recording ring (F-20).
-	recording: AtomicBool,
-	/// Samples the callback could not fit into the recording ring.
+	/// What the callback records now (F-20, F-23), a `RecordMode`.
+	recording: AtomicU8,
+	/// Samples, or events of a MIDI take, the callback could not fit into the recording ring.
 	record_dropped: AtomicU32,
 	/// Keys sounding now, by source: a bit per key, the low and the high half of the 128 (F-24).
 	notes: [[AtomicU64; 2]; Source::COUNT],
+}
+
+/// What the audio callback hands to the recorder thread.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum RecordMode {
+	Off = 0,
+	/// Its output, as samples (F-20).
+	Audio = 1,
+	/// The events it feeds the engine, each stamped with its time (F-23).
+	Midi = 2,
 }
 
 impl AudioShared {
@@ -64,7 +75,7 @@ impl AudioShared {
 			max_voices: AtomicU32::new(0),
 			transpose: AtomicI32::new(0),
 			omni_channel: AtomicI32::new(-1),
-			recording: AtomicBool::new(false),
+			recording: AtomicU8::new(RecordMode::Off as u8),
 			record_dropped: AtomicU32::new(0),
 			notes: [const { [const { AtomicU64::new(0) }; 2] }; Source::COUNT],
 		}
@@ -153,12 +164,16 @@ impl AudioShared {
 		u8::try_from(self.omni_channel.load(Ordering::Relaxed)).ok()
 	}
 
-	pub fn set_recording(&self, on: bool) {
-		self.recording.store(on, Ordering::Relaxed);
+	pub fn set_recording(&self, mode: RecordMode) {
+		self.recording.store(mode as u8, Ordering::Relaxed);
 	}
 
-	pub fn is_recording(&self) -> bool {
-		self.recording.load(Ordering::Relaxed)
+	pub fn recording(&self) -> RecordMode {
+		match self.recording.load(Ordering::Relaxed) {
+			mode if mode == RecordMode::Audio as u8 => RecordMode::Audio,
+			mode if mode == RecordMode::Midi as u8 => RecordMode::Midi,
+			_ => RecordMode::Off,
+		}
 	}
 
 	pub fn record_dropped(&self) -> u32 {

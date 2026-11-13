@@ -1,9 +1,11 @@
-//! Reading Standard MIDI Files (spec v1.2, F-21): formats 0 and 1, turned into one list of channel
+//! Standard MIDI Files. Writing them is in `write.rs`; here is reading (spec v1.2, F-21): formats 0 and 1, turned into one list of channel
 //! messages with the time of each in seconds from the start.
 //!
 //! The file gives time in ticks and the length of a tick through tempo changes; both are resolved
 //! here, so the player needs no knowledge of either. Tracks are merged in time order. Whatever is not a
 //! channel message the synthesizer acts on — system exclusive data, texts, markers — is skipped.
+
+pub mod write;
 
 use std::path::{Path, PathBuf};
 

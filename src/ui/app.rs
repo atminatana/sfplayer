@@ -267,8 +267,7 @@ impl App {
 			ButtonId::FilePause => self.ask(Request::FilePause),
 			ButtonId::FileStop => self.perform(Action::FileStop),
 			ButtonId::RecordCancel => self.ask(Request::CancelRecord),
-			// Recording MIDI arrives with plan step 6.2; until then the screen shows this button unavailable.
-			ButtonId::FormatMidi => None,
+			ButtonId::FormatMidi => self.choose_format(RecordFormat::Midi),
 		}
 	}
 

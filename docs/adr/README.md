@@ -18,3 +18,4 @@
 | [0012](0012-gterm-window-ui.md) | Интерфейс — окно gterm вместо терминала; Windows и Linux; уточнение о лицензиях (v1.2) | Accepted |
 | [0013](0013-builtin-synth-shared-effects.md) | Встроенный синтезатор — второй движок за `SynthEngine`; эффекты с общим управлением (v1.2) | Accepted |
 | [0014](0014-smf-reader-and-sequencer-thread.md) | MIDI-файл: собственный разбор SMF и поток-секвенсор со своим кольцом (v1.2) | Accepted |
+| [0015](0015-midi-take.md) | Запись MIDI: события из аудио-потока с меткой по счётчику кадров, файл SMF формата 0 (v1.2) | Accepted |

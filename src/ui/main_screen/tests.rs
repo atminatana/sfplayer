@@ -290,7 +290,7 @@ fn buttons_show_what_is_chosen_and_what_is_unavailable() {
 	assert!(chosen.flags.contains(CellFlags::BOLD));
 	let (row, col) = find(&buf, "[OGG]");
 	assert_eq!((buf.cell(col, row).fg, buf.cell(col, row).bg), (TEXT, BACKGROUND));
-	assert_eq!(colour_of(&buf, "[MIDI]"), DISABLED);
+	assert_eq!(colour_of(&buf, "[MIDI]"), TEXT, "not chosen, available");
 	assert_eq!(colour_of(&buf, "[Synth]"), TEXT, "the other processor can be chosen");
 	let (row, col) = find(&buf, "[Sound Font]");
 	assert_eq!(buf.cell(col, row).bg, VALUE);
@@ -534,6 +534,7 @@ fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
 		(ButtonId::Folder, "[Папка для файлов]"),
 		(ButtonId::FormatFlac, "[FLAC]"),
 		(ButtonId::FormatOgg, "[OGG]"),
+		(ButtonId::FormatMidi, "[MIDI]"),
 		(ButtonId::RecordStart, "[Старт] [Стоп] [Отмена]"),
 	];
 	for (id, text) in available {
@@ -554,14 +555,7 @@ fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
 	}
 
 	// What the screen shows unavailable does not react.
-	for text in [
-		"[Старт] [Пауза] [Стоп]",
-		"[Пауза]",
-		"[Стоп]",
-		"[MIDI]",
-		"[Стоп] [Отмена]",
-		"[Отмена]",
-	] {
+	for text in ["[Старт] [Пауза] [Стоп]", "[Пауза]", "[Стоп]", "[Стоп] [Отмена]", "[Отмена]"] {
 		assert_eq!(click(&mut buttons, &buf, text), Touch::Missed, "{text}");
 	}
 }
@@ -1081,10 +1075,6 @@ fn the_transport_buttons_stand_in_the_tab_ring_after_the_file_button() {
 	assert_eq!(click(&mut buttons, &buf, "[Старт] [Пауза]"), Touch::Pressed(ButtonId::FileStart));
 }
 
-fn megabytes(bytes: u64) -> u64 {
-	crate::ui::view::tenths_of_megabyte(bytes)
-}
-
 #[test]
 fn a_running_take_shows_its_time_size_and_file_and_offers_a_red_cancel() {
 	let mut app = App::new("ru");
@@ -1092,7 +1082,7 @@ fn a_running_take_shows_its_time_size_and_file_and_offers_a_red_cancel() {
 	let mut recording = view();
 	recording.take = TakeView::Recording {
 		name: "2026-11-13_12-03-41.flac".into(),
-		tenths_of_megabyte: megabytes(1_300_000),
+		size: Size::of(1_300_000),
 	};
 	let mut buttons = Buttons::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
@@ -1108,10 +1098,10 @@ fn a_running_take_shows_its_time_size_and_file_and_offers_a_red_cancel() {
 	// A name too long for the row is cut and marked, one cell short of the right edge.
 	recording.take = TakeView::Recording {
 		name: "x".repeat(90),
-		tenths_of_megabyte: 0,
+		size: Size::of(0),
 	};
 	let buf = rendered(&app, &recording);
-	let (row, _) = find(&buf, "● ЗАП 00:42 · 0.0 МБ · xxx");
+	let (row, _) = find(&buf, "● ЗАП 00:42 · 0 КБ · xxx");
 	let line = &lines_of(&buf)[row];
 	assert!(line.ends_with("xx…"));
 	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 1);
@@ -1126,7 +1116,7 @@ fn the_last_saved_take_is_shown_in_green_with_its_path_and_size() {
 	let mut saved = view();
 	saved.take = TakeView::Saved {
 		path: "D:/rec/2026-11-13_12-03-41.flac".into(),
-		tenths_of_megabyte: megabytes(5 * 1024 * 1024 + 300 * 1024),
+		size: Size::of(5 * 1024 * 1024 + 300 * 1024),
 	};
 	let buf = rendered_ru(&saved);
 	println!(
@@ -1147,7 +1137,7 @@ fn the_last_saved_take_is_shown_in_green_with_its_path_and_size() {
 	// A long path loses its beginning, not the file name; the row stops one cell short of the edge.
 	saved.take = TakeView::Saved {
 		path: format!("D:/{}2026-11-13_12-03-41.flac", "папка/".repeat(20)),
-		tenths_of_megabyte: 12,
+		size: Size::TenthsOfMegabyte(12),
 	};
 	let buf = rendered_ru(&saved);
 	let (row, _) = find(&buf, "сохранено: …");
@@ -1179,4 +1169,72 @@ fn a_text_cut_at_the_front_keeps_its_end() {
 	assert_eq!(fitted_end("abcdef", 1), "…");
 	assert_eq!(fitted_end("abcdef", 0), "…");
 	assert_eq!(fitted_end("папка", 3), "…ка");
+}
+
+#[test]
+fn the_midi_format_is_chosen_like_the_others_and_says_what_it_records() {
+	let mut midi = view();
+	midi.record_format = RecordFormat::Midi;
+	let mut buttons = Buttons::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &App::new("ru"), &midi, &mut buttons);
+	assert!(is_shown(&buf, "[FLAC] [OGG] [MIDI]  запись MIDI-событий"));
+	assert!(!is_shown(&buf, "запись аудиопотока"));
+	assert_eq!(colour_of(&buf, "запись MIDI-событий"), HINT);
+	let (row, col) = find(&buf, "[MIDI]");
+	assert_eq!(
+		(buf.cell(col, row).fg, buf.cell(col, row).bg),
+		(BACKGROUND, VALUE),
+		"the chosen format is lit"
+	);
+	assert_eq!(colour_of(&buf, "[FLAC]"), TEXT);
+	assert_eq!(click(&mut buttons, &buf, "[MIDI]"), Touch::Pressed(ButtonId::FormatMidi));
+	assert!(is_shown(
+		&rendered(&App::new("en"), &midi),
+		"[FLAC] [OGG] [MIDI]  records MIDI events"
+	));
+
+	// With another format chosen the button is an ordinary one.
+	let buf = rendered_ru(&view());
+	assert_eq!(colour_of(&buf, "[MIDI]"), TEXT);
+	assert!(is_shown(&buf, "[MIDI]  запись аудиопотока"));
+
+	// Under a running MIDI take the format is locked like the others.
+	let mut app = App::new("ru");
+	app.recording = Some(Duration::from_secs(3));
+	let mut buttons = Buttons::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &app, &midi, &mut buttons);
+	let (row, col) = find(&buf, "[MIDI]");
+	assert_eq!(buf.cell(col, row).bg, VALUE);
+	assert_eq!(click(&mut buttons, &buf, "[MIDI]"), Touch::Missed);
+	assert_eq!(colour_of(&buf, "[FLAC]"), DISABLED);
+}
+
+#[test]
+fn a_small_take_is_sized_in_kilobytes_and_a_large_one_in_megabytes() {
+	let mut app = App::new("ru");
+	app.recording = Some(Duration::from_secs(5));
+	let mut recording = view();
+	recording.take = TakeView::Recording {
+		name: "2026-11-13_12-03-41.mid".into(),
+		size: Size::of(3 * 1024 + 100),
+	};
+	assert!(is_shown(
+		&rendered(&app, &recording),
+		"● ЗАП 00:05 · 3 КБ · 2026-11-13_12-03-41.mid"
+	));
+
+	let mut saved = view();
+	saved.take = TakeView::Saved {
+		path: "D:/rec/take.mid".into(),
+		size: Size::of(700),
+	};
+	assert!(is_shown(&rendered_ru(&saved), "сохранено: D:/rec/take.mid · 1 КБ"));
+	assert!(is_shown(&rendered(&App::new("en"), &saved), "saved: D:/rec/take.mid · 1 KB"));
+	saved.take = TakeView::Saved {
+		path: "D:/rec/take.flac".into(),
+		size: Size::of(1024 * 1024),
+	};
+	assert!(is_shown(&rendered_ru(&saved), "сохранено: D:/rec/take.flac · 1.0 МБ"));
 }

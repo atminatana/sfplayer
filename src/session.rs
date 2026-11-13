@@ -16,7 +16,7 @@ use std::sync::mpsc::{self, Receiver};
 use ringbuf::traits::{Consumer, Producer};
 use ringbuf::{HeapCons, HeapProd};
 
-use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, Mixer, StreamParams};
+use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, Mixer, RecordMode, RecordSource, StreamParams};
 use crate::cli::DeviceSelector;
 use crate::config::{Config, EngineKind, Settings};
 use crate::midi::player::Player;
@@ -80,8 +80,8 @@ pub struct Session {
 	audio: Option<AudioStream>,
 	commands: Option<HeapProd<Command>>,
 	retired: Option<HeapCons<Box<dyn SynthEngine>>>,
-	/// Recording ring consumer while no recording is running.
-	record_rx: Option<HeapCons<f32>>,
+	/// The recorder's ends of the recording rings while no take is running.
+	record_rx: Option<RecordSource>,
 	recorder: Option<Recorder>,
 	/// The last take saved in this session.
 	pub last_take: Option<Take>,
@@ -400,8 +400,8 @@ impl Session {
 		Ok(())
 	}
 
-	/// Home: starts a recording in the configured format (F-20); a running take is left alone.
-	/// Whatever goes wrong, the ring of samples stays with the session for the next attempt.
+	/// Home: starts a recording in the configured format (F-20, F-23); a running take is left alone.
+	/// Whatever goes wrong, the recording rings stay with the session for the next attempt.
 	pub fn start_recording(&mut self) {
 		if self.recorder.is_some() {
 			return;
@@ -422,7 +422,7 @@ impl Session {
 		};
 		match control::begin_take(&mut self.record_rx, format, path, params) {
 			Some(Ok(recorder)) => {
-				self.shared.set_recording(true);
+				self.shared.set_recording(control::record_mode(format));
 				self.recorder = Some(recorder);
 			}
 			Some(Err(error)) => {
@@ -438,9 +438,9 @@ impl Session {
 		let Some(recorder) = self.recorder.take() else {
 			return;
 		};
-		self.shared.set_recording(false);
-		let (samples, result) = recorder.stop();
-		self.record_rx = samples;
+		self.shared.set_recording(RecordMode::Off);
+		let (rings, result) = recorder.stop();
+		self.record_rx = rings;
 		self.notice = Some(match result {
 			Ok(take) => {
 				let name = take
@@ -460,9 +460,9 @@ impl Session {
 		let Some(recorder) = self.recorder.take() else {
 			return;
 		};
-		self.shared.set_recording(false);
-		let (samples, removed) = recorder.cancel();
-		self.record_rx = samples;
+		self.shared.set_recording(RecordMode::Off);
+		let (rings, removed) = recorder.cancel();
+		self.record_rx = rings;
 		self.notice = Some(match removed {
 			Ok(()) => Notice::RecordCancelled,
 			Err(error) => Notice::RecordError(error.to_string()),

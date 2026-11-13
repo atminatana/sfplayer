@@ -48,24 +48,44 @@ pub struct View {
 	pub take: TakeView,
 }
 
-/// What the record row says about takes. Sizes are in tenths of a megabyte — what the row shows —
-/// so that a growing file redraws the window only when the shown number changes.
+/// What the record row says about takes. Sizes are kept as the row shows them, so that a growing
+/// file redraws the window only when the shown number changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TakeView {
 	/// Nothing recorded in this session yet.
 	None,
 	Recording {
 		name: String,
-		tenths_of_megabyte: u64,
+		size: Size,
 	},
 	Saved {
 		path: String,
-		tenths_of_megabyte: u64,
+		size: Size,
 	},
 }
 
+/// The size of a file as the screen shows it: whole kilobytes under a megabyte — a MIDI take is a few
+/// of them — and tenths of a megabyte from there on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Size {
+	Kilobytes(u64),
+	TenthsOfMegabyte(u64),
+}
+
+impl Size {
+	pub fn of(bytes: u64) -> Self {
+		const KILOBYTE: u64 = 1024;
+		let kilobytes = (bytes + KILOBYTE / 2) / KILOBYTE;
+		if kilobytes < KILOBYTE {
+			Self::Kilobytes(kilobytes)
+		} else {
+			Self::TenthsOfMegabyte(tenths_of_megabyte(bytes))
+		}
+	}
+}
+
 /// Bytes as tenths of a megabyte, rounded to the nearest.
-pub(super) fn tenths_of_megabyte(bytes: u64) -> u64 {
+fn tenths_of_megabyte(bytes: u64) -> u64 {
 	const TENTH: u64 = 1024 * 1024 / 10;
 	(bytes + TENTH / 2) / TENTH
 }
@@ -140,11 +160,11 @@ impl View {
 			take: match (session.recording_file(), &session.last_take) {
 				(Some((name, bytes)), _) => TakeView::Recording {
 					name,
-					tenths_of_megabyte: tenths_of_megabyte(bytes),
+					size: Size::of(bytes),
 				},
 				(None, Some(take)) => TakeView::Saved {
 					path: take.path.display().to_string(),
-					tenths_of_megabyte: tenths_of_megabyte(take.bytes),
+					size: Size::of(take.bytes),
 				},
 				(None, None) => TakeView::None,
 			},
@@ -264,6 +284,24 @@ mod tests {
 
 	fn keys(sounding: &[u8]) -> u128 {
 		sounding.iter().fold(0, |map, key| map | (1u128 << key))
+	}
+
+	#[test]
+	fn small_files_are_sized_in_kilobytes_and_large_ones_in_tenths_of_a_megabyte() {
+		assert_eq!(Size::of(0), Size::Kilobytes(0));
+		assert_eq!(Size::of(511), Size::Kilobytes(0));
+		assert_eq!(Size::of(512), Size::Kilobytes(1), "half a kilobyte rounds up");
+		assert_eq!(
+			Size::of(1023 * 1024 + 511),
+			Size::Kilobytes(1023),
+			"the last size shown in kilobytes"
+		);
+		assert_eq!(
+			Size::of(1023 * 1024 + 512),
+			Size::TenthsOfMegabyte(10),
+			"what would read 1024 KB is a megabyte"
+		);
+		assert_eq!(Size::of(5 * 1024 * 1024), Size::TenthsOfMegabyte(50));
 	}
 
 	#[test]

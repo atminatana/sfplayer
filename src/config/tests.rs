@@ -305,3 +305,16 @@ fn the_midi_file_and_the_recent_ones_are_kept_in_the_source_section() {
 	let old: Config = toml::from_str("[midi]\ninput = \"KeyStep\"\n").expect("parse");
 	assert_eq!(old.source, SourceConfig::default());
 }
+
+#[test]
+fn the_midi_format_is_spelled_midi_in_the_file() {
+	let config: Config = toml::from_str("[record]\nformat = \"midi\"\n").expect("parses");
+	assert_eq!(config.record.format, RecordFormat::Midi);
+	let written = toml::to_string_pretty(&config).expect("serialises");
+	assert!(written.lines().any(|line| line == "format = \"midi\""), "{written}");
+	// The names of v1.0 are kept.
+	for (name, format) in [("flac", RecordFormat::Flac), ("ogg_vorbis", RecordFormat::OggVorbis)] {
+		let config: Config = toml::from_str(&format!("[record]\nformat = \"{name}\"\n")).expect("parses");
+		assert_eq!(config.record.format, format);
+	}
+}

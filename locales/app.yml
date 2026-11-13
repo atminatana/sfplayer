@@ -462,3 +462,9 @@ main.saved:
 main.megabytes:
   en: "%{value} MB"
   ru: "%{value} МБ"
+main.format_midi:
+  en: "records MIDI events"
+  ru: "запись MIDI-событий"
+main.kilobytes:
+  en: "%{value} KB"
+  ru: "%{value} КБ"

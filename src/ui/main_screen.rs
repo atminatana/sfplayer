@@ -19,7 +19,7 @@ use super::meter::{dbfs_text, level_ratio};
 use super::paint::Pen;
 pub use super::paint::{BACKGROUND, DISABLED, ERROR, GOOD, HINT, LABEL, MESSAGE, METER_TRACK, RULE, TEXT, VALUE};
 use super::piano;
-use super::view::{FileView, NoticeTarget, TakeView, View, note_names, notice_target, notice_text};
+use super::view::{FileView, NoticeTarget, Size, TakeView, View, note_names, notice_target, notice_text};
 use crate::config::{EngineKind, RecordFormat};
 use crate::midi::MidiStatus;
 use crate::midi::player::Transport;
@@ -563,9 +563,12 @@ fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &Vi
 	pen.gap(1);
 	put(&mut pen, buttons, ButtonId::FormatOgg, "OGG", format_look(RecordFormat::OggVorbis));
 	pen.gap(1);
-	// Recording MIDI arrives with plan stage 6; until then that format is shown unavailable.
-	put(&mut pen, buttons, ButtonId::FormatMidi, "MIDI", Look::Disabled);
-	pen.gap(2).text(&t!("main.format_audio", locale = locale), HINT);
+	put(&mut pen, buttons, ButtonId::FormatMidi, "MIDI", format_look(RecordFormat::Midi));
+	let recorded = match view.record_format {
+		RecordFormat::Flac | RecordFormat::OggVorbis => t!("main.format_audio", locale = locale),
+		RecordFormat::Midi => t!("main.format_midi", locale = locale),
+	};
+	pen.gap(2).text(&recorded, HINT);
 
 	label(buf, y + 3, &t!("main.record", locale = locale));
 	let unless = |unavailable: bool| if unavailable { Look::Disabled } else { Look::Normal };
@@ -597,21 +600,22 @@ fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &Vi
 	pen.gap(2);
 	// What follows the buttons has the row up to one cell short of the right edge.
 	let room = usize::from(buf_width(&pen).saturating_sub(pen.x + 1));
-	let megabytes = |tenths: u64| {
-		t!(
+	let size_text = |size: Size| match size {
+		Size::Kilobytes(kilobytes) => t!("main.kilobytes", locale = locale, value = kilobytes).into_owned(),
+		Size::TenthsOfMegabyte(tenths) => t!(
 			"main.megabytes",
 			locale = locale,
 			value = format!("{}.{}", tenths / 10, tenths % 10)
 		)
-		.into_owned()
+		.into_owned(),
 	};
 	match (recording, view.line_error(NoticeTarget::Record)) {
 		(Some(elapsed), _) => {
 			let time = format!("{:02}:{:02}", elapsed.as_secs() / 60, elapsed.as_secs() % 60);
 			let mut indicator = format!("{} {}", record_dot(elapsed), t!("status.rec", locale = locale, time = time));
 			// The size and the name of the file being written follow the timer (spec v1.2 §3).
-			if let TakeView::Recording { name, tenths_of_megabyte } = &view.take {
-				indicator = format!("{indicator} · {} · {name}", megabytes(*tenths_of_megabyte));
+			if let TakeView::Recording { name, size } = &view.take {
+				indicator = format!("{indicator} · {} · {name}", size_text(*size));
 			}
 			pen.styled(&fitted(&indicator, room), Style::new().fg(ERROR).bold());
 		}
@@ -619,9 +623,9 @@ fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &Vi
 			pen.text(&fitted(error, room), ERROR);
 		}
 		(None, None) => match &view.take {
-			TakeView::Saved { path, tenths_of_megabyte } => {
+			TakeView::Saved { path, size } => {
 				// A path too long for the row loses its beginning: the file name is what tells takes apart.
-				let size = megabytes(*tenths_of_megabyte);
+				let size = size_text(*size);
 				let frame = t!("main.saved", locale = locale, path = "", size = size).chars().count();
 				let saved = t!(
 					"main.saved",

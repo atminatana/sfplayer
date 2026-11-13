@@ -4,12 +4,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use ringbuf::HeapProd;
 use ringbuf::traits::Producer;
-use ringbuf::{HeapCons, HeapProd};
 
 use super::{MIDI_CHANNELS, MidiFile, Notice, Session};
-use crate::audio::Command;
 use crate::audio::mixer::{MASTER_STEP, MASTER_STEP_FAST};
+use crate::audio::{Command, RecordMode, RecordSource};
 use crate::config::{AdsrField, EngineKind, RecordFormat, SynthConfig};
 use crate::midi::player::{PlayerStatus, Transport};
 use crate::midi::smf::{self, SmfError};
@@ -381,17 +381,25 @@ pub(super) fn push_preset(commands: &mut HeapProd<Command>, channel: u8, bank: u
 	let _ = commands.try_push(Command::Midi(MidiEvent::ProgramChange { channel, program }));
 }
 
-/// Starts a take on the ring kept in `ring`; `None` when there is no ring to record from. If the take
-/// does not start, the ring is put back: the next attempt needs it.
+/// What the audio thread is to hand over during a take of `format`.
+pub(super) fn record_mode(format: RecordFormat) -> RecordMode {
+	match format {
+		RecordFormat::Flac | RecordFormat::OggVorbis => RecordMode::Audio,
+		RecordFormat::Midi => RecordMode::Midi,
+	}
+}
+
+/// Starts a take on the rings kept in `rings`; `None` when there are none to record from. If the take
+/// does not start, the rings are put back: the next attempt needs them.
 pub(super) fn begin_take(
-	ring: &mut Option<HeapCons<f32>>,
+	rings: &mut Option<RecordSource>,
 	format: RecordFormat,
 	path: PathBuf,
 	params: RecordParams,
 ) -> Option<Result<Recorder, RecordError>> {
-	let samples = ring.take()?;
-	Some(Recorder::start(format, path, params, samples).map_err(|failed| {
-		*ring = failed.samples;
+	let lent = rings.take()?;
+	Some(Recorder::start(format, path, params, lent).map_err(|failed| {
+		*rings = failed.rings;
 		failed.error
 	}))
 }

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use ringbuf::traits::{Producer, Split};
 use ringbuf::{HeapProd, HeapRb};
-use sf2_player::audio::{AudioShared, BlockRenderer, Command};
+use sf2_player::audio::{AudioShared, BlockRenderer, Command, RecordMode, RecordSource, record_rings};
 use sf2_player::midi::{MidiEvent, controller};
 use sf2_player::synth::{Adsr, BuiltinSynth, MAX_VOICES, RustySynthEngine, SoundFontBank, SynthEngine, Timbre, Wave};
 
@@ -99,7 +99,7 @@ struct Core {
 	commands: HeapProd<Command>,
 	/// The far ends of the rings the core writes to: kept so that they are not closed.
 	_retired: ringbuf::HeapCons<Box<dyn SynthEngine>>,
-	_recording: ringbuf::HeapCons<f32>,
+	_recording: RecordSource,
 	shared: Arc<AudioShared>,
 }
 
@@ -109,7 +109,7 @@ fn core_with(engine: Box<dyn SynthEngine>) -> Core {
 	let (file_events, file_events_rx) = HeapRb::<MidiEvent>::new(RING).split();
 	let (mut commands, commands_rx) = HeapRb::<Command>::new(RING).split();
 	let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(4).split();
-	let (recording_tx, recording) = HeapRb::<f32>::new(BLOCK * 8).split();
+	let (recording_tx, recording) = record_rings(BLOCK * 8, RING);
 	let mut renderer = BlockRenderer::new(
 		events_rx,
 		file_events_rx,
@@ -137,7 +137,7 @@ fn core_with(engine: Box<dyn SynthEngine>) -> Core {
 }
 
 /// What a busy callback sees: notes from all three sources on several channels, controllers, a bend, a
-/// panic, recording switched on, and a replaced engine on its way back to the UI thread.
+/// panic, a MIDI take and an audio take, and a replaced engine on its way back to the UI thread.
 fn busy_callbacks(core: &mut Core, spare_engine: Box<dyn SynthEngine>) {
 	let mut output = [0.0f32; BLOCK * 2];
 	for key in 30..100 {
@@ -167,8 +167,11 @@ fn busy_callbacks(core: &mut Core, spare_engine: Box<dyn SynthEngine>) {
 	}
 	core.shared.set_transpose(3);
 	core.shared.set_omni_channel(Some(2));
-	core.shared.set_recording(true);
+	// A MIDI take first — every event above goes into its ring, more of them than it holds — then an
+	// audio take.
+	core.shared.set_recording(RecordMode::Midi);
 	core.renderer.fill(&mut output, 2);
+	core.shared.set_recording(RecordMode::Audio);
 	for key in 30..100 {
 		core.events.try_push(MidiEvent::NoteOff { channel: key % 16, key }).expect("room");
 	}

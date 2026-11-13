@@ -305,6 +305,8 @@ pub struct UiConfig {
 pub enum RecordFormat {
 	Flac,
 	OggVorbis,
+	/// The events, not the sound: a Standard MIDI File (spec v1.2, F-23).
+	Midi,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

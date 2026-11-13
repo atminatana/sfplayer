@@ -316,6 +316,7 @@ fn every_available_button_gives_the_command_of_its_hotkey() {
 		(ButtonId::Folder, Request::OpenRecordDialog),
 		(ButtonId::FormatFlac, Request::SetRecordFormat(RecordFormat::Flac)),
 		(ButtonId::FormatOgg, Request::SetRecordFormat(RecordFormat::OggVorbis)),
+		(ButtonId::FormatMidi, Request::SetRecordFormat(RecordFormat::Midi)),
 		(ButtonId::RecordStart, Request::StartRecord),
 		(ButtonId::RecordStop, Request::StopRecord),
 		(ButtonId::RecordCancel, Request::CancelRecord),
@@ -364,6 +365,7 @@ fn the_format_cannot_be_changed_under_a_running_take() {
 	app.recording = Some(Duration::from_secs(1));
 	assert_eq!(app.press_button(ButtonId::FormatOgg), None);
 	assert_eq!(app.press_button(ButtonId::FormatFlac), None);
+	assert_eq!(app.press_button(ButtonId::FormatMidi), None);
 	app.recording = None;
 	assert_eq!(
 		app.press_button(ButtonId::FormatOgg),

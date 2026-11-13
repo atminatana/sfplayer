@@ -256,6 +256,13 @@ fn effects_settings_round_trip_through_the_config_and_clamp_levels() {
 	assert_eq!(synth.sf2, None, "other synth fields untouched");
 }
 
+#[test]
+fn a_take_of_each_format_asks_the_audio_thread_for_what_it_writes() {
+	assert_eq!(record_mode(RecordFormat::Flac), RecordMode::Audio);
+	assert_eq!(record_mode(RecordFormat::OggVorbis), RecordMode::Audio);
+	assert_eq!(record_mode(RecordFormat::Midi), RecordMode::Midi);
+}
+
 /// The ring of samples survives a take that did not start (the defect behind plan step 6.1: one failed
 /// start used to leave the session unable to record until the audio stream was reopened).
 #[test]
@@ -271,7 +278,7 @@ fn a_failed_start_keeps_the_ring_for_the_next_take() {
 	);
 	assert!(!Path::new("take.flac").exists(), "no file is created without a ring");
 
-	let (_producer, consumer) = HeapRb::<f32>::new(64).split();
+	let (_producer, consumer) = crate::audio::record_rings(64, 64);
 	ring = Some(consumer);
 	let nowhere = PathBuf::from("definitely/not/here/take.flac");
 	let failed = begin_take(&mut ring, RecordFormat::Flac, nowhere, params).expect("there was a ring");

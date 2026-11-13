@@ -8,7 +8,7 @@ use ringbuf::traits::Split;
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 
 use super::device::device_name;
-use super::render::Command;
+use super::render::{Command, RecordSource, record_rings};
 use super::{AudioError, AudioShared, BlockRenderer};
 use crate::midi::MidiEvent;
 use crate::synth::SynthEngine;
@@ -19,6 +19,8 @@ pub const EVENT_RING_CAPACITY: usize = 1024;
 pub const COMMAND_RING_CAPACITY: usize = 256;
 /// Seconds of stereo audio the recording ring can hold while the recorder thread catches up.
 const RECORD_RING_SECONDS: u32 = 4;
+/// Events of a MIDI take the recording ring can hold between two looks of the recorder thread.
+const RECORD_EVENT_RING_CAPACITY: usize = 4096;
 const RETIRED_RING_CAPACITY: usize = 4;
 
 #[derive(Debug, Clone, Copy)]
@@ -46,8 +48,8 @@ pub struct AudioLinks {
 	pub commands: HeapProd<Command>,
 	/// audio → UI: engines replaced via `Command::ReplaceEngine`, to be dropped off the audio thread.
 	pub retired: HeapCons<Box<dyn SynthEngine>>,
-	/// audio → recorder: interleaved stereo f32 while recording (F-20).
-	pub recording: HeapCons<f32>,
+	/// audio → recorder: the output of an audio take (F-20) or the events of a MIDI take (F-23).
+	pub recording: RecordSource,
 }
 
 /// Opens and starts a silent stream (no engine yet); install one with `Command::ReplaceEngine`.
@@ -71,7 +73,7 @@ pub fn open_output_stream(
 		let (file_events, file_events_rx) = HeapRb::<MidiEvent>::new(EVENT_RING_CAPACITY).split();
 		let (commands, commands_rx) = HeapRb::<Command>::new(COMMAND_RING_CAPACITY).split();
 		let (retired_tx, retired) = HeapRb::<Box<dyn SynthEngine>>::new(RETIRED_RING_CAPACITY).split();
-		let (recording_tx, recording) = HeapRb::<f32>::new((sample_rate * 2 * RECORD_RING_SECONDS) as usize).split();
+		let (recording_tx, recording) = record_rings((sample_rate * 2 * RECORD_RING_SECONDS) as usize, RECORD_EVENT_RING_CAPACITY);
 		let mut renderer = BlockRenderer::new(
 			events_rx,
 			file_events_rx,

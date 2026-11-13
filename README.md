@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md)
 
-SoundFont synthesizer in Rust in its own window with a grid of character cells: notes from a MIDI keyboard (or from the two bottom rows of a regular keyboard) are played through the chosen audio output with a SoundFont 2 (.sf2) bank or with the built-in synthesizer; a MIDI file is played the same way. The screen follows the signal path — MIDI sources, the processor, the output, recording to a file: it shows the chosen devices, bank, preset, effects, the output level and the master volume; a session can be recorded to FLAC or Ogg Vorbis. Windows and Linux; the interface is in English or Russian.
+SoundFont synthesizer in Rust in its own window with a grid of character cells: notes from a MIDI keyboard (or from the two bottom rows of a regular keyboard) are played through the chosen audio output with a SoundFont 2 (.sf2) bank or with the built-in synthesizer; a MIDI file is played the same way. The screen follows the signal path — MIDI sources, the processor, the output, recording to a file: it shows the chosen devices, bank, preset, effects, the output level and the master volume; a session can be recorded as sound to FLAC or Ogg Vorbis, or as the notes themselves to a MIDI file. Windows and Linux; the interface is in English or Russian.
 
 ## Installation
 
@@ -195,7 +195,7 @@ font_size = 14             # font size in pixels
 
 [record]
 dir = "D:/Music/sf2"       # remove — the Music folder/sf2_player
-format = "flac"            # "flac" | "ogg_vorbis"
+format = "flac"            # "flac" | "ogg_vorbis" | "midi"
 vorbis_quality = 0.5       # 0.0–1.0
 recent_dirs = ["D:/Music/sf2"]  # folders chosen before, up to 10; kept by the program
 ```
@@ -204,7 +204,7 @@ Command names for `[keys]`: `help`, `quit`, `midi_dialog`, `audio_dialog`, `sf2_
 
 ## Recording
 
-The folder of takes is chosen with F7 or the `[Folder for files]` button, the format with the `[FLAC]` and `[OGG]` buttons in the "Format" line; the format cannot be changed while a take runs. Home or the `[Start]` button starts and End or `[Stop]` stops recording. The `[Cancel]` button — red while a take runs, without a hotkey — stops the take and deletes its file; there is no confirmation. While a take runs, the red indicator `● REC mm:ss · size · file name` is shown, its dot blinking once a second; after a take is saved, the line shows a green `saved: path · size` (a path too long for the line loses its beginning). The file `YYYY-MM-DD_HH-MM-SS.flac` or `.ogg` appears in `record.dir` (by default the Music folder/sf2_player). FLAC is lossless 24-bit; Ogg Vorbis uses the `record.vorbis_quality` setting. Encoding runs in a separate thread; the audio callback only copies samples into a ring buffer, and an overflow is shown in the status line as `rec lost N`. Quitting while recording asks for confirmation.
+The folder of takes is chosen with F7 or the `[Folder for files]` button, the format with the `[FLAC]`, `[OGG]` and `[MIDI]` buttons in the "Format" line; the format cannot be changed while a take runs. Home or the `[Start]` button starts and End or `[Stop]` stops recording. The `[Cancel]` button — red while a take runs, without a hotkey — stops the take and deletes its file; there is no confirmation. While a take runs, the red indicator `● REC mm:ss · size · file name` is shown, its dot blinking once a second; after a take is saved, the line shows a green `saved: path · size` (a path too long for the line loses its beginning). The file `YYYY-MM-DD_HH-MM-SS.flac`, `.ogg` or `.mid` appears in `record.dir` (by default the Music folder/sf2_player). FLAC is lossless 24-bit; Ogg Vorbis uses the `record.vorbis_quality` setting. Encoding runs in a separate thread; the audio callback only copies samples into a ring buffer, and an overflow is shown in the status line as `rec lost N`. With the MIDI format no sound is recorded: the file (Standard MIDI File, format 0) gets the events the synthesizer was fed — the notes of the MIDI input, of the window and of a MIDI file being played, after transposition and omni, and what the program itself sends (Panic, a preset change). Notes still sounding when the take stops are ended in the file. Such a file can be chosen as the MIDI file source and played back. Quitting while recording asks for confirmation.
 
 ## Indicators
 
@@ -222,7 +222,8 @@ Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How t
 
 - macOS is not supported: the gterm window library runs on Windows and Linux.
 - In the selection windows (MIDI input, audio output, preset), the effects window and the help the mouse does not act — choices are made with keys; a click outside the window closes it. The mouse works on the buttons of the main screen and in the path dialogs (F4, F7).
-- Recording to a MIDI file and SF3 are not part of the current version; their buttons on the screen are shown as unavailable.
+- A MIDI take holds what was played, not the state of the synthesizer when it began: the preset and the effect levels chosen before the take are not in the file, and it plays with the preset chosen at playback. Time in the file is as fine as the audio buffer (about 5 ms with 256 frames at 48 kHz).
+- SF3 banks are not supported.
 - MIDI files of format 2 and files timed in SMPTE frames are not played; there is no seeking in a file.
 - The MIDI monitor and per-channel mixer strips of version 1.0 are not part of this screen; channel volume follows incoming CC 7 only.
 - The F5 preset applies to every channel except 10 (percussion); a Program Change from the MIDI keyboard still switches its own channel until the next F5 choice, and the "Preset" line keeps showing the F5 choice.
