@@ -146,9 +146,13 @@ impl Session {
 		self.shared.omni_channel()
 	}
 
-	/// F7 dialog result: `None` folder means the OS music directory (spec v1.1 §4.3).
-	pub fn set_recording(&mut self, dir: Option<PathBuf>, format: RecordFormat) {
-		self.config.record.dir = dir;
+	/// Where takes go: `None` means the OS music directory (spec v1.1 §4.3).
+	pub fn set_record_dir(&mut self, dir: Option<PathBuf>) {
+		self.config.set_record_dir(dir);
+	}
+
+	/// The format of the next take; a running take keeps its own.
+	pub fn set_record_format(&mut self, format: RecordFormat) {
 		self.config.record.format = format;
 	}
 

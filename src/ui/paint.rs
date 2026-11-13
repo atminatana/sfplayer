@@ -1,5 +1,5 @@
-//! Shared drawing vocabulary of the window (spec v1.2 §3): the palette of the mock-up, the looks of a
-//! `[button]`, and a pen that writes consecutive pieces of one row into a `ScreenBuffer`.
+//! Shared drawing vocabulary of the window (spec v1.2 §3): the palette of the mock-up and a pen that
+//! writes consecutive pieces of one row into a `ScreenBuffer`.
 
 use gterm::buffer::ScreenBuffer;
 use gterm::cell::Color;
@@ -23,22 +23,12 @@ pub const METER_TRACK: Color = LABEL;
 /// The highlighted row of a list, the cursor cell of a field: light background, dark text.
 pub const SELECTED: Style = Style::new().fg(BACKGROUND).bg(TEXT);
 
-/// How a `[button]` looks (spec v1.2 §3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Look {
-	Normal,
-	/// The selected one of several: inverted on amber.
-	Active,
-	/// Not available now: dark, does not react.
-	Disabled,
-}
-
 /// Writes consecutive pieces of one row, advancing to the right; nothing lands outside its clip area.
 pub(super) struct Pen<'a> {
 	buf: &'a mut ScreenBuffer,
 	clip: Rect,
 	pub(super) x: u16,
-	y: u16,
+	pub(super) y: u16,
 }
 
 impl<'a> Pen<'a> {
@@ -72,14 +62,5 @@ impl<'a> Pen<'a> {
 	pub(super) fn gap(&mut self, cells: u16) -> &mut Self {
 		self.x = self.x.saturating_add(cells);
 		self
-	}
-
-	pub(super) fn button(&mut self, label: &str, look: Look) -> &mut Self {
-		let style = match look {
-			Look::Normal => Style::new().fg(TEXT),
-			Look::Active => Style::new().fg(BACKGROUND).bg(VALUE).bold(),
-			Look::Disabled => Style::new().fg(DISABLED),
-		};
-		self.styled(&format!("[{label}]"), style)
 	}
 }

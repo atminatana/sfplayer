@@ -56,7 +56,7 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | F4 | Open SoundFont file |
 | F5 | Choose the preset for all channels except 10 |
 | F6 | Effects: reverb / chorus on, off and send levels |
-| F7 | Recording settings: folder and format |
+| F7 | Folder for takes |
 | Home | Start recording |
 | End | Stop recording |
 | F8 | Rescan MIDI ports |
@@ -76,13 +76,19 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | Shift++ | Master volume +5 % |
 | Shift+_ / _ | Master volume −5 % |
 | Ctrl+U | Mute master |
+| Tab / Shift+Tab | Next / previous button of the screen |
+| Enter | Press the button under the focus (or click it) |
 | Z X C V B N M , . / | White keys C–E from the base octave (text keyboard) |
 | S D G H J L ; | Black keys C# D# F# G# A# C# D# (text keyboard) |
 <!-- keys:end -->
 
 While a dialog is open, input goes to the dialog: ↑↓, PgUp/PgDn, Home/End move through lists and fields there, Enter applies, Esc cancels. On the main screen Home and End start and stop recording.
 
+Labels in square brackets on the main screen are buttons. Press them with the mouse or from the keyboard: Tab and Shift+Tab move the focus from button to button (the button under the focus is underlined), Enter presses it. The `[−]` and `[+]` buttons in the "Master" line change the volume by 5 %. A click outside an open dialog closes it, like Esc.
+
 F4 opens the bank path dialog: as you type, matching folders and `.sf2` files appear under the field; with an empty field — the recent banks. ↑↓ or a mouse click put a row into the field, Enter opens a folder or loads a bank, Tab moves between the field, the list and the `[OK]` and `[Cancel]` buttons, Esc or a click outside the dialog cancels. Selection and the clipboard work in the field (Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A).
+
+F7 opens the same dialog for the folder of takes: only folders are offered; with an empty field — the folders chosen before. Enter takes what the field holds; an empty field means the default folder. An existing file cannot be given — the dialog reports the error and stays open.
 
 ### Text keyboard
 
@@ -97,7 +103,7 @@ Notes and hotkeys go by the position of the key, not by its character: the input
 
 ## Configuration
 
-A TOML file is created on the first exit and stores the selected devices, the bank and the last 10 banks, master volume, effects and recording format:
+A TOML file is created on the first exit and stores the selected devices, the bank and the last 10 banks, master volume, effects, the recording folder, the last 10 folders and the recording format:
 
 | OS | Path |
 |---|---|
@@ -151,17 +157,18 @@ font_size = 14             # font size in pixels
 dir = "D:/Music/sf2"       # remove — the Music folder/sf2_player
 format = "flac"            # "flac" | "ogg_vorbis"
 vorbis_quality = 0.5       # 0.0–1.0
+recent_dirs = ["D:/Music/sf2"]  # folders chosen before, up to 10; kept by the program
 ```
 
-Command names for `[keys]`: `help`, `quit`, `focus_next`, `focus_previous`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `effects_dialog`, `record_dialog`, `rescan`, `record_start`, `record_stop`, `panic`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`. Chords: `Ctrl`, `Alt`, `Shift`, then `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` or a single character. A bare letter is rejected (letters belong to the notes); two commands on the same key is a startup error that names the key.
+Command names for `[keys]`: `help`, `quit`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `effects_dialog`, `record_dialog`, `rescan`, `record_start`, `record_stop`, `panic`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`. Chords: `Ctrl`, `Alt`, `Shift`, then `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` or a single character. A bare letter is rejected (letters belong to the notes); two commands on the same key is a startup error that names the key. Tab, Shift+Tab and Enter on the main screen are not commands and have no `[keys]` names; if a command is bound to one of these keys, the key runs that command and does not act on the buttons.
 
 ## Recording
 
-F7 opens the recording settings: the folder (Tab completes directory names; empty = the default folder) and the format. Home starts and End stops recording; the red `● REC mm:ss` indicator blinks once a second while a take runs. The file `YYYY-MM-DD_HH-MM-SS.flac` or `.ogg` appears in `record.dir` (by default the Music folder/sf2_player). FLAC is lossless 24-bit; Ogg Vorbis uses the `record.vorbis_quality` setting. Encoding runs in a separate thread; the audio callback only copies samples into a ring buffer, and an overflow is shown in the status line as `rec lost N`. Quitting while recording asks for confirmation.
+The folder of takes is chosen with F7 or the `[Folder for files]` button, the format with the `[FLAC]` and `[OGG]` buttons in the "Format" line; the format cannot be changed while a take runs. Home or the `[Start]` button starts and End or `[Stop]` stops recording; the red `● REC mm:ss` indicator blinks once a second while a take runs. The file `YYYY-MM-DD_HH-MM-SS.flac` or `.ogg` appears in `record.dir` (by default the Music folder/sf2_player). FLAC is lossless 24-bit; Ogg Vorbis uses the `record.vorbis_quality` setting. Encoding runs in a separate thread; the audio callback only copies samples into a ring buffer, and an overflow is shown in the status line as `rec lost N`. Quitting while recording asks for confirmation.
 
 ## Indicators
 
-- The screen is divided into the sections "MIDI sources", "Processor", "Output" and "Audio file". The lines show the chosen MIDI input (green "open"), the bank file and the audio output (green `OK` while everything works), the preset, effects and the recording folder and format. A problem is shown in red in the line it belongs to (no device, disconnected port, open error, missing bank); messages that belong to no line (device fallback, recording saved, config not saved, font replaced) appear in yellow under the recording line. Labels in square brackets are buttons: the chosen option is highlighted, unavailable ones are dimmed.
+- The screen is divided into the sections "MIDI sources", "Processor", "Output" and "Audio file". The lines show the chosen MIDI input (green "open"), the bank file and the audio output (green `OK` while everything works), the preset, effects and the recording folder and format. A problem is shown in red in the line it belongs to (no device, disconnected port, open error, missing bank); messages that belong to no line (device fallback, recording saved, config not saved, font replaced) appear in yellow under the recording line. Labels in square brackets are buttons: the chosen option is highlighted, unavailable ones are dimmed, the button under the keyboard focus is underlined, the one held down by the mouse is light.
 - Meter: the bar shows the RMS of the left and right channels with colour zones (green, amber from 78 %, red from 92 %), the number is the peak in dBFS; updated 30 times per second, a red `CLIP` stays for 1 s after clipping.
 - The bottom line, with counters of fixed width so the fields never move: `voices 7/64` — the number of held notes and the engine's polyphony limit (rustysynth does not publish the active voice count, so release tails and layered presets are not counted); `cpu 3%` — audio callback time relative to the block duration; `xrun` — buffer underruns. Transposition, the omni channel and dropped-event counters follow when active; on the right — the chosen processor and bank. The octave and velocity of the text keyboard are shown in the "Keyboard" line.
 - The window can be resized; the grid needs at least 96×31 cells, otherwise a request to enlarge the window is shown instead of the screen. The font and its size are set in the `[ui]` section; if the font is not found, the system monospace font is used.
@@ -173,7 +180,7 @@ Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How t
 ## Limitations
 
 - macOS is not supported: the gterm window library runs on Windows and Linux.
-- The buttons of the main screen only show state for now and cannot be clicked — commands are given with keys; the mouse works in the bank path dialog.
+- In the selection windows (MIDI input, audio output, preset), the effects window and the help the mouse does not act — choices are made with keys; a click outside the window closes it. The mouse works on the buttons of the main screen and in the path dialogs (F4, F7).
 - MIDI file playback and recording, SF3 and a custom synthesizer are not part of the current version; their lines and buttons on the screen are shown as unavailable.
 - The MIDI monitor and per-channel mixer strips of version 1.0 are not part of this screen; channel volume follows incoming CC 7 only.
 - The F5 preset applies to every channel except 10 (percussion); a Program Change from the MIDI keyboard still switches its own channel until the next F5 choice, and the "Preset" line keeps showing the F5 choice.

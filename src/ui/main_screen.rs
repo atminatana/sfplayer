@@ -1,6 +1,7 @@
 //! The main screen of the window (spec v1.2 §3): the signal path top to bottom — MIDI sources, the
 //! processor, the output, the audio file — and the status line pinned to the bottom row. Buttons are text
-//! in square brackets; an error is shown red in the line of the setting it belongs to.
+//! in square brackets: the screen says where each one goes, `Buttons` draws them and takes their input.
+//! An error is shown red in the line of the setting it belongs to.
 //!
 //! Draws into a `ScreenBuffer` only, so the whole screen is testable without a window. All text goes
 //! through `t!` (ADR 0008).
@@ -12,10 +13,11 @@ use gterm_widgets::widgets::Meter;
 use gterm_widgets::{BufferExt, Rect, Style, Widget};
 use rust_i18n::t;
 
-use super::app::App;
+use super::app::{App, ButtonId};
+use super::buttons::{Buttons, Look};
 use super::meter::{dbfs_text, level_ratio};
+use super::paint::Pen;
 pub use super::paint::{BACKGROUND, DISABLED, ERROR, GOOD, HINT, LABEL, MESSAGE, METER_TRACK, RULE, TEXT, VALUE};
-use super::paint::{Look, Pen};
 use super::view::{NoticeTarget, View, notice_target, notice_text};
 use crate::config::RecordFormat;
 use crate::midi::MidiStatus;
@@ -51,22 +53,32 @@ const RECORD_DOT: &str = "●";
 /// Half of the blink period of the recording dot (spec v1.1 §4.3: period 1 s).
 const RECORD_BLINK_HALF_PERIOD_MS: u128 = 500;
 
-pub fn render(buf: &mut ScreenBuffer, app: &App, view: &View) {
+pub fn render(buf: &mut ScreenBuffer, app: &App, view: &View, buttons: &mut Buttons) {
 	let locale = app.locale;
 	buf.clear_all();
+	buttons.begin_frame();
 	let area = buf.area();
 	if area.width < MIN_COLS || area.height < MIN_ROWS {
 		let hint = t!("notice.window_too_small", locale = locale, width = MIN_COLS, height = MIN_ROWS);
 		Pen::at(buf, 0, 0).text(&hint, ERROR);
+		// No button is placed, so none reacts while the screen is not shown.
+		buttons.finish_frame(buf);
 		return;
 	}
 
 	title(buf, locale);
-	sources(buf, 2, app, locale, view);
-	handler(buf, 10, locale, view);
-	output(buf, 15, app, locale, view);
-	audio_file(buf, 21, app, locale, view);
+	sources(buf, 2, app, locale, view, buttons);
+	handler(buf, 10, locale, view, buttons);
+	output(buf, 15, app, locale, view, buttons);
+	audio_file(buf, 21, app, locale, view, buttons);
 	status(buf, area.height - 1, locale, view);
+	buttons.finish_frame(buf);
+}
+
+/// Gives a button its place at the pen and moves the pen past it; the button is drawn when the frame is finished.
+fn put(pen: &mut Pen<'_>, buttons: &mut Buttons, id: ButtonId, label: &str, look: Look) {
+	let width = buttons.place(id, pen.x, pen.y, label, look);
+	pen.gap(width);
 }
 
 /// A horizontal rule across the row from `x` to the right edge.
@@ -99,7 +111,7 @@ fn sub_label(buf: &mut ScreenBuffer, y: u16, text: &str) {
 	Pen::at(buf, SUB_LABEL_X, y).text(text, LABEL);
 }
 
-fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View) {
+fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, buttons: &mut Buttons) {
 	let after_title = section(buf, y, &t!("main.section_sources", locale = locale));
 	rule(buf, after_title, y);
 
@@ -119,7 +131,8 @@ fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View)
 	let midi_in = t!("main.midi_in", locale = locale);
 	label(buf, y + 4, &midi_in);
 	let mut pen = Pen::at(buf, VALUE_X, y + 4);
-	pen.button(&midi_in, Look::Normal).gap(2);
+	put(&mut pen, buttons, ButtonId::MidiIn, &midi_in, Look::Normal);
+	pen.gap(2);
 	match &view.midi {
 		MidiStatus::Connected(port) => {
 			pen.text(port, TEXT).gap(2).text(&t!("main.opened", locale = locale), GOOD);
@@ -140,33 +153,63 @@ fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View)
 	// The MIDI file source arrives with plan stage 5; until then its controls are shown unavailable.
 	let midi_file = t!("main.midi_file", locale = locale);
 	label(buf, y + 6, &midi_file);
-	Pen::at(buf, VALUE_X, y + 6)
-		.button(&midi_file, Look::Disabled)
-		.gap(2)
-		.text(&t!("main.no_file", locale = locale), HINT)
-		.gap(2)
-		.button(&t!("main.start", locale = locale), Look::Disabled)
-		.gap(1)
-		.button(&t!("main.pause", locale = locale), Look::Disabled)
-		.gap(1)
-		.button(&t!("main.stop", locale = locale), Look::Disabled);
+	let mut pen = Pen::at(buf, VALUE_X, y + 6);
+	put(&mut pen, buttons, ButtonId::MidiFile, &midi_file, Look::Disabled);
+	pen.gap(2).text(&t!("main.no_file", locale = locale), HINT).gap(2);
+	put(
+		&mut pen,
+		buttons,
+		ButtonId::FileStart,
+		&t!("main.start", locale = locale),
+		Look::Disabled,
+	);
+	pen.gap(1);
+	put(
+		&mut pen,
+		buttons,
+		ButtonId::FilePause,
+		&t!("main.pause", locale = locale),
+		Look::Disabled,
+	);
+	pen.gap(1);
+	put(
+		&mut pen,
+		buttons,
+		ButtonId::FileStop,
+		&t!("main.stop", locale = locale),
+		Look::Disabled,
+	);
 }
 
-fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View) {
+fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &mut Buttons) {
 	let after_title = section(buf, y, &t!("main.section_handler", locale = locale));
-	// The built-in synth arrives with plan stage 4; until then Sound Font is the only processor.
+	// The built-in synth arrives with plan stage 4; until then Sound Font is the only processor, and
+	// there is nothing to switch.
 	let mut pen = Pen::at(buf, after_title + 1, y);
-	pen.button(&t!("main.engine_synth", locale = locale), Look::Disabled)
-		.gap(1)
-		.button(&t!("main.engine_sf2", locale = locale), Look::Active)
-		.gap(1);
+	put(
+		&mut pen,
+		buttons,
+		ButtonId::EngineSynth,
+		&t!("main.engine_synth", locale = locale),
+		Look::Disabled,
+	);
+	pen.gap(1);
+	put(
+		&mut pen,
+		buttons,
+		ButtonId::EngineSf2,
+		&t!("main.engine_sf2", locale = locale),
+		Look::ActiveLocked,
+	);
+	pen.gap(1);
 	let after_buttons = pen.x;
 	rule(buf, after_buttons, y);
 
 	let sf2_file = t!("main.sf2_file", locale = locale);
 	label(buf, y + 1, &sf2_file);
 	let mut pen = Pen::at(buf, VALUE_X, y + 1);
-	pen.button(&sf2_file, Look::Normal).gap(2);
+	put(&mut pen, buttons, ButtonId::Sf2File, &sf2_file, Look::Normal);
+	pen.gap(2);
 	let sf2_error = view.line_error(NoticeTarget::Sf2);
 	match (&view.bank, sf2_error) {
 		(Some(bank), None) => {
@@ -190,10 +233,12 @@ fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View) {
 	let mut pen = Pen::at(buf, VALUE_X, y + 2);
 	match &view.bank {
 		Some(bank) => {
-			pen.button(&preset, Look::Normal).gap(2).text(&bank.preset_label, TEXT);
+			put(&mut pen, buttons, ButtonId::Preset, &preset, Look::Normal);
+			pen.gap(2).text(&bank.preset_label, TEXT);
 		}
 		None => {
-			pen.button(&preset, Look::Disabled).gap(2).text(NOTHING, DISABLED);
+			put(&mut pen, buttons, ButtonId::Preset, &preset, Look::Disabled);
+			pen.gap(2).text(NOTHING, DISABLED);
 		}
 	}
 
@@ -208,20 +253,20 @@ fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View) {
 		t!("mixer.chorus", locale = locale),
 		level(view.chorus)
 	);
-	Pen::at(buf, VALUE_X, y + 3)
-		.button(&effects, Look::Normal)
-		.gap(2)
-		.text(&sends, TEXT);
+	let mut pen = Pen::at(buf, VALUE_X, y + 3);
+	put(&mut pen, buttons, ButtonId::Effects, &effects, Look::Normal);
+	pen.gap(2).text(&sends, TEXT);
 }
 
-fn output(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View) {
+fn output(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, buttons: &mut Buttons) {
 	let after_title = section(buf, y, &t!("main.section_output", locale = locale));
 	rule(buf, after_title, y);
 
 	let audio_out = t!("main.audio_out", locale = locale);
 	label(buf, y + 1, &audio_out);
 	let mut pen = Pen::at(buf, VALUE_X, y + 1);
-	pen.button(&audio_out, Look::Normal).gap(2);
+	put(&mut pen, buttons, ButtonId::AudioOut, &audio_out, Look::Normal);
+	pen.gap(2);
 	let audio_error = view.line_error(NoticeTarget::Audio);
 	match &view.audio {
 		Some(audio) => {
@@ -261,11 +306,13 @@ fn output(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View) 
 	label(buf, y + 4, &t!("main.master", locale = locale));
 	let mixer = &view.mixer;
 	let mut pen = Pen::at(buf, VALUE_X, y + 4);
-	pen.button(MINUS, Look::Normal).gap(1);
+	put(&mut pen, buttons, ButtonId::MasterDown, MINUS, Look::Normal);
+	pen.gap(1);
 	let meter_x = pen.x;
 	level_meter(buf, meter_x, y + 4, MASTER_CELLS, f64::from(mixer.master) / 100.0);
 	let mut pen = Pen::at(buf, meter_x + MASTER_CELLS + 1, y + 4);
-	pen.text(&format!("{:>3}%", mixer.master), VALUE).gap(1).button(PLUS, Look::Normal);
+	pen.text(&format!("{:>3}%", mixer.master), VALUE).gap(1);
+	put(&mut pen, buttons, ButtonId::MasterUp, PLUS, Look::Normal);
 	if mixer.master_muted {
 		pen.gap(2)
 			.styled(&t!("mixer.mute", locale = locale), Style::new().fg(MESSAGE).bold());
@@ -280,41 +327,67 @@ fn level_meter(buf: &mut ScreenBuffer, x: u16, y: u16, cells: u16, ratio: f64) {
 		.render(Rect::new(x, y, cells, 1), buf);
 }
 
-fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View) {
+fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, buttons: &mut Buttons) {
 	let after_title = section(buf, y, &t!("main.section_record", locale = locale));
 	rule(buf, after_title, y);
+	let recording = app.recording;
 
 	label(buf, y + 1, &t!("main.folder", locale = locale));
-	Pen::at(buf, VALUE_X, y + 1)
-		.button(&t!("main.folder_button", locale = locale), Look::Normal)
-		.gap(2)
-		.text(&view.record_dir, TEXT);
+	let mut pen = Pen::at(buf, VALUE_X, y + 1);
+	put(
+		&mut pen,
+		buttons,
+		ButtonId::Folder,
+		&t!("main.folder_button", locale = locale),
+		Look::Normal,
+	);
+	pen.gap(2).text(&view.record_dir, TEXT);
 
 	label(buf, y + 2, &t!("main.format", locale = locale));
-	let chosen = |format: RecordFormat| {
-		if view.record_format == format { Look::Active } else { Look::Normal }
+	// A running take keeps its format (spec v1.2, F-23): the chosen one stays lit, none reacts.
+	let format_look = |format: RecordFormat| match (view.record_format == format, recording.is_some()) {
+		(true, false) => Look::Active,
+		(true, true) => Look::ActiveLocked,
+		(false, false) => Look::Normal,
+		(false, true) => Look::Disabled,
 	};
+	let mut pen = Pen::at(buf, VALUE_X, y + 2);
+	put(&mut pen, buttons, ButtonId::FormatFlac, "FLAC", format_look(RecordFormat::Flac));
+	pen.gap(1);
+	put(&mut pen, buttons, ButtonId::FormatOgg, "OGG", format_look(RecordFormat::OggVorbis));
+	pen.gap(1);
 	// Recording MIDI arrives with plan stage 6; until then that format is shown unavailable.
-	Pen::at(buf, VALUE_X, y + 2)
-		.button("FLAC", chosen(RecordFormat::Flac))
-		.gap(1)
-		.button("OGG", chosen(RecordFormat::OggVorbis))
-		.gap(1)
-		.button("MIDI", Look::Disabled)
-		.gap(2)
-		.text(&t!("main.format_audio", locale = locale), HINT);
+	put(&mut pen, buttons, ButtonId::FormatMidi, "MIDI", Look::Disabled);
+	pen.gap(2).text(&t!("main.format_audio", locale = locale), HINT);
 
 	label(buf, y + 3, &t!("main.record", locale = locale));
-	let recording = app.recording;
 	let unless = |unavailable: bool| if unavailable { Look::Disabled } else { Look::Normal };
 	let mut pen = Pen::at(buf, VALUE_X, y + 3);
-	pen.button(&t!("main.start", locale = locale), unless(recording.is_some()))
-		.gap(1)
-		.button(&t!("main.stop", locale = locale), unless(recording.is_none()))
-		.gap(1)
-		// Cancelling a take arrives with plan stage 6.
-		.button(&t!("main.cancel", locale = locale), Look::Disabled)
-		.gap(2);
+	put(
+		&mut pen,
+		buttons,
+		ButtonId::RecordStart,
+		&t!("main.start", locale = locale),
+		unless(recording.is_some()),
+	);
+	pen.gap(1);
+	put(
+		&mut pen,
+		buttons,
+		ButtonId::RecordStop,
+		&t!("main.stop", locale = locale),
+		unless(recording.is_none()),
+	);
+	pen.gap(1);
+	// Cancelling a take arrives with plan stage 6.
+	put(
+		&mut pen,
+		buttons,
+		ButtonId::RecordCancel,
+		&t!("main.cancel", locale = locale),
+		Look::Disabled,
+	);
+	pen.gap(2);
 	match (recording, view.line_error(NoticeTarget::Record)) {
 		(Some(elapsed), _) => {
 			let time = format!("{:02}:{:02}", elapsed.as_secs() / 60, elapsed.as_secs() % 60);

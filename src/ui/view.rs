@@ -138,14 +138,6 @@ impl View {
 	}
 }
 
-/// Format names are proper nouns, the same in every language.
-pub(super) fn format_name(format: RecordFormat) -> &'static str {
-	match format {
-		RecordFormat::Flac => "FLAC",
-		RecordFormat::OggVorbis => "Ogg Vorbis",
-	}
-}
-
 pub(super) fn notice_text(notice: &Notice, locale: &str) -> String {
 	match notice {
 		Notice::NoAudioDevice(error) => t!("notice.no_audio_device", locale = locale, error = error).into_owned(),

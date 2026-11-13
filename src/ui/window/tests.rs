@@ -69,3 +69,36 @@ fn a_running_take_redraws_once_per_blink_phase_and_per_second() {
 	assert!(!blink_phase(Duration::from_millis(500)));
 	assert!(blink_phase(Duration::from_millis(1_000)));
 }
+
+#[test]
+fn a_folder_for_takes_is_anything_but_an_existing_file() {
+	let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
+	assert_eq!(record_dir_from(Path::new("")), Some(None), "empty: the default folder");
+	let assets = repository.join("assets");
+	assert_eq!(record_dir_from(&assets), Some(Some(assets.clone())));
+	let new_folder = repository.join("target").join("no-such-folder-for-takes");
+	assert_eq!(
+		record_dir_from(&new_folder),
+		Some(Some(new_folder.clone())),
+		"a folder that does not exist yet is created when a take starts"
+	);
+	assert_eq!(record_dir_from(&assets.join("sin_wave.sf2")), None, "a file is not a folder");
+}
+
+#[test]
+fn a_mouse_event_is_inside_an_area_only_over_its_cells() {
+	let area = Rect::new(4, 8, 10, 3);
+	let at = |col, row| MouseMsg {
+		kind: gterm_widgets::MouseKind::Down,
+		button: Some(winit::event::MouseButton::Left),
+		col,
+		row,
+		modifiers: winit::keyboard::ModifiersState::empty(),
+	};
+	for (col, row) in [(4, 8), (13, 10), (9, 9)] {
+		assert!(is_inside(area, &at(col, row)), "{col},{row}");
+	}
+	for (col, row) in [(3, 8), (14, 8), (4, 7), (4, 11), (-1, -1), (70_000, 9)] {
+		assert!(!is_inside(area, &at(col, row)), "{col},{row}");
+	}
+}

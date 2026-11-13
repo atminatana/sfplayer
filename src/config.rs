@@ -12,6 +12,8 @@ use crate::cli::{Cli, DEFAULT_BUFFER_FRAMES, DeviceSelector, EmptyDeviceSelector
 
 pub const APP_NAME: &str = "sf2_player";
 const CONFIG_FILE_NAME: &str = "config.toml";
+/// How many folders for takes are remembered (spec v1.2 §4.2).
+pub const RECENT_DIRS_LIMIT: usize = 10;
 /// How many recently used banks are remembered (spec F-05).
 pub const RECENT_BANKS_LIMIT: usize = 10;
 
@@ -187,6 +189,8 @@ pub struct RecordConfig {
 	pub format: RecordFormat,
 	/// Ogg Vorbis quality 0.0..=1.0.
 	pub vorbis_quality: f32,
+	/// Folders chosen before, most recent first, at most `RECENT_DIRS_LIMIT` entries.
+	pub recent_dirs: Vec<PathBuf>,
 }
 
 impl Default for RecordConfig {
@@ -195,6 +199,7 @@ impl Default for RecordConfig {
 			dir: None,
 			format: RecordFormat::Flac,
 			vorbis_quality: 0.5,
+			recent_dirs: Vec::new(),
 		}
 	}
 }
@@ -233,10 +238,23 @@ impl Config {
 
 	/// Puts `path` at the front of the recent list, deduplicated and truncated to `RECENT_BANKS_LIMIT`.
 	pub fn remember_bank(&mut self, path: &Path) {
-		self.synth.recent_banks.retain(|known| known != path);
-		self.synth.recent_banks.insert(0, path.to_owned());
-		self.synth.recent_banks.truncate(RECENT_BANKS_LIMIT);
+		remember(&mut self.synth.recent_banks, path, RECENT_BANKS_LIMIT);
 	}
+
+	/// Sets where takes go; `None` is the OS music directory. A chosen folder goes to the front of the
+	/// recent list, which is the history of the folder dialog (spec v1.2 §4.2).
+	pub fn set_record_dir(&mut self, dir: Option<PathBuf>) {
+		if let Some(dir) = &dir {
+			remember(&mut self.record.recent_dirs, dir, RECENT_DIRS_LIMIT);
+		}
+		self.record.dir = dir;
+	}
+}
+
+fn remember(recent: &mut Vec<PathBuf>, path: &Path, limit: usize) {
+	recent.retain(|known| known != path);
+	recent.insert(0, path.to_owned());
+	recent.truncate(limit);
 }
 
 /// Standard per-OS directories for the application (`directories` conventions, spec N-06).
@@ -352,6 +370,37 @@ mod tests {
 		std::fs::write(&path, "[audio\nbuffer_frames = ").expect("write");
 		assert!(matches!(Config::load_or_default(&path), Err(ConfigError::Parse { .. })));
 		std::fs::remove_file(&path).ok();
+	}
+
+	#[test]
+	fn folders_for_takes_are_remembered_like_banks_and_survive_a_save() {
+		let mut config = Config::default();
+		for index in 0..RECENT_DIRS_LIMIT + 2 {
+			config.set_record_dir(Some(PathBuf::from(format!("takes{index}"))));
+		}
+		config.set_record_dir(Some(PathBuf::from("takes4")));
+		assert_eq!(config.record.dir, Some(PathBuf::from("takes4")));
+		// Back to the default folder: the choice is dropped, the history stays.
+		config.set_record_dir(None);
+		assert_eq!(config.record.dir, None);
+		assert_eq!(config.record.recent_dirs.len(), RECENT_DIRS_LIMIT);
+		assert_eq!(config.record.recent_dirs[0], PathBuf::from("takes4"));
+		assert_eq!(
+			config
+				.record
+				.recent_dirs
+				.iter()
+				.filter(|dir| dir.as_path() == Path::new("takes4"))
+				.count(),
+			1
+		);
+		let path = temp_path("recent_dirs").join("config.toml");
+		config.save(&path).expect("save");
+		assert_eq!(Config::load(&path).expect("load").record.recent_dirs, config.record.recent_dirs);
+		std::fs::remove_dir_all(path.parent().unwrap()).ok();
+		// A config written before the list existed opens with an empty one.
+		let old: Config = toml::from_str("[record]\nformat = \"flac\"\n").expect("parse");
+		assert!(old.record.recent_dirs.is_empty());
 	}
 
 	#[test]

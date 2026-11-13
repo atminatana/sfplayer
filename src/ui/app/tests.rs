@@ -76,33 +76,6 @@ fn function_keys_request_dialogs_and_rescan() {
 }
 
 #[test]
-fn f7_dialog_takes_paste_into_the_folder_and_reports_folder_and_format_on_enter() {
-	use crate::config::RecordFormat;
-	use crate::ui::record_dialog::RecordDialog;
-	let mut app = App::new("en");
-	app.open_modal(Modal::Record(RecordDialog::new(None, RecordFormat::Flac, 0.5)));
-	app.handle_paste("D:/takes");
-	assert_eq!(
-		app.handle_key(plain(KeyCode::Home)),
-		None,
-		"Home edits the field, no recording starts"
-	);
-	app.handle_key(plain(KeyCode::Down));
-	app.handle_key(plain(KeyCode::Right));
-	assert_eq!(
-		app.handle_key(plain(KeyCode::Enter)),
-		Some(Request::Apply(Choice::SetRecording {
-			dir: Some(PathBuf::from("D:/takes")),
-			format: RecordFormat::OggVorbis
-		}))
-	);
-	assert!(app.modal.is_none());
-	app.open_modal(Modal::Record(RecordDialog::new(None, RecordFormat::Flac, 0.5)));
-	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None);
-	assert!(app.modal.is_none());
-}
-
-#[test]
 fn dialog_captures_keys_until_enter_or_esc() {
 	let mut app = App::new("en");
 	app.open_dialog(midi_dialog());
@@ -125,28 +98,6 @@ fn dialog_captures_keys_until_enter_or_esc() {
 	app.open_dialog(midi_dialog());
 	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None);
 	assert!(app.modal.is_none());
-}
-
-#[test]
-fn sf2_dialog_submits_a_path_and_stays_open_until_fulfilled() {
-	let mut app = App::new("en");
-	app.open_modal(Modal::Sf2Path(PathInput::new("", vec![])));
-	app.handle_paste("assets/sin_wave.sf2");
-	assert_eq!(
-		app.handle_key(plain(KeyCode::Enter)),
-		Some(Request::LoadBank(PathBuf::from("assets/sin_wave.sf2")))
-	);
-	assert!(app.modal.is_some(), "closed only by fulfil on success");
-	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None);
-	assert!(app.modal.is_none());
-}
-
-#[test]
-fn paste_outside_the_path_dialogs_is_ignored() {
-	let mut app = App::new("en");
-	app.take_dirty();
-	app.handle_paste("ignored");
-	assert!(!app.take_dirty());
 }
 
 #[test]
@@ -340,4 +291,85 @@ fn home_and_end_drive_recording_and_quit_asks_for_confirmation_while_recording()
 	let mut idle = App::new("en");
 	idle.handle_key(plain(KeyCode::F(10)));
 	assert!(idle.should_quit, "no confirmation when not recording");
+}
+
+#[test]
+fn every_available_button_gives_the_command_of_its_hotkey() {
+	let cases = [
+		(ButtonId::MidiIn, Request::OpenDialog(DialogKind::MidiInput)),
+		(ButtonId::Sf2File, Request::OpenSf2Dialog),
+		(ButtonId::Preset, Request::OpenDialog(DialogKind::Preset)),
+		(ButtonId::Effects, Request::OpenEffectsDialog),
+		(ButtonId::AudioOut, Request::OpenDialog(DialogKind::AudioOutput)),
+		(ButtonId::MasterDown, Request::Mixer(MixerAction::MasterDownFast)),
+		(ButtonId::MasterUp, Request::Mixer(MixerAction::MasterUpFast)),
+		(ButtonId::Folder, Request::OpenRecordDialog),
+		(ButtonId::FormatFlac, Request::SetRecordFormat(RecordFormat::Flac)),
+		(ButtonId::FormatOgg, Request::SetRecordFormat(RecordFormat::OggVorbis)),
+		(ButtonId::RecordStart, Request::StartRecord),
+		(ButtonId::RecordStop, Request::StopRecord),
+	];
+	for (button, request) in &cases {
+		let mut app = App::new("en");
+		app.take_dirty();
+		assert_eq!(app.press_button(*button), Some(request.clone()), "{button:?}");
+		assert!(app.take_dirty(), "{button:?} asks for a redraw");
+	}
+	// The rest wait for their plan stages: pressing them does nothing.
+	let waiting: Vec<ButtonId> = ButtonId::ALL
+		.into_iter()
+		.filter(|button| cases.iter().all(|(known, _)| known != button))
+		.collect();
+	assert_eq!(waiting.len(), ButtonId::ALL.len() - cases.len());
+	for button in waiting {
+		assert_eq!(App::new("en").press_button(button), None, "{button:?}");
+	}
+}
+
+#[test]
+fn the_format_cannot_be_changed_under_a_running_take() {
+	let mut app = App::new("en");
+	app.recording = Some(Duration::from_secs(1));
+	assert_eq!(app.press_button(ButtonId::FormatOgg), None);
+	assert_eq!(app.press_button(ButtonId::FormatFlac), None);
+	app.recording = None;
+	assert_eq!(
+		app.press_button(ButtonId::FormatOgg),
+		Some(Request::SetRecordFormat(RecordFormat::OggVorbis))
+	);
+}
+
+#[test]
+fn dismissing_a_dialog_does_what_esc_does_in_it() {
+	let mut app = App::new("en");
+	assert_eq!(app.dismiss_modal(), None, "nothing is open");
+	app.take_dirty();
+	app.open_dialog(midi_dialog());
+	assert_eq!(app.dismiss_modal(), None);
+	assert!(app.modal.is_none() && app.take_dirty());
+
+	// The effects dialog applies changes as they are made: leaving it this way rolls them back.
+	let before = EffectsSettings {
+		reverb: true,
+		reverb_level: 40,
+		chorus: false,
+		chorus_level: 20,
+	};
+	app.open_modal(Modal::Effects(EffectsDialog::new(before)));
+	app.handle_key(plain(KeyCode::Char(' ')));
+	assert_eq!(app.dismiss_modal(), Some(Request::Effects(EffectsAction::Set(before))));
+	assert!(app.modal.is_none());
+
+	// Esc bound to something else changes nothing: a click outside is not a key.
+	app.bindings = Bindings::from_config(
+		&[("notes_off", "F12"), ("quit", "Esc")]
+			.into_iter()
+			.map(|(command, chord)| (command.to_owned(), chord.to_owned()))
+			.collect(),
+		&KeyboardConfig::default(),
+	)
+	.expect("valid bindings");
+	app.modal = Some(Modal::Help(0));
+	assert_eq!(app.dismiss_modal(), None);
+	assert!(app.modal.is_none() && !app.should_quit);
 }

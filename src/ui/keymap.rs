@@ -239,17 +239,5 @@ pub(super) fn quits_from_a_field(bindings: &Bindings, key: &KeyEvent) -> bool {
 	key.kind == KeyEventKind::Press && !matches!(key.code, KeyCode::Char(_)) && bindings.action_for(key) == Some(Action::Quit)
 }
 
-/// Ctrl+V or Shift+Insert, pressed: paste the clipboard into the field being edited.
-pub(super) fn is_paste_chord(key: &KeyEvent) -> bool {
-	if key.kind == KeyEventKind::Release {
-		return false;
-	}
-	match key.code {
-		KeyCode::Char('v' | 'V') => key.modifiers == KeyModifiers::CONTROL,
-		KeyCode::Insert => key.modifiers == KeyModifiers::SHIFT,
-		_ => false,
-	}
-}
-
 #[cfg(test)]
 mod tests;

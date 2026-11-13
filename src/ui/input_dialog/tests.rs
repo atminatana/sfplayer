@@ -377,3 +377,62 @@ fn a_huge_directory_is_cut_to_the_first_matches() {
 	assert_eq!(dialog.rows().len(), MAX_SUGGESTIONS);
 	assert_eq!(dialog.rows()[0], "bank0000.sf2");
 }
+
+fn folder_dialog(initial: &str) -> InputDialog {
+	InputDialog::new(InputKind::RecordDir, initial, &[PathBuf::from("D:/takes")], fake_dir)
+}
+
+#[test]
+fn the_folder_dialog_offers_folders_only_and_says_what_an_empty_field_means() {
+	let mut dialog = folder_dialog("");
+	assert_eq!(dialog.kind(), InputKind::RecordDir);
+	assert_eq!(dialog.rows(), ["D:/takes"], "the history of folders");
+	let (_, buf) = drawn(&mut dialog, "ru");
+	let lines = lines_of(&buf);
+	assert!(lines[0].starts_with("┌ Папка для записей ─"));
+	assert!(lines[1].starts_with("│Папка: (пусто: папка «Музыка»/sf2_player)"), "{}", lines[1]);
+	// The cursor of the field sits on the first cell; the rest shows the placeholder dimmed.
+	assert_eq!(colours_of(&buf, "пусто:").0, HINT, "a placeholder, not text");
+	assert!(lines[usize::from(HEIGHT) - 2].starts_with("│↑↓ — выбор · Enter — применить · Tab — дальше · Esc — отмена"));
+	let (_, english) = drawn(&mut dialog, "en");
+	assert!(lines_of(&english)[1].starts_with("│Folder: (empty: Music folder/sf2_player)"));
+
+	type_text(&mut dialog, "D:/sf2/");
+	assert_eq!(
+		dialog.rows(),
+		[format!("D:/sf2/Banks{SEP}")],
+		"files are not offered, not even banks"
+	);
+	let (_, buf) = drawn(&mut dialog, "ru");
+	assert!(
+		lines_of(&buf)[1].starts_with("│Папка: D:/sf2/"),
+		"typed text replaces the placeholder"
+	);
+}
+
+#[test]
+fn the_folder_dialog_takes_whatever_the_field_holds_as_the_answer() {
+	// An empty field is an answer too: the default folder.
+	let mut dialog = folder_dialog("");
+	assert_eq!(press(&mut dialog, NamedKey::Enter), InputOutcome::Submit(PathBuf::new()));
+	assert_eq!(click(&mut folder_dialog(""), "[OK]"), InputOutcome::Submit(PathBuf::new()));
+
+	// A folder picked from the list ends with a separator, and Enter takes it instead of looking inside.
+	let mut dialog = folder_dialog("");
+	type_text(&mut dialog, "D:/sf2/");
+	assert_eq!(press(&mut dialog, NamedKey::ArrowDown), InputOutcome::Pending);
+	let picked = format!("D:/sf2/Banks{SEP}");
+	assert_eq!(dialog.text(), picked);
+	assert_eq!(press(&mut dialog, NamedKey::Enter), InputOutcome::Submit(PathBuf::from(&picked)));
+
+	// Spaces around the path are dropped; Esc cancels as everywhere.
+	let mut dialog = folder_dialog("  D:/takes/new ");
+	assert_eq!(
+		press(&mut dialog, NamedKey::Enter),
+		InputOutcome::Submit(PathBuf::from("D:/takes/new"))
+	);
+	assert_eq!(press(&mut dialog, NamedKey::Escape), InputOutcome::Cancelled);
+
+	// The file dialog still treats the same input its own way.
+	assert_eq!(press(&mut self::dialog(""), NamedKey::Enter), InputOutcome::Pending);
+}

@@ -1,12 +1,9 @@
 //! The modal dialogs built on `Selector` (spec F-01, F-03, F-06) and what a choice means.
 
-use std::path::PathBuf;
-
 use rust_i18n::t;
 
 use super::selector::{Selector, SelectorItem};
 use crate::audio::AudioDeviceInfo;
-use crate::config::RecordFormat;
 use crate::midi::MidiPortInfo;
 use crate::synth::PresetInfo;
 
@@ -42,20 +39,12 @@ enum Choices {
 	Presets(Vec<(u16, u8)>),
 }
 
-/// What the UI asks the session to do after a dialog closes with Enter (the F7 dialog reports here too).
+/// What the UI asks the session to do after a dialog closes with Enter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Choice {
 	ConnectMidi(usize),
 	OpenAudio(usize),
-	SelectPreset {
-		bank: u16,
-		program: u8,
-	},
-	/// `dir` `None` = the OS music folder (spec v1.1 §4.3).
-	SetRecording {
-		dir: Option<PathBuf>,
-		format: RecordFormat,
-	},
+	SelectPreset { bank: u16, program: u8 },
 }
 
 impl Dialog {

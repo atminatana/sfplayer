@@ -3,10 +3,15 @@
 use std::time::Duration;
 
 use gterm::cell::{CellFlags, Color};
+use gterm_widgets::{MouseKind, MouseMsg};
+use winit::event::MouseButton;
+use winit::keyboard::ModifiersState;
 
 use super::*;
 use crate::audio::{Levels, Mixer};
 use crate::session::Notice;
+use crate::ui::buttons::Touch;
+use crate::ui::chord::{KeyCode, KeyEvent, KeyModifiers};
 use crate::ui::view::{AudioView, BankView};
 
 fn view() -> View {
@@ -60,7 +65,7 @@ fn lines_of(buf: &ScreenBuffer) -> Vec<String> {
 
 fn rendered(app: &App, view: &View) -> ScreenBuffer {
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
-	render(&mut buf, app, view);
+	render(&mut buf, app, view, &mut Buttons::new());
 	buf
 }
 
@@ -428,7 +433,7 @@ fn notices_not_tied_to_a_setting_go_to_the_message_line_in_yellow() {
 fn a_grid_below_the_minimum_shows_only_the_hint() {
 	for (cols, rows) in [(MIN_COLS - 1, MIN_ROWS), (MIN_COLS, MIN_ROWS - 1), (20, 5)] {
 		let mut buf = screen(usize::from(cols), usize::from(rows));
-		render(&mut buf, &App::new("ru"), &view());
+		render(&mut buf, &App::new("ru"), &view(), &mut Buttons::new());
 		let lines = lines_of(&buf);
 		let hint: String = "Увеличьте окно до 96×31".chars().take(usize::from(cols)).collect();
 		assert_eq!(lines[0], hint);
@@ -438,7 +443,7 @@ fn a_grid_below_the_minimum_shows_only_the_hint() {
 
 	// A larger grid keeps the layout: the piano stays centred, the status goes to the last row.
 	let mut wide = screen(120, 40);
-	render(&mut wide, &App::new("ru"), &view());
+	render(&mut wide, &App::new("ru"), &view(), &mut Buttons::new());
 	let (_, piano_col) = find(&wide, PIANO_TOP);
 	assert_eq!(piano_col, (120 - usize::from(PIANO_CELLS)) / 2);
 	let (status_row, _) = find(&wide, "голоса");
@@ -455,12 +460,137 @@ fn a_frame_drawn_over_another_leaves_no_leftovers() {
 	let mut noisy = view();
 	noisy.notice = Some(Notice::RecordSaved("take.flac".into()));
 	noisy.record_format = RecordFormat::OggVorbis;
-	render(&mut buf, &app, &noisy);
-	render(&mut buf, &App::new("ru"), &view());
+	let mut buttons = Buttons::new();
+	render(&mut buf, &app, &noisy, &mut buttons);
+	render(&mut buf, &App::new("ru"), &view(), &mut buttons);
 	let clean = rendered_ru(&view());
 	for row in 0..buf.rows() {
 		for col in 0..buf.cols() {
 			assert_eq!(buf.cell(col, row), clean.cell(col, row), "cell {col},{row}");
 		}
 	}
+}
+
+/// A left click, press and release, on the first cell of `text`; what the release did.
+fn click(buttons: &mut Buttons, buf: &ScreenBuffer, text: &str) -> Touch {
+	let (row, col) = find(buf, text);
+	let at = |kind| MouseMsg {
+		kind,
+		button: Some(MouseButton::Left),
+		col: i32::try_from(col).expect("column"),
+		row: i32::try_from(row).expect("row"),
+		modifiers: ModifiersState::empty(),
+	};
+	buttons.handle_mouse(&at(MouseKind::Down));
+	buttons.handle_mouse(&at(MouseKind::Up))
+}
+
+/// The buttons Tab stops at, starting from the one under the focus, once round the ring.
+fn ring(buttons: &mut Buttons) -> Vec<ButtonId> {
+	let mut stops = Vec::new();
+	while let Some(focused) = buttons.focused().filter(|focused| !stops.contains(focused)) {
+		stops.push(focused);
+		buttons.handle_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+	}
+	stops
+}
+
+#[test]
+fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
+	let mut buttons = Buttons::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &App::new("ru"), &view(), &mut buttons);
+	// The text of a button as it stands on the screen, with enough around it to be unique.
+	let available = [
+		(ButtonId::MidiIn, "[MIDI-вход]"),
+		(ButtonId::Sf2File, "[Файл Sound Font]"),
+		(ButtonId::Preset, "[Пресет]"),
+		(ButtonId::Effects, "[Эффекты]"),
+		(ButtonId::AudioOut, "[Аудио выход]"),
+		(ButtonId::MasterDown, "[−]"),
+		(ButtonId::MasterUp, "[+]"),
+		(ButtonId::Folder, "[Папка для файлов]"),
+		(ButtonId::FormatFlac, "[FLAC]"),
+		(ButtonId::FormatOgg, "[OGG]"),
+		(ButtonId::RecordStart, "[Старт] [Стоп] [Отмена]"),
+	];
+	for (id, text) in available {
+		assert_eq!(click(&mut buttons, &buf, text), Touch::Pressed(id), "{text}");
+		assert_eq!(buttons.focused(), Some(id), "a click on {text} moves the focus there");
+	}
+
+	// Tab goes through the same buttons top to bottom, left to right; Enter presses each.
+	click(&mut buttons, &buf, "[MIDI-вход]");
+	let order: Vec<ButtonId> = available.iter().map(|(id, _)| *id).collect();
+	assert_eq!(ring(&mut buttons), order);
+	for id in order {
+		assert_eq!(
+			buttons.handle_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+			Touch::Pressed(id)
+		);
+		buttons.handle_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+	}
+
+	// What the screen shows unavailable does not react.
+	for text in [
+		"[MIDI-файл]",
+		"[Старт] [Пауза] [Стоп]",
+		"[Пауза]",
+		"[Стоп]",
+		"[Synth]",
+		"[Sound Font]",
+		"[MIDI]",
+		"[Стоп] [Отмена]",
+		"[Отмена]",
+	] {
+		assert_eq!(click(&mut buttons, &buf, text), Touch::Missed, "{text}");
+	}
+}
+
+#[test]
+fn the_button_under_the_focus_is_underlined_from_the_first_frame() {
+	let buf = rendered_ru(&view());
+	let is_underlined = |text: &str| {
+		let (row, col) = find(&buf, text);
+		buf.cell(col, row).flags.contains(CellFlags::UNDERLINE)
+	};
+	assert!(is_underlined("[MIDI-вход]"));
+	assert!(!is_underlined("[Файл Sound Font]") && !is_underlined("[FLAC]") && !is_underlined("[MIDI-файл]"));
+}
+
+#[test]
+fn a_running_take_locks_the_format_and_leaves_only_stop_of_the_record_buttons() {
+	let mut app = App::new("ru");
+	app.recording = Some(Duration::from_secs(3));
+	let mut buttons = Buttons::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &app, &view(), &mut buttons);
+	// The chosen format stays lit, the other goes dark, and neither reacts.
+	let (row, col) = find(&buf, "[FLAC]");
+	assert_eq!((buf.cell(col, row).fg, buf.cell(col, row).bg), (BACKGROUND, VALUE));
+	assert_eq!(colour_of(&buf, "[OGG]"), DISABLED);
+	for text in ["[FLAC]", "[OGG]", "[MIDI]", "[Старт] [Стоп] [Отмена]"] {
+		assert_eq!(click(&mut buttons, &buf, text), Touch::Missed, "{text}");
+	}
+	assert_eq!(click(&mut buttons, &buf, "[Стоп] [Отмена]"), Touch::Pressed(ButtonId::RecordStop));
+	let stops = ring(&mut buttons);
+	assert!(stops.contains(&ButtonId::RecordStop));
+	assert!(!stops.contains(&ButtonId::RecordStart) && !stops.contains(&ButtonId::FormatFlac) && !stops.contains(&ButtonId::FormatOgg));
+}
+
+#[test]
+fn on_a_grid_below_the_minimum_no_button_reacts() {
+	let mut buttons = Buttons::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &App::new("ru"), &view(), &mut buttons);
+	assert_eq!(buttons.focused(), Some(ButtonId::MidiIn));
+	let mut small = screen(usize::from(MIN_COLS) - 1, usize::from(MIN_ROWS));
+	render(&mut small, &App::new("ru"), &view(), &mut buttons);
+	assert_eq!(buttons.focused(), None);
+	assert_eq!(
+		buttons.handle_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+		Touch::Missed
+	);
+	// Where `[MIDI-вход]` stood on the full screen.
+	assert_eq!(click(&mut buttons, &buf, "[MIDI-вход]"), Touch::Missed);
 }

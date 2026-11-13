@@ -62,20 +62,14 @@ dialog.preset_title:
   en: "Preset (all channels except 10)"
   ru: "Пресет (все каналы, кроме 10)"
 dialog.record_title:
-  en: "Recording"
-  ru: "Запись"
+  en: "Folder for takes"
+  ru: "Папка для записей"
 dialog.record_dir:
   en: "Folder:"
-  ru: "Каталог:"
+  ru: "Папка:"
 dialog.record_dir_default:
   en: "(empty: Music folder/sf2_player)"
   ru: "(пусто: папка «Музыка»/sf2_player)"
-dialog.record_format:
-  en: "Format:"
-  ru: "Формат:"
-dialog.record_hint:
-  en: "↑↓ field · Tab complete · ←→ format · Enter save · Esc cancel"
-  ru: "↑↓ — поле · Tab — дополнить · ←→ — формат · Enter — сохранить · Esc — отмена"
 dialog.filter:
   en: "Filter:"
   ru: "Фильтр:"
@@ -94,12 +88,6 @@ dialog.audio_buffer_range:
 dialog.audio_buffer_unknown:
   en: "buffer range unknown"
   ru: "диапазон буфера неизвестен"
-dialog.record_flac:
-  en: "lossless, about 3–5 MB/min"
-  ru: "без потерь, около 3–5 МБ/мин"
-dialog.record_vorbis:
-  en: "lossy, about 1 MB/min, quality %{quality} (config record.vorbis_quality)"
-  ru: "с потерями, около 1 МБ/мин, качество %{quality} (конфиг record.vorbis_quality)"
 notice.audio_reopened:
   en: "Audio output switched to %{device}"
   ru: "Аудиовыход переключён на %{device}"
@@ -141,8 +129,8 @@ help.action.effects_dialog:
   en: "Effects: reverb / chorus on, off and send levels"
   ru: "Эффекты: реверб и хорус — вкл/выкл и уровни посыла"
 help.action.record_dialog:
-  en: "Recording settings: folder and format"
-  ru: "Настройки записи: каталог и формат"
+  en: "Folder for takes"
+  ru: "Папка для записей"
 help.action.record_start:
   en: "Start recording"
   ru: "Начать запись"
@@ -381,3 +369,21 @@ dialog.ok:
 dialog.input_hint:
   en: "↑↓ choose · Enter open · Tab next · Esc cancel"
   ru: "↑↓ — выбор · Enter — открыть · Tab — дальше · Esc — отмена"
+dialog.folder_hint:
+  en: "↑↓ choose · Enter apply · Tab next · Esc cancel"
+  ru: "↑↓ — выбор · Enter — применить · Tab — дальше · Esc — отмена"
+dialog.not_a_folder:
+  en: "this is a file, not a folder"
+  ru: "это файл, а не папка"
+help.chord.focus:
+  en: "Tab / Shift+Tab"
+  ru: "Tab / Shift+Tab"
+help.action.focus:
+  en: "Next / previous button of the screen"
+  ru: "Следующая / предыдущая кнопка экрана"
+help.chord.press:
+  en: "Enter"
+  ru: "Enter"
+help.action.press:
+  en: "Press the button under the focus (or click it)"
+  ru: "Нажать кнопку под фокусом (или щёлкнуть по ней мышью)"

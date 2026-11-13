@@ -14,7 +14,7 @@ use rust_i18n::t;
 use winit::keyboard::{Key, NamedKey};
 
 use super::paint::{BACKGROUND, ERROR, HINT, SELECTED, TEXT};
-use super::path_input::{DirEntry, split_dir_and_prefix};
+use super::path_input::{DirEntry, InputKind, split_dir_and_prefix};
 
 /// Size of the dialog in cells; it shrinks to the grid when the window is smaller.
 pub const WIDTH: u16 = 88;
@@ -22,23 +22,34 @@ pub const HEIGHT: u16 = 16;
 /// A directory can hold thousands of entries; the list shows the first ones that match.
 const MAX_SUGGESTIONS: usize = 200;
 
-/// What the dialog asks for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputKind {
-	/// A SoundFont bank to load.
-	Sf2File,
-}
-
+/// How the dialog words itself and what it offers, by what is asked.
 impl InputKind {
 	fn title_key(self) -> &'static str {
 		match self {
 			Self::Sf2File => "dialog.sf2_title",
+			Self::RecordDir => "dialog.record_title",
 		}
 	}
 
 	fn label_key(self) -> &'static str {
 		match self {
 			Self::Sf2File => "dialog.sf2_path",
+			Self::RecordDir => "dialog.record_dir",
+		}
+	}
+
+	fn hint_key(self) -> &'static str {
+		match self {
+			Self::Sf2File => "dialog.input_hint",
+			Self::RecordDir => "dialog.folder_hint",
+		}
+	}
+
+	/// What an empty field means, shown in it as a placeholder; `None` when an empty field means nothing.
+	fn empty_meaning_key(self) -> Option<&'static str> {
+		match self {
+			Self::Sf2File => None,
+			Self::RecordDir => Some("dialog.record_dir_default"),
 		}
 	}
 
@@ -46,7 +57,14 @@ impl InputKind {
 	fn extensions(self) -> &'static [&'static str] {
 		match self {
 			Self::Sf2File => &["sf2"],
+			Self::RecordDir => &[],
 		}
+	}
+
+	/// Whether the answer is a directory: then a path that ends with a separator is an answer, not a
+	/// request to look inside.
+	fn wants_directory(self) -> bool {
+		self == Self::RecordDir
 	}
 }
 
@@ -100,6 +118,10 @@ impl InputDialog {
 		dialog
 	}
 
+	pub fn kind(&self) -> InputKind {
+		self.kind
+	}
+
 	pub fn text(&self) -> &str {
 		self.field.value()
 	}
@@ -138,13 +160,17 @@ impl InputDialog {
 
 		let label = t!(kind.label_key(), locale = locale).into_owned();
 		let label_width = u16::try_from(label.chars().count() + 1).unwrap_or(u16::MAX);
+		let mut input = TextInput::new().style(plain).selection_style(SELECTED);
+		if let Some(key) = kind.empty_meaning_key() {
+			input = input
+				.placeholder(t!(key, locale = locale).into_owned())
+				.placeholder_style(Style::new().fg(HINT));
+		}
 		let field_row = Ui::split(
 			Layout::horizontal([Constraint::Length(label_width), Constraint::Fill(1)]),
 			vec![
 				Ui::widget(Paragraph::new(Line::styled(label, plain.bold()))),
-				Ui::stateful(TextInput::new().style(plain).selection_style(SELECTED), field)
-					.on_change(InputMsg::Edited)
-					.on_submit(InputMsg::Entered),
+				Ui::stateful(input, field).on_change(InputMsg::Edited).on_submit(InputMsg::Entered),
 			],
 		);
 		let error_row = Ui::widget(Paragraph::new(Line::styled(
@@ -170,7 +196,7 @@ impl InputDialog {
 			]),
 			vec![
 				Ui::widget(Paragraph::new(Line::styled(
-					t!("dialog.input_hint", locale = locale).into_owned(),
+					t!(kind.hint_key(), locale = locale).into_owned(),
 					Style::new().fg(HINT),
 				))),
 				Ui::stateful(button(ok_label), ok).on_activate(InputMsg::Accept),
@@ -244,9 +270,14 @@ impl InputDialog {
 		InputOutcome::Pending
 	}
 
-	/// Enter / `[OK]`: a directory is opened in the list, anything else is the answer.
+	/// Enter / `[OK]`. Asked for a file: a directory is opened in the list, anything else is the answer,
+	/// an empty field is none. Asked for a directory: whatever the field holds is the answer, and an
+	/// empty field is the answer "the default one" — an empty path.
 	fn accept(&mut self, list_dir: &impl Fn(&Path) -> Vec<DirEntry>) -> InputOutcome {
 		let text = self.field.value().trim().to_owned();
+		if self.kind.wants_directory() {
+			return InputOutcome::Submit(PathBuf::from(text));
+		}
 		if text.is_empty() {
 			return InputOutcome::Pending;
 		}

@@ -3,7 +3,6 @@
 //! `App` never touches devices: key handling yields a `Request`, which `fulfil` applies to the `Session`.
 //! That keeps dialogs and hotkeys testable without hardware.
 
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -11,12 +10,11 @@ use super::dialog::{Choice, Dialog, DialogKind};
 use super::effects_dialog::{EffectsDialog, EffectsOutcome};
 use super::keys::{Action, Bindings};
 use super::meter::ClipHold;
-use super::path_input::{self, PathInput, PathOutcome};
-use super::record_dialog::{RecordDialog, RecordOutcome};
+use super::path_input::{InputKind, PathRequest};
 use super::selector::SelectorOutcome;
 use super::text_keyboard::TextKeyboard;
 use crate::audio;
-use crate::config::KeyboardConfig;
+use crate::config::{KeyboardConfig, RecordFormat};
 use crate::midi::MidiEvent;
 use crate::session::{EffectsAction, EffectsSettings, MixerAction, Notice, Session};
 
@@ -34,7 +32,8 @@ pub enum Request {
 	OpenEffectsDialog,
 	OpenRecordDialog,
 	Apply(Choice),
-	LoadBank(PathBuf),
+	/// A format button of the main screen.
+	SetRecordFormat(RecordFormat),
 	Rescan,
 	Panic,
 	/// Home / End (spec v1.1 §4.3).
@@ -55,19 +54,70 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Modal {
 	Select(Dialog),
-	Sf2Path(PathInput),
 	Effects(EffectsDialog),
-	Record(RecordDialog),
 	/// F1: scroll offset in rows.
 	Help(usize),
 	/// F10 / Ctrl+C while recording (spec §6): Enter stops and quits, Esc stays.
 	ConfirmQuit,
 }
 
+/// The `[buttons]` of the main screen (spec v1.2 §3), in the order Tab walks them: top to bottom,
+/// left to right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ButtonId {
+	MidiIn,
+	MidiFile,
+	FileStart,
+	FilePause,
+	FileStop,
+	EngineSynth,
+	EngineSf2,
+	Sf2File,
+	Preset,
+	Effects,
+	AudioOut,
+	MasterDown,
+	MasterUp,
+	Folder,
+	FormatFlac,
+	FormatOgg,
+	FormatMidi,
+	RecordStart,
+	RecordStop,
+	RecordCancel,
+}
+
+impl ButtonId {
+	pub const ALL: [Self; 20] = [
+		Self::MidiIn,
+		Self::MidiFile,
+		Self::FileStart,
+		Self::FilePause,
+		Self::FileStop,
+		Self::EngineSynth,
+		Self::EngineSf2,
+		Self::Sf2File,
+		Self::Preset,
+		Self::Effects,
+		Self::AudioOut,
+		Self::MasterDown,
+		Self::MasterUp,
+		Self::Folder,
+		Self::FormatFlac,
+		Self::FormatOgg,
+		Self::FormatMidi,
+		Self::RecordStart,
+		Self::RecordStop,
+		Self::RecordCancel,
+	];
+}
+
 pub struct App {
 	pub locale: &'static str,
 	pub should_quit: bool,
 	pub modal: Option<Modal>,
+	/// A path the user is to be asked for; the window takes it and shows the input dialog.
+	pub path_request: Option<PathRequest>,
 	pub keyboard: TextKeyboard,
 	pub bindings: Bindings,
 	/// Elapsed time of the running recording, refreshed every frame; `None` when not recording.
@@ -88,6 +138,7 @@ impl App {
 			locale,
 			should_quit: false,
 			modal: None,
+			path_request: None,
 			keyboard,
 			bindings: Bindings::default(),
 			recording: None,
@@ -105,25 +156,77 @@ impl App {
 
 	/// Handles one key press. Quit works everywhere; with a modal open every other key belongs to it.
 	pub fn handle_key(&mut self, key: KeyEvent) -> Option<Request> {
-		if self.bindings.action_for(&key) == Some(Action::Quit) {
-			self.dirty = true;
-			if self.recording.is_some() && !matches!(self.modal, Some(Modal::ConfirmQuit)) {
-				self.modal = Some(Modal::ConfirmQuit);
-				return None;
-			}
-			self.should_quit = true;
+		let action = self.bindings.action_for(&key);
+		if action == Some(Action::Quit) {
+			self.request_quit();
 			return None;
 		}
 		if self.modal.is_some() {
 			self.dirty = true;
 			return self.handle_modal_key(key);
 		}
-		let Some(action) = self.bindings.action_for(&key) else {
-			return self.handle_note_key(key);
-		};
+		match action {
+			Some(action) => self.perform(action),
+			None => self.handle_note_key(key),
+		}
+	}
+
+	/// Quitting while a take runs asks first (spec §6); asked again, it quits.
+	fn request_quit(&mut self) {
+		self.dirty = true;
+		if self.recording.is_some() && !matches!(self.modal, Some(Modal::ConfirmQuit)) {
+			self.modal = Some(Modal::ConfirmQuit);
+			return;
+		}
+		self.should_quit = true;
+	}
+
+	/// A button of the main screen pressed with the mouse or with Enter: the same commands the hotkeys give.
+	pub fn press_button(&mut self, button: ButtonId) -> Option<Request> {
+		match button {
+			ButtonId::MidiIn => self.perform(Action::MidiDialog),
+			ButtonId::Sf2File => self.perform(Action::Sf2Dialog),
+			ButtonId::Preset => self.perform(Action::PresetDialog),
+			ButtonId::Effects => self.perform(Action::EffectsDialog),
+			ButtonId::AudioOut => self.perform(Action::AudioDialog),
+			// The master buttons step by 5 % (spec v1.2, F-10).
+			ButtonId::MasterDown => self.perform(Action::MasterDownFast),
+			ButtonId::MasterUp => self.perform(Action::MasterUpFast),
+			ButtonId::Folder => self.perform(Action::RecordDialog),
+			ButtonId::FormatFlac => self.choose_format(RecordFormat::Flac),
+			ButtonId::FormatOgg => self.choose_format(RecordFormat::OggVorbis),
+			ButtonId::RecordStart => self.perform(Action::RecordStart),
+			ButtonId::RecordStop => self.perform(Action::RecordStop),
+			// The MIDI file, the built-in synth, recording MIDI and cancelling a take arrive with plan
+			// stages 4-6; until then the screen shows these buttons unavailable.
+			ButtonId::MidiFile
+			| ButtonId::FileStart
+			| ButtonId::FilePause
+			| ButtonId::FileStop
+			| ButtonId::EngineSynth
+			| ButtonId::EngineSf2
+			| ButtonId::FormatMidi
+			| ButtonId::RecordCancel => None,
+		}
+	}
+
+	/// The format cannot change under a running take (spec v1.2, F-23).
+	fn choose_format(&mut self, format: RecordFormat) -> Option<Request> {
+		if self.recording.is_some() {
+			return None;
+		}
+		self.dirty = true;
+		Some(Request::SetRecordFormat(format))
+	}
+
+	/// Carries out a command, whichever way it was given: a hotkey or a button.
+	fn perform(&mut self, action: Action) -> Option<Request> {
 		self.dirty = true;
 		match action {
-			Action::Quit => unreachable!("handled above"),
+			Action::Quit => {
+				self.request_quit();
+				None
+			}
 			Action::Help => {
 				self.modal = Some(Modal::Help(0));
 				None
@@ -255,37 +358,14 @@ impl App {
 					rollback.map(|settings| Request::Effects(EffectsAction::Set(settings)))
 				}
 			},
-			Modal::Record(dialog) => match dialog.handle_key(key, path_input::list_dir) {
-				RecordOutcome::Pending => None,
-				RecordOutcome::Cancelled => {
-					self.modal = None;
-					None
-				}
-				RecordOutcome::Accepted { dir, format } => {
-					self.modal = None;
-					Some(Request::Apply(Choice::SetRecording { dir, format }))
-				}
-			},
-			Modal::Sf2Path(input) => match input.handle_key(key, path_input::list_dir) {
-				PathOutcome::Pending => None,
-				PathOutcome::Cancelled => {
-					self.modal = None;
-					None
-				}
-				// The dialog stays open: `fulfil` closes it on success or shows the error inside it.
-				PathOutcome::Submit(path) => Some(Request::LoadBank(path)),
-			},
 		}
 	}
 
-	/// Pasted text goes into the path field of the open dialog; elsewhere it is ignored.
-	pub fn handle_paste(&mut self, text: &str) {
-		match self.modal.as_mut() {
-			Some(Modal::Sf2Path(input)) => input.insert_str(text),
-			Some(Modal::Record(dialog)) => dialog.insert_str(text),
-			_ => return,
-		}
+	/// A click outside the open dialog closes it the way Esc does (spec v1.2 §4.1).
+	pub fn dismiss_modal(&mut self) -> Option<Request> {
+		self.modal.as_ref()?;
 		self.dirty = true;
+		self.handle_modal_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
 	}
 
 	pub fn open_modal(&mut self, modal: Modal) {
@@ -323,11 +403,18 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 				app.open_dialog(Dialog::preset(loaded.bank.presets(), session.preset_for()));
 			}
 		}
-		Request::OpenRecordDialog => app.open_modal(Modal::Record(RecordDialog::new(
-			session.config.record.dir.as_deref(),
-			session.config.record.format,
-			session.config.record.vorbis_quality,
-		))),
+		Request::OpenRecordDialog => {
+			let record = &session.config.record;
+			app.path_request = Some(PathRequest {
+				kind: InputKind::RecordDir,
+				initial: record
+					.dir
+					.as_ref()
+					.map(|dir| dir.to_string_lossy().into_owned())
+					.unwrap_or_default(),
+				history: record.recent_dirs.clone(),
+			});
+		}
 		Request::OpenEffectsDialog => app.open_modal(Modal::Effects(EffectsDialog::new(session.effects()))),
 		Request::OpenSf2Dialog => {
 			let initial = session
@@ -335,7 +422,11 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 				.as_ref()
 				.map(|loaded| loaded.path.to_string_lossy().into_owned())
 				.unwrap_or_default();
-			app.open_modal(Modal::Sf2Path(PathInput::new(&initial, session.config.synth.recent_banks.clone())));
+			app.path_request = Some(PathRequest {
+				kind: InputKind::Sf2File,
+				initial,
+				history: session.config.synth.recent_banks.clone(),
+			});
 		}
 		Request::Apply(Choice::ConnectMidi(index)) => {
 			session.connect_midi(index);
@@ -349,21 +440,10 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 			session.select_preset(bank, program);
 			session.save_config();
 		}
-		Request::Apply(Choice::SetRecording { dir, format }) => {
-			session.set_recording(dir, format);
+		Request::SetRecordFormat(format) => {
+			session.set_record_format(format);
 			session.save_config();
 		}
-		Request::LoadBank(path) => match session.load_bank(&path) {
-			Ok(()) => {
-				app.modal = None;
-				session.save_config();
-			}
-			Err(error) => {
-				if let Some(Modal::Sf2Path(input)) = app.modal.as_mut() {
-					input.set_error(error.to_string());
-				}
-			}
-		},
 		Request::Rescan => session.rescan(),
 		Request::StartRecord => session.start_recording(),
 		Request::StopRecord | Request::StopRecordingAndQuit => session.stop_recording(),

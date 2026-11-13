@@ -265,35 +265,6 @@ fn in_a_dialog_plain_characters_are_text_and_chords_stay_commands() {
 }
 
 #[test]
-fn paste_is_ctrl_v_or_shift_insert_and_nothing_else() {
-	let chord = |code, modifiers| KeyEvent::new(code, modifiers);
-	assert!(is_paste_chord(&chord(KeyCode::Char('v'), KeyModifiers::CONTROL)));
-	assert!(is_paste_chord(&chord(KeyCode::Char('V'), KeyModifiers::CONTROL)));
-	assert!(is_paste_chord(&chord(KeyCode::Insert, KeyModifiers::SHIFT)));
-	// The V key pastes in a Russian layout too: the chord is read by the place of the key.
-	let russian_v = command(PhysicalCode::KeyV, &character("м"), ModifiersState::CONTROL).expect("a character key");
-	assert!(is_paste_chord(&russian_v));
-	// A held chord keeps pasting, as in any text field.
-	let mut repeat = chord(KeyCode::Char('v'), KeyModifiers::CONTROL);
-	repeat.kind = KeyEventKind::Repeat;
-	assert!(is_paste_chord(&repeat));
-
-	assert!(
-		!is_paste_chord(&chord(KeyCode::Char('v'), KeyModifiers::NONE)),
-		"a plain letter is text"
-	);
-	assert!(!is_paste_chord(&chord(
-		KeyCode::Char('v'),
-		KeyModifiers::CONTROL | KeyModifiers::ALT
-	)));
-	assert!(!is_paste_chord(&chord(KeyCode::Char('c'), KeyModifiers::CONTROL)));
-	assert!(!is_paste_chord(&chord(KeyCode::Insert, KeyModifiers::NONE)));
-	let mut release = chord(KeyCode::Char('v'), KeyModifiers::CONTROL);
-	release.kind = KeyEventKind::Release;
-	assert!(!is_paste_chord(&release), "letting go of the chord does not paste again");
-}
-
-#[test]
 fn in_a_text_field_only_non_character_quit_keys_quit() {
 	let bindings = Bindings::default();
 	assert!(quits_from_a_field(&bindings, &KeyEvent::new(KeyCode::F(10), KeyModifiers::NONE)));

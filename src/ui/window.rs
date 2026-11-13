@@ -4,6 +4,7 @@
 //! module only hands window events over (keys are translated by `keymap`), drives the periodic work
 //! from the tick, and redraws when what the screen shows has changed.
 
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -12,16 +13,18 @@ use gterm::buffer::ScreenBuffer;
 use gterm::config::{BACKEND_ENV, Config as GridConfig};
 use gterm::font::{FONT_SCALE, FontFamily, glyph_px_for};
 use gterm::rasterizer::Rasterizer;
-use gterm_widgets::{Clipboard, SystemClipboard};
+use gterm_widgets::{MouseMsg, Rect, SystemClipboard};
+use rust_i18n::t;
 use winit::event::ElementState;
 
-use super::app::{App, FRAME_INTERVAL, Modal, Request, fulfil};
-use super::chord::KeyEventKind;
+use super::app::{App, FRAME_INTERVAL, Request, fulfil};
+use super::buttons::{Buttons, Touch};
+use super::chord::{KeyCode, KeyEvent, KeyEventKind};
 use super::dialog_screen;
-use super::input_dialog::{InputDialog, InputKind, InputOutcome};
-use super::keymap::{Reading, WindowKey, is_paste_chord, key_from_window, quits_from_a_field, reading_in_a_dialog};
+use super::input_dialog::{InputDialog, InputOutcome};
+use super::keymap::{Reading, WindowKey, key_from_window, quits_from_a_field, reading_in_a_dialog};
 use super::main_screen::{self, BACKGROUND, MIN_COLS, MIN_ROWS, TEXT};
-use super::path_input;
+use super::path_input::{self, InputKind};
 use super::view::View;
 use crate::session::{Notice, Session};
 
@@ -74,6 +77,7 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		app,
 		session,
 		shown: None,
+		buttons: Buttons::new(),
 		clipboard: SystemClipboard::new(),
 		input: None,
 	};
@@ -109,6 +113,14 @@ impl FrameState {
 	}
 }
 
+/// Whether the mouse event is over a cell of `area`.
+fn is_inside(area: Rect, message: &MouseMsg) -> bool {
+	match (u16::try_from(message.col), u16::try_from(message.row)) {
+		(Ok(col), Ok(row)) => area.contains(col, row),
+		_ => false,
+	}
+}
+
 fn blink_phase(elapsed: Duration) -> bool {
 	(elapsed.as_millis() / BLINK_HALF_PERIOD_MS).is_multiple_of(2)
 }
@@ -118,9 +130,11 @@ struct Window {
 	session: Session,
 	/// What the last drawn frame showed; `None` before the first frame.
 	shown: Option<FrameState>,
-	/// Where Ctrl+V takes text from for the fields of the dialogs.
+	/// The `[buttons]` of the main screen: where the last frame put them, the focus, the one held down.
+	buttons: Buttons,
+	/// Where Ctrl+V takes text from for the field of the input dialog.
 	clipboard: SystemClipboard,
-	/// The input dialog on widget controls, while it is open. It stands in for the path dialog of `App`.
+	/// The input dialog on widget controls, while it is open.
 	input: Option<InputDialog>,
 }
 
@@ -138,22 +152,35 @@ impl Window {
 		if !force && self.shown.as_ref() == Some(&state) {
 			return;
 		}
-		main_screen::render(ctx.screen, &self.app, &state.view);
+		main_screen::render(ctx.screen, &self.app, &state.view, &mut self.buttons);
 		dialog_screen::render(ctx.screen, &self.app);
 		self.shown = Some(state);
 		ctx.redraw();
 	}
 
-	/// The SoundFont path dialog is shown as the input dialog on widget controls: take over what `App` opened.
-	fn adopt_path_dialog(&mut self) {
-		if let Some(Modal::Sf2Path(path)) = &self.app.modal {
+	/// Shows the input dialog for the path `App` wants asked.
+	fn adopt_path_request(&mut self) {
+		if let Some(request) = self.app.path_request.take() {
 			self.input = Some(InputDialog::new(
-				InputKind::Sf2File,
-				&path.text(),
-				path.recent(),
+				request.kind,
+				&request.initial,
+				&request.history,
 				path_input::list_dir,
 			));
-			self.app.modal = None;
+		}
+	}
+
+	/// A key press on the main screen. A command key goes to `App`; of the rest, Tab and Enter belong
+	/// to the buttons, and what is left may be a note. The flag tells that the picture changed without
+	/// `App` knowing (the focus moved).
+	fn key_on_screen(&mut self, key: KeyEvent) -> (Option<Request>, bool) {
+		if self.app.modal.is_some() || self.app.bindings.action_for(&key).is_some() {
+			return (self.app.handle_key(key), false);
+		}
+		match self.buttons.handle_key(&key) {
+			Touch::Missed => (self.app.handle_key(key), false),
+			Touch::Changed => (None, true),
+			Touch::Pressed(button) => (self.app.press_button(button), true),
 		}
 	}
 
@@ -173,25 +200,60 @@ impl Window {
 		self.refresh(ctx, true);
 	}
 
-	/// Acts on what the input dialog decided: a submitted bank is loaded, and the dialog closes only
+	/// A mouse event for the open input dialog.
+	fn pointer_to_input(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
+		let Self { input, clipboard, app, .. } = self;
+		let Some(dialog) = input else {
+			return;
+		};
+		let routed = dialog.ui(app.locale, clipboard).pointer(event, ctx);
+		let outcome = dialog.settle(routed, None, path_input::list_dir);
+		self.conclude_input(outcome);
+		self.refresh(ctx, true);
+	}
+
+	/// Acts on what the input dialog decided. A submitted path is applied, and the dialog closes only
 	/// when that worked — otherwise it stays open and shows why not.
 	fn conclude_input(&mut self, outcome: InputOutcome) {
-		match outcome {
-			InputOutcome::Pending => {}
-			InputOutcome::Cancelled => self.input = None,
-			InputOutcome::Submit(path) => match self.session.load_bank(&path) {
-				Ok(()) => {
-					self.input = None;
-					self.session.save_config();
+		let path = match outcome {
+			InputOutcome::Pending => return,
+			InputOutcome::Cancelled => {
+				self.input = None;
+				return;
+			}
+			InputOutcome::Submit(path) => path,
+		};
+		let Some(dialog) = &mut self.input else {
+			return;
+		};
+		let applied = match dialog.kind() {
+			InputKind::Sf2File => self.session.load_bank(&path).map_err(|error| error.to_string()),
+			InputKind::RecordDir => match record_dir_from(&path) {
+				Some(dir) => {
+					self.session.set_record_dir(dir);
+					Ok(())
 				}
-				Err(error) => {
-					if let Some(dialog) = &mut self.input {
-						dialog.set_error(error.to_string());
-					}
-				}
+				None => Err(t!("dialog.not_a_folder", locale = self.app.locale).into_owned()),
 			},
+		};
+		match applied {
+			Ok(()) => {
+				self.input = None;
+				self.session.save_config();
+			}
+			Err(message) => dialog.set_error(message),
 		}
 	}
+}
+
+/// What a path entered in the folder dialog means: an empty one is the default folder (`Some(None)`),
+/// an existing file is not a folder (`None`), anything else is the folder — the recorder creates it
+/// when a take starts.
+fn record_dir_from(path: &Path) -> Option<Option<PathBuf>> {
+	if path.as_os_str().is_empty() {
+		return Some(None);
+	}
+	(!path.is_file()).then(|| Some(path.to_owned()))
 }
 
 impl AppHandler for Window {
@@ -207,6 +269,10 @@ impl AppHandler for Window {
 	fn on_key(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
 		let window_key = WindowKey::of(event, ctx.modifiers);
 		let command = key_from_window(&window_key, Reading::Command);
+		// A held Enter must not go on to act in the dialog its first press opened.
+		if command.is_some_and(|key| key.code == KeyCode::Enter && key.kind == KeyEventKind::Repeat) {
+			return;
+		}
 		if self.input.is_some() {
 			let is_quitting = command.is_some_and(|key| quits_from_a_field(&self.app.bindings, &key));
 			if !is_quitting {
@@ -226,23 +292,18 @@ impl AppHandler for Window {
 		};
 		// Raw key stream for diagnosing input (auto-repeat, release events); spec N-07.
 		tracing::debug!(code = ?key.code, kind = ?key.kind, modifiers = ?key.modifiers, "key event");
-		let request = if is_paste_chord(&command) && self.app.modal.is_some() {
-			if let Some(text) = self.clipboard.get() {
-				self.app.handle_paste(&text);
-			}
-			None
-		} else if key.kind == KeyEventKind::Release {
-			self.app.handle_release(key)
+		let (request, has_changed) = if key.kind == KeyEventKind::Release {
+			(self.app.handle_release(key), false)
 		} else {
-			self.app.handle_key(key)
+			self.key_on_screen(key)
 		};
 		self.apply(request);
 		if self.app.should_quit {
 			ctx.exit();
 			return;
 		}
-		self.adopt_path_dialog();
-		let force = self.app.take_dirty();
+		self.adopt_path_request();
+		let force = self.app.take_dirty() || has_changed;
 		self.refresh(ctx, force);
 	}
 
@@ -259,13 +320,27 @@ impl AppHandler for Window {
 	}
 
 	fn on_pointer(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
-		let Self { input, clipboard, app, .. } = self;
-		let Some(dialog) = input else {
+		if self.input.is_some() {
+			self.pointer_to_input(event, ctx);
 			return;
+		}
+		let message = MouseMsg::from_pointer(event, ctx);
+		let request = if self.app.modal.is_some() {
+			// A dialog takes the mouse from the screen under it; a click outside closes it like Esc.
+			let dialog = dialog_screen::area(&self.app, Rect::of_screen(ctx.screen));
+			if !message.is_left_down() || dialog.is_some_and(|area| is_inside(area, &message)) {
+				return;
+			}
+			self.app.dismiss_modal()
+		} else {
+			match self.buttons.handle_mouse(&message) {
+				Touch::Missed => return,
+				Touch::Changed => None,
+				Touch::Pressed(button) => self.app.press_button(button),
+			}
 		};
-		let routed = dialog.ui(app.locale, clipboard).pointer(event, ctx);
-		let outcome = dialog.settle(routed, None, path_input::list_dir);
-		self.conclude_input(outcome);
+		self.apply(request);
+		self.adopt_path_request();
 		self.refresh(ctx, true);
 	}
 

@@ -1,7 +1,5 @@
 //! Snapshot tests of the window dialogs: text and cell colours of a `ScreenBuffer`, no window.
 
-use std::path::Path;
-
 use gterm::cell::CellFlags;
 
 use super::*;
@@ -201,12 +199,6 @@ fn a_long_selector_list_scrolls_to_keep_the_cursor_visible() {
 }
 
 #[test]
-fn the_path_dialog_of_the_app_is_left_to_the_input_dialog() {
-	let buf = shown(Modal::Sf2Path(crate::ui::path_input::PathInput::new("D:/sf2/Gen", Vec::new())));
-	assert!(lines_of(&buf).iter().all(String::is_empty));
-}
-
-#[test]
 fn the_effects_dialog_shows_switches_levels_and_the_current_row() {
 	let mut dialog = effects_dialog();
 	let buf = shown(Modal::Effects(dialog.clone()));
@@ -230,43 +222,6 @@ fn the_effects_dialog_shows_switches_levels_and_the_current_row() {
 
 	let english = shown_in("en", Modal::Effects(effects_dialog()));
 	assert!(is_shown(&english, "│Reverb   [x]  level  40"));
-}
-
-#[test]
-fn the_record_dialog_shows_the_folder_the_format_and_what_is_being_edited() {
-	let buf = shown(Modal::Record(RecordDialog::new(None, RecordFormat::Flac, 0.5)));
-	assert!(is_shown(&buf, "┌ Запись ─"));
-	assert!(is_shown(&buf, "│Каталог: (пусто: папка «Музыка»/sf2_player)"));
-	assert!(is_shown(&buf, "│Формат: (●) FLAC   ( ) Ogg Vorbis"));
-	assert!(is_shown(&buf, "│без потерь, около 3–5 МБ/мин"));
-	assert!(is_shown(
-		&buf,
-		"│↑↓ — поле · Tab — дополнить · ←→ — формат · Enter — сохранить · Esc — отмена"
-	));
-	// An empty folder shows the placeholder dimmed, with the cursor on its first cell.
-	let (row, col) = find(&buf, "(пусто:");
-	assert_eq!(buf.cell(col, row).bg, TEXT);
-	assert_eq!((buf.cell(col + 1, row).fg, buf.cell(col + 1, row).bg), (HINT, BACKGROUND));
-	assert_eq!(colours_of(&buf, "(●) FLAC"), (TEXT, BACKGROUND));
-	assert_eq!(colours_of(&buf, "без потерь").0, LABEL);
-
-	let mut dialog = RecordDialog::new(Some(Path::new("D:/takes")), RecordFormat::OggVorbis, 0.5);
-	let buf = shown(Modal::Record(dialog.clone()));
-	assert!(is_shown(&buf, "│Каталог: D:/takes"));
-	assert!(is_shown(&buf, "│Формат: ( ) FLAC   (●) Ogg Vorbis"));
-	assert!(is_shown(&buf, "│с потерями, около 1 МБ/мин, качество 0.5"));
-	let (row, col) = find(&buf, "D:/takes");
-	assert_eq!(
-		buf.cell(col + "D:/takes".chars().count(), row).bg,
-		TEXT,
-		"the cursor follows the folder"
-	);
-
-	// ↓ moves to the format row: it is highlighted and the field loses its cursor.
-	dialog.handle_key(press(KeyCode::Down), |_| Vec::new());
-	let buf = shown(Modal::Record(dialog));
-	assert_eq!(colours_of(&buf, "( ) FLAC"), (BACKGROUND, TEXT));
-	assert_eq!(buf.cell(col + "D:/takes".chars().count(), row).bg, BACKGROUND);
 }
 
 #[test]
@@ -345,4 +300,42 @@ fn dialogs_fit_a_grid_smaller_than_they_would_like() {
 	assert!(lines[0].starts_with("┌ Справка ─"), "the box shrinks to the grid: {lines:?}");
 	assert!(lines[5].starts_with("└─"));
 	assert_eq!(lines[0].chars().count(), 30);
+}
+
+#[test]
+fn the_reported_area_is_exactly_the_frame_that_is_drawn() {
+	let grid = Rect::of_screen(&screen());
+	assert_eq!(area(&App::new("ru"), grid), None, "no dialog, no area");
+	for modal in [
+		Modal::Select(midi_dialog(&["KeyStep", "loopMIDI"], None)),
+		Modal::Effects(effects_dialog()),
+		Modal::Help(0),
+		Modal::ConfirmQuit,
+	] {
+		let mut app = App::new("ru");
+		app.modal = Some(modal.clone());
+		let area = area(&app, grid).expect("a dialog is open");
+		let buf = shown(modal.clone());
+		let corner = |col: u16, row: u16| buf.cell(usize::from(col), usize::from(row)).ch;
+		let (right, bottom) = (area.x + area.width - 1, area.y + area.height - 1);
+		assert_eq!(
+			[
+				corner(area.x, area.y),
+				corner(right, area.y),
+				corner(area.x, bottom),
+				corner(right, bottom)
+			],
+			['┌', '┐', '└', '┘'],
+			"{modal:?}"
+		);
+		// Nothing of the dialog lies outside the area.
+		for row in 0..grid.height {
+			for col in 0..grid.width {
+				assert!(
+					area.contains(col, row) || corner(col, row) == EMPTY_CELL,
+					"{modal:?}: cell {col},{row}"
+				);
+			}
+		}
+	}
 }

@@ -298,15 +298,19 @@ impl Bindings {
 			.into_iter()
 			.map(|(key, labels)| (labels.join(" / "), t!(key, locale = locale).into_owned()))
 			.collect();
-		// The piano rows are not commands, but they belong in the same table (F-16).
-		rows.push((
-			t!("help.chord.white_keys", locale = locale).into_owned(),
-			t!("help.action.white_keys", locale = locale).into_owned(),
-		));
-		rows.push((
-			t!("help.chord.black_keys", locale = locale).into_owned(),
-			t!("help.action.black_keys", locale = locale).into_owned(),
-		));
+		// The keys of the buttons and the piano rows are not commands, but they belong in the same table
+		// (F-16, F-25).
+		for (chord, description) in [
+			("help.chord.focus", "help.action.focus"),
+			("help.chord.press", "help.action.press"),
+			("help.chord.white_keys", "help.action.white_keys"),
+			("help.chord.black_keys", "help.action.black_keys"),
+		] {
+			rows.push((
+				t!(chord, locale = locale).into_owned(),
+				t!(description, locale = locale).into_owned(),
+			));
+		}
 		rows
 	}
 }
