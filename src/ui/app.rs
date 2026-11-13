@@ -14,7 +14,7 @@ use super::meter::ClipHold;
 use super::path_input::{self, PathInput, PathOutcome};
 use super::record_dialog::{RecordDialog, RecordOutcome};
 use super::selector::SelectorOutcome;
-use super::text_keyboard::{NoteOffMode, TextKeyboard};
+use super::text_keyboard::TextKeyboard;
 use crate::audio;
 use crate::config::KeyboardConfig;
 use crate::midi::MidiEvent;
@@ -80,10 +80,7 @@ pub struct App {
 
 impl App {
 	pub fn new(locale: &'static str) -> Self {
-		Self::with_keyboard(
-			locale,
-			TextKeyboard::new(&KeyboardConfig::default(), NoteOffMode::Gate(Duration::from_millis(300))),
-		)
+		Self::with_keyboard(locale, TextKeyboard::new(&KeyboardConfig::default()))
 	}
 
 	pub fn with_keyboard(locale: &'static str, keyboard: TextKeyboard) -> Self {
@@ -184,7 +181,7 @@ impl App {
 		if key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) || key.kind == KeyEventKind::Repeat {
 			return None;
 		}
-		let events = self.keyboard.press(c, KEYBOARD_CHANNEL, Instant::now());
+		let events = self.keyboard.press(c, KEYBOARD_CHANNEL);
 		self.notes(events)
 	}
 
@@ -196,13 +193,7 @@ impl App {
 		let KeyCode::Char(c) = key.code else {
 			return None;
 		};
-		let events = self.keyboard.release(c, Instant::now());
-		self.notes(events)
-	}
-
-	/// Gate timer; called every frame.
-	pub fn tick_keyboard(&mut self, now: Instant) -> Option<Request> {
-		let events = self.keyboard.tick(now);
+		let events = self.keyboard.release(c);
 		self.notes(events)
 	}
 

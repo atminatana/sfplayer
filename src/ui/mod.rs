@@ -7,6 +7,7 @@ pub mod dialog_screen;
 pub mod effects_dialog;
 pub mod i18n;
 pub mod input_dialog;
+pub mod keymap;
 pub mod keys;
 pub mod main_screen;
 pub mod meter;

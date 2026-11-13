@@ -6,7 +6,7 @@ use sf2_player::cli::Cli;
 use sf2_player::config::{self, Config, Settings};
 use sf2_player::session::Session;
 use sf2_player::ui::keys::Bindings;
-use sf2_player::ui::text_keyboard::{NoteOffMode, TextKeyboard};
+use sf2_player::ui::text_keyboard::TextKeyboard;
 use sf2_player::ui::window::{self, WindowOptions};
 use sf2_player::ui::{self, App};
 use sf2_player::{audio, logging, midi};
@@ -32,8 +32,7 @@ fn main() -> anyhow::Result<()> {
 
 	let session = Session::start(&settings, config, config_path);
 	log_panics();
-	// A window reports key releases itself, so notes always last as long as the key is held.
-	let mut app = App::with_keyboard(locale, TextKeyboard::new(&session.config.keyboard, NoteOffMode::Release));
+	let mut app = App::with_keyboard(locale, TextKeyboard::new(&session.config.keyboard));
 	// Key overrides are validated before the window opens, so a bad [keys] entry is a plain error (ADR 0007).
 	app.bindings = Bindings::from_config(&session.config.keys, &session.config.keyboard).context("invalid key configuration")?;
 	let options = WindowOptions {

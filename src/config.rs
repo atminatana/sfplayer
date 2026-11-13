@@ -133,16 +133,13 @@ impl Default for MixerConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KeyboardConfig {
-	/// Note duration in gate mode, when the terminal cannot report key release (spec F-16).
-	pub gate_ms: u32,
 	pub base_octave: u8,
 	pub velocity: u8,
-	/// White keys left to right starting at C; black keys for C#, D#, F#, G#, A#, C#, D#.
+	/// White keys left to right starting at C; black keys for C#, D#, F#, G#, A#, C#, D#. Keys are
+	/// named by the character a US keyboard has in that place (spec v1.2 §4.3).
 	pub white: String,
 	pub black: String,
-	/// Use gate mode even when the terminal reports key releases (escape hatch for odd terminals).
-	pub force_gate: bool,
-	/// Extra chords for octave / velocity, for terminals that do not pass Ctrl+arrows (e.g. "F11", "Alt+Up").
+	/// Extra chords for octave / velocity, in addition to Ctrl+arrows (e.g. "F11", "Alt+Up").
 	pub octave_up: Option<String>,
 	pub octave_down: Option<String>,
 	pub velocity_up: Option<String>,
@@ -152,12 +149,10 @@ pub struct KeyboardConfig {
 impl Default for KeyboardConfig {
 	fn default() -> Self {
 		Self {
-			gate_ms: 300,
 			base_octave: 4,
 			velocity: 100,
 			white: "zxcvbnm,./".to_owned(),
 			black: "sdghjl;".to_owned(),
-			force_gate: false,
 			octave_up: None,
 			octave_down: None,
 			velocity_up: None,
@@ -310,7 +305,7 @@ mod tests {
 		assert_eq!(config, Config::default());
 		assert_eq!(config.audio.buffer_frames, DEFAULT_BUFFER_FRAMES);
 		assert_eq!(config.mixer.master, 80);
-		assert_eq!(config.keyboard.gate_ms, 300);
+		assert_eq!(config.keyboard.base_octave, 4);
 		assert_eq!(config.record.format, RecordFormat::Flac);
 	}
 

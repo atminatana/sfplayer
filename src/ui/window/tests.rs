@@ -1,20 +1,9 @@
-//! Tests of the window glue that need no window: key translation and the "what the frame shows" key.
-
-use winit::keyboard::SmolStr;
+//! Tests of the window glue that need no window: the "what the frame shows" key.
 
 use super::*;
 use crate::audio::{Levels, Mixer};
 use crate::config::RecordFormat;
 use crate::midi::MidiStatus;
-use crate::ui::keys::{Action, Bindings};
-
-fn character(text: &str) -> Key {
-	Key::Character(SmolStr::new(text))
-}
-
-fn pressed(key: &Key, held: ModifiersState) -> Option<KeyEvent> {
-	key_from_window(key, ElementState::Pressed, false, held)
-}
 
 fn view() -> View {
 	View {
@@ -37,124 +26,6 @@ fn view() -> View {
 		mixer: Mixer::new(80),
 		notice: None,
 	}
-}
-
-#[test]
-fn named_keys_translate_to_the_ui_key_codes() {
-	let none = ModifiersState::empty();
-	for (named, code) in [
-		(NamedKey::ArrowUp, KeyCode::Up),
-		(NamedKey::ArrowDown, KeyCode::Down),
-		(NamedKey::ArrowLeft, KeyCode::Left),
-		(NamedKey::ArrowRight, KeyCode::Right),
-		(NamedKey::Home, KeyCode::Home),
-		(NamedKey::End, KeyCode::End),
-		(NamedKey::PageUp, KeyCode::PageUp),
-		(NamedKey::PageDown, KeyCode::PageDown),
-		(NamedKey::Enter, KeyCode::Enter),
-		(NamedKey::Escape, KeyCode::Esc),
-		(NamedKey::Tab, KeyCode::Tab),
-		(NamedKey::Backspace, KeyCode::Backspace),
-		(NamedKey::Delete, KeyCode::Delete),
-		(NamedKey::Insert, KeyCode::Insert),
-		(NamedKey::Space, KeyCode::Char(' ')),
-		(NamedKey::F1, KeyCode::F(1)),
-		(NamedKey::F10, KeyCode::F(10)),
-		(NamedKey::F12, KeyCode::F(12)),
-		(NamedKey::F24, KeyCode::F(24)),
-	] {
-		assert_eq!(
-			pressed(&Key::Named(named), none),
-			Some(KeyEvent::new(code, KeyModifiers::NONE)),
-			"{named:?}"
-		);
-	}
-	// Keys the UI does not distinguish never reach the handlers.
-	for named in [
-		NamedKey::CapsLock,
-		NamedKey::Shift,
-		NamedKey::Control,
-		NamedKey::F25,
-		NamedKey::PrintScreen,
-	] {
-		assert_eq!(pressed(&Key::Named(named), none), None, "{named:?}");
-	}
-	assert_eq!(pressed(&Key::Dead(Some('`')), none), None);
-}
-
-#[test]
-fn modifiers_and_event_kinds_are_carried_over() {
-	assert_eq!(
-		pressed(&character("c"), ModifiersState::CONTROL),
-		Some(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
-	);
-	assert_eq!(
-		pressed(&Key::Named(NamedKey::ArrowLeft), ModifiersState::CONTROL | ModifiersState::ALT),
-		Some(KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL | KeyModifiers::ALT))
-	);
-	assert_eq!(
-		pressed(&Key::Named(NamedKey::F1), ModifiersState::SUPER),
-		Some(KeyEvent::new(KeyCode::F(1), KeyModifiers::SUPER))
-	);
-	// Shift+Tab arrives as the back-tab key, as terminals report it.
-	assert_eq!(
-		pressed(&Key::Named(NamedKey::Tab), ModifiersState::SHIFT),
-		Some(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
-	);
-
-	let repeat = key_from_window(&character("z"), ElementState::Pressed, true, ModifiersState::empty());
-	assert_eq!(repeat.map(|key| key.kind), Some(KeyEventKind::Repeat));
-	let release = key_from_window(&character("z"), ElementState::Released, false, ModifiersState::empty());
-	assert_eq!(release.map(|key| key.kind), Some(KeyEventKind::Release));
-	// A release that still carries the repeat flag is a release.
-	let late_release = key_from_window(&character("z"), ElementState::Released, true, ModifiersState::empty());
-	assert_eq!(late_release.map(|key| key.kind), Some(KeyEventKind::Release));
-}
-
-#[test]
-fn character_keys_keep_the_character_the_layout_produced() {
-	let none = ModifiersState::empty();
-	assert_eq!(
-		pressed(&character("z"), none),
-		Some(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE))
-	);
-	assert_eq!(
-		pressed(&character("Z"), ModifiersState::SHIFT),
-		Some(KeyEvent::new(KeyCode::Char('Z'), KeyModifiers::SHIFT))
-	);
-	assert_eq!(
-		pressed(&character("я"), none),
-		Some(KeyEvent::new(KeyCode::Char('я'), KeyModifiers::NONE))
-	);
-	// A key that produced more than one character, or none, is not a single key press for the UI.
-	assert_eq!(pressed(&character("ab"), none), None);
-	assert_eq!(pressed(&character(""), none), None);
-}
-
-#[test]
-fn window_chords_reach_the_same_commands_as_in_the_terminal() {
-	let bindings = Bindings::default();
-	let action = |key: &Key, held: ModifiersState| pressed(key, held).and_then(|key| bindings.action_for(&key));
-	let none = ModifiersState::empty();
-	assert_eq!(action(&Key::Named(NamedKey::F1), none), Some(Action::Help));
-	assert_eq!(action(&Key::Named(NamedKey::F10), none), Some(Action::Quit));
-	assert_eq!(action(&character("c"), ModifiersState::CONTROL), Some(Action::Quit));
-	assert_eq!(action(&Key::Named(NamedKey::Space), none), Some(Action::Panic));
-	assert_eq!(action(&Key::Named(NamedKey::Home), none), Some(Action::RecordStart));
-	assert_eq!(
-		action(&Key::Named(NamedKey::ArrowUp), ModifiersState::CONTROL),
-		Some(Action::OctaveUp)
-	);
-	assert_eq!(action(&character("r"), ModifiersState::ALT), Some(Action::ToggleReverb));
-	assert_eq!(action(&character("u"), ModifiersState::CONTROL), Some(Action::MasterMute));
-	assert_eq!(action(&character("]"), none), Some(Action::TransposeUp));
-	// The volume keys as a keyboard produces them: `-` and `=` plain, `+` and `_` with Shift held.
-	assert_eq!(action(&character("-"), none), Some(Action::MasterDown));
-	assert_eq!(action(&character("="), none), Some(Action::MasterUp));
-	assert_eq!(action(&character("+"), ModifiersState::SHIFT), Some(Action::MasterUpFast));
-	assert_eq!(action(&character("_"), ModifiersState::SHIFT), Some(Action::MasterDownFast));
-	// A plain letter is no command: it is left for the text keyboard.
-	assert_eq!(action(&character("z"), none), None);
 }
 
 #[test]
@@ -197,46 +68,4 @@ fn a_running_take_redraws_once_per_blink_phase_and_per_second() {
 	assert!(blink_phase(Duration::from_millis(0)));
 	assert!(!blink_phase(Duration::from_millis(500)));
 	assert!(blink_phase(Duration::from_millis(1_000)));
-}
-
-#[test]
-fn paste_is_ctrl_v_or_shift_insert_and_nothing_else() {
-	let chord = |code, modifiers| KeyEvent::new(code, modifiers);
-	assert!(is_paste_chord(&chord(KeyCode::Char('v'), KeyModifiers::CONTROL)));
-	assert!(is_paste_chord(&chord(KeyCode::Char('V'), KeyModifiers::CONTROL)));
-	assert!(is_paste_chord(&chord(KeyCode::Insert, KeyModifiers::SHIFT)));
-	// A held chord keeps pasting, as in any text field.
-	let mut repeat = chord(KeyCode::Char('v'), KeyModifiers::CONTROL);
-	repeat.kind = KeyEventKind::Repeat;
-	assert!(is_paste_chord(&repeat));
-
-	assert!(
-		!is_paste_chord(&chord(KeyCode::Char('v'), KeyModifiers::NONE)),
-		"a plain letter is text"
-	);
-	assert!(!is_paste_chord(&chord(
-		KeyCode::Char('v'),
-		KeyModifiers::CONTROL | KeyModifiers::ALT
-	)));
-	assert!(!is_paste_chord(&chord(KeyCode::Char('c'), KeyModifiers::CONTROL)));
-	assert!(!is_paste_chord(&chord(KeyCode::Insert, KeyModifiers::NONE)));
-	let mut release = chord(KeyCode::Char('v'), KeyModifiers::CONTROL);
-	release.kind = KeyEventKind::Release;
-	assert!(!is_paste_chord(&release), "letting go of the chord does not paste again");
-}
-
-#[test]
-fn in_a_text_field_only_non_character_quit_keys_quit() {
-	let bindings = Bindings::default();
-	assert!(quits_from_a_field(&bindings, &KeyEvent::new(KeyCode::F(10), KeyModifiers::NONE)));
-	// Ctrl+C is the other quit chord, but in a field it copies.
-	assert!(!quits_from_a_field(
-		&bindings,
-		&KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
-	));
-	assert!(!quits_from_a_field(&bindings, &KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
-	assert!(!quits_from_a_field(&bindings, &KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
-	let mut release = KeyEvent::new(KeyCode::F(10), KeyModifiers::NONE);
-	release.kind = KeyEventKind::Release;
-	assert!(!quits_from_a_field(&bindings, &release));
 }

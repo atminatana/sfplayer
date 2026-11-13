@@ -93,6 +93,8 @@ F4 opens the bank path dialog: as you type, matching folders and `.sf2` files ap
 
 Notes play on MIDI channel 1 with the F5 preset and sound while the key is held. When the window loses focus, held notes are released.
 
+Notes and hotkeys go by the position of the key, not by its character: the input language (Russian, German) does not get in their way. In the config and in the help, keys are named by the characters of the US layout. Text in dialogs — the list filter, a path — is typed in the current layout.
+
 ## Configuration
 
 A TOML file is created on the first exit and stores the selected devices, the bank and the last 10 banks, master volume, effects and recording format:

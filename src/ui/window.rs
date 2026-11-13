@@ -1,8 +1,8 @@
 //! The gterm window (spec v1.2 §8): the UI thread is the process main thread running gterm's event loop.
 //!
 //! All behaviour stays in `App` (key handling) and `fulfil` (requests applied to the `Session`); this
-//! module only translates window events into the UI's own key type, drives the periodic work from the
-//! tick, and redraws when what the screen shows has changed.
+//! module only hands window events over (keys are translated by `keymap`), drives the periodic work
+//! from the tick, and redraws when what the screen shows has changed.
 
 use std::time::{Duration, Instant};
 
@@ -14,13 +14,12 @@ use gterm::font::{FONT_SCALE, FontFamily, glyph_px_for};
 use gterm::rasterizer::Rasterizer;
 use gterm_widgets::{Clipboard, SystemClipboard};
 use winit::event::ElementState;
-use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use super::app::{App, FRAME_INTERVAL, Modal, Request, fulfil};
-use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use super::chord::KeyEventKind;
 use super::dialog_screen;
 use super::input_dialog::{InputDialog, InputKind, InputOutcome};
-use super::keys::{Action, Bindings};
+use super::keymap::{Reading, WindowKey, is_paste_chord, key_from_window, quits_from_a_field, reading_in_a_dialog};
 use super::main_screen::{self, BACKGROUND, MIN_COLS, MIN_ROWS, TEXT};
 use super::path_input;
 use super::view::View;
@@ -31,34 +30,6 @@ const WINDOW_TITLE: &str = "sf2_player";
 pub const DEFAULT_FONT_SIZE_PX: u16 = 14;
 /// Half of the blink period of the recording dot: a new frame is due whenever this phase flips.
 const BLINK_HALF_PERIOD_MS: u128 = 500;
-/// Function keys by number: `FUNCTION_KEYS[0]` is F1.
-const FUNCTION_KEYS: [NamedKey; 24] = [
-	NamedKey::F1,
-	NamedKey::F2,
-	NamedKey::F3,
-	NamedKey::F4,
-	NamedKey::F5,
-	NamedKey::F6,
-	NamedKey::F7,
-	NamedKey::F8,
-	NamedKey::F9,
-	NamedKey::F10,
-	NamedKey::F11,
-	NamedKey::F12,
-	NamedKey::F13,
-	NamedKey::F14,
-	NamedKey::F15,
-	NamedKey::F16,
-	NamedKey::F17,
-	NamedKey::F18,
-	NamedKey::F19,
-	NamedKey::F20,
-	NamedKey::F21,
-	NamedKey::F22,
-	NamedKey::F23,
-	NamedKey::F24,
-];
-
 /// What the user may choose about the window itself.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WindowOptions {
@@ -234,21 +205,28 @@ impl AppHandler for Window {
 	}
 
 	fn on_key(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
-		let key = key_from_window(&event.logical_key, event.state, event.repeat, ctx.modifiers);
+		let window_key = WindowKey::of(event, ctx.modifiers);
+		let command = key_from_window(&window_key, Reading::Command);
 		if self.input.is_some() {
-			let is_quitting = key.is_some_and(|key| quits_from_a_field(&self.app.bindings, &key));
+			let is_quitting = command.is_some_and(|key| quits_from_a_field(&self.app.bindings, &key));
 			if !is_quitting {
 				self.key_to_input(event, ctx);
 				return;
 			}
 			self.input = None;
 		}
-		let Some(key) = key else {
+		let Some(command) = command else {
 			return;
+		};
+		// Hotkeys and notes go by the place of the key; what is typed into a dialog goes by the layout.
+		let key = if self.app.modal.is_some() && reading_in_a_dialog(&command) == Reading::Text {
+			key_from_window(&window_key, Reading::Text).unwrap_or(command)
+		} else {
+			command
 		};
 		// Raw key stream for diagnosing input (auto-repeat, release events); spec N-07.
 		tracing::debug!(code = ?key.code, kind = ?key.kind, modifiers = ?key.modifiers, "key event");
-		let request = if is_paste_chord(&key) && self.app.modal.is_some() {
+		let request = if is_paste_chord(&command) && self.app.modal.is_some() {
 			if let Some(text) = self.clipboard.get() {
 				self.app.handle_paste(&text);
 			}
@@ -312,11 +290,8 @@ impl AppHandler for Window {
 
 	fn on_tick(&mut self, ctx: &mut Ctx<'_>) {
 		self.session.poll();
-		let now = Instant::now();
 		self.app.recording = self.session.recording_elapsed();
-		let request = self.app.tick_keyboard(now);
-		self.apply(request);
-		self.app.update_meters(self.session.shared.clips(), now);
+		self.app.update_meters(self.session.shared.clips(), Instant::now());
 		let force = self.app.take_dirty();
 		self.refresh(ctx, force);
 	}
@@ -330,81 +305,6 @@ impl Drop for Window {
 		self.session.save_config();
 		tracing::info!(xruns = self.session.shared.xruns(), "sf2_player exiting");
 	}
-}
-
-/// Whether a key pressed in a text field quits the program. A quit chord made of a character key means
-/// something else there (Ctrl+C copies), so only the other quit keys (F10) do.
-fn quits_from_a_field(bindings: &Bindings, key: &KeyEvent) -> bool {
-	key.kind == KeyEventKind::Press && !matches!(key.code, KeyCode::Char(_)) && bindings.action_for(key) == Some(Action::Quit)
-}
-
-/// Ctrl+V or Shift+Insert, pressed: paste the clipboard into the field being edited.
-fn is_paste_chord(key: &KeyEvent) -> bool {
-	if key.kind == KeyEventKind::Release {
-		return false;
-	}
-	match key.code {
-		KeyCode::Char('v' | 'V') => key.modifiers == KeyModifiers::CONTROL,
-		KeyCode::Insert => key.modifiers == KeyModifiers::SHIFT,
-		_ => false,
-	}
-}
-
-/// Translates a window key event into the UI's own type; `None` for keys the UI does not distinguish.
-///
-/// The logical key is used: `Shift` + `=` is `+`, and a letter comes with the case and the alphabet the
-/// layout gives it.
-fn key_from_window(logical_key: &Key, state: ElementState, is_repeat: bool, held: ModifiersState) -> Option<KeyEvent> {
-	let mut modifiers = KeyModifiers::NONE;
-	for (is_held, modifier) in [
-		(held.shift_key(), KeyModifiers::SHIFT),
-		(held.control_key(), KeyModifiers::CONTROL),
-		(held.alt_key(), KeyModifiers::ALT),
-		(held.super_key(), KeyModifiers::SUPER),
-	] {
-		if is_held {
-			modifiers |= modifier;
-		}
-	}
-	let code = match logical_key {
-		Key::Named(named) => match named {
-			NamedKey::ArrowUp => KeyCode::Up,
-			NamedKey::ArrowDown => KeyCode::Down,
-			NamedKey::ArrowLeft => KeyCode::Left,
-			NamedKey::ArrowRight => KeyCode::Right,
-			NamedKey::Home => KeyCode::Home,
-			NamedKey::End => KeyCode::End,
-			NamedKey::PageUp => KeyCode::PageUp,
-			NamedKey::PageDown => KeyCode::PageDown,
-			NamedKey::Enter => KeyCode::Enter,
-			NamedKey::Escape => KeyCode::Esc,
-			NamedKey::Tab if held.shift_key() => KeyCode::BackTab,
-			NamedKey::Tab => KeyCode::Tab,
-			NamedKey::Backspace => KeyCode::Backspace,
-			NamedKey::Delete => KeyCode::Delete,
-			NamedKey::Insert => KeyCode::Insert,
-			NamedKey::Space => KeyCode::Char(' '),
-			other => {
-				let index = FUNCTION_KEYS.iter().position(|function_key| function_key == other)?;
-				KeyCode::F(u8::try_from(index + 1).ok()?)
-			}
-		},
-		Key::Character(text) => {
-			let mut characters = text.chars();
-			let character = characters.next()?;
-			if characters.next().is_some() {
-				return None;
-			}
-			KeyCode::Char(character)
-		}
-		_ => return None,
-	};
-	let kind = match (state, is_repeat) {
-		(ElementState::Released, _) => KeyEventKind::Release,
-		(ElementState::Pressed, true) => KeyEventKind::Repeat,
-		(ElementState::Pressed, false) => KeyEventKind::Press,
-	};
-	Some(KeyEvent { code, modifiers, kind })
 }
 
 #[cfg(test)]

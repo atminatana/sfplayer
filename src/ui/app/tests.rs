@@ -197,17 +197,9 @@ fn f1_opens_help_which_scrolls_and_closes() {
 	assert!(app.modal.is_none());
 }
 
-fn release_app() -> App {
-	use crate::ui::text_keyboard::{NoteOffMode, TextKeyboard};
-	App::with_keyboard(
-		"en",
-		TextKeyboard::new(&crate::config::KeyboardConfig::default(), NoteOffMode::Release),
-	)
-}
-
 #[test]
 fn text_keyboard_plays_notes_on_channel_one_and_stops_on_release_or_esc() {
-	let mut app = release_app();
+	let mut app = App::new("en");
 	assert_eq!(
 		app.handle_key(plain(KeyCode::Char('z'))),
 		Some(Request::Notes(vec![MidiEvent::NoteOn {
@@ -232,13 +224,13 @@ fn text_keyboard_plays_notes_on_channel_one_and_stops_on_release_or_esc() {
 	);
 	assert_eq!(
 		app.handle_release(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Release)),
-		None,
-		"the note-off waits out the debounce window"
+		Some(Request::Notes(vec![MidiEvent::NoteOff { channel: 0, key: 60 }])),
+		"the note stops when the key goes up"
 	);
 	assert_eq!(
-		app.tick_keyboard(Instant::now() + Duration::from_millis(50)),
-		Some(Request::Notes(vec![MidiEvent::NoteOff { channel: 0, key: 60 }])),
-		"the tick releases it once the window closes"
+		app.handle_release(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Release)),
+		None,
+		"a second release has nothing to stop"
 	);
 	assert_eq!(
 		app.handle_key(plain(KeyCode::Esc)),
@@ -249,7 +241,7 @@ fn text_keyboard_plays_notes_on_channel_one_and_stops_on_release_or_esc() {
 
 #[test]
 fn ctrl_arrows_change_octave_and_velocity_and_panic_forgets_held_notes() {
-	let mut app = release_app();
+	let mut app = App::new("en");
 	app.handle_key(press(KeyCode::Up, KeyModifiers::CONTROL));
 	app.handle_key(press(KeyCode::Right, KeyModifiers::CONTROL));
 	assert_eq!(
@@ -265,24 +257,8 @@ fn ctrl_arrows_change_octave_and_velocity_and_panic_forgets_held_notes() {
 }
 
 #[test]
-fn gate_mode_releases_through_the_tick() {
-	let mut app = App::new("en");
-	app.handle_key(plain(KeyCode::Char('z')));
-	assert_eq!(
-		app.handle_release(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Release)),
-		None,
-		"gate mode ignores releases"
-	);
-	assert_eq!(app.tick_keyboard(Instant::now()), None);
-	assert_eq!(
-		app.tick_keyboard(Instant::now() + Duration::from_secs(1)),
-		Some(Request::Notes(vec![MidiEvent::NoteOff { channel: 0, key: 60 }]))
-	);
-}
-
-#[test]
 fn notes_are_not_played_while_a_modal_is_open() {
-	let mut app = release_app();
+	let mut app = App::new("en");
 	app.open_dialog(midi_dialog());
 	assert_eq!(app.handle_key(plain(KeyCode::Char('z'))), None);
 	assert_eq!(
