@@ -76,3 +76,20 @@
 Изменённые тесты (ожидания приведены к F-28): `function_keys_map_to_actions`, `help_lists_every_bound_action_with_its_chords` (`keys/tests.rs`); `the_quit_key_sets_the_flag_even_inside_a_dialog`, `f9_requests_panic_and_the_midi_file_has_no_keys_of_its_own`, `quit_asks_for_confirmation_while_recording` и набор команд F-клавиш (`app/tests.rs`); `hotkeys_work_in_a_russian_layout`, `in_a_text_field_only_non_character_quit_keys_quit` (`keymap/tests.rs`); `the_help_lists_the_bindings_and_scrolls` (`dialog_screen/tests.rs`).
 
 Прогон: 382 passed, 0 failed (`target/step13/gates-3.1.log`). `readme_keys` подтверждает, что таблицы обоих README совпадают с раскладкой.
+
+## Шаг 5.1 (2026-11-16) — окно подтверждения, выход во время записи
+
+Новые тесты окна (`src/ui/confirm_dialog/tests.rs`, события — через `route_key` / `route_mouse`, картинка — из `modal_buffer`):
+
+| Тест | Что проверяет |
+| --- | --- |
+| `the_window_shows_the_question_in_a_red_frame_with_the_focus_on_the_refusal` | размер и место окна, заголовок, вопрос, кнопки, красная рамка, подчёркнутая кнопка отказа; русский и английский тексты |
+| `enter_or_space_right_after_opening_refuses` | Enter и пробел сразу после открытия — отказ |
+| `tab_moves_the_focus_to_the_action_and_enter_confirms` | Tab и Shift+Tab переводят фокус на действие, Enter подтверждает; Tab дважды возвращает на отказ |
+| `esc_and_a_click_outside_the_window_refuse` | Esc и клик вне окна — отказ |
+| `a_click_presses_the_button_under_it` | клик по каждой кнопке; клик по тексту вопроса ничего не нажимает |
+| `keys_that_are_not_for_the_buttons_mean_nothing` | буква, стрелки, F9, Home ничего не делают и фокус не сдвигают |
+
+Тесты `App` (`src/ui/app/tests.rs`): `quit_asks_for_confirmation_while_recording` переписан под вопрос и ответ (вопрос при записи, клавиши при открытом вопросе не играют и не вызывают команд, отказ, подтверждение, «спрошено дважды — выход», без записи — без вопроса); новый `the_quit_question_takes_the_place_of_an_open_dialog`. Из `dialog_screen/tests.rs` удалён снимок прежнего подтверждения.
+
+Прогон: 388 passed, 0 failed (`target/step13/gates-5.1.log`). Вручную, по снимкам живого окна: показ окна, отказ по Enter, фокус по Tab, выход по Enter на `[Выйти]`, сохранённый файл записи. Не проверено вживую: мышь в окне.

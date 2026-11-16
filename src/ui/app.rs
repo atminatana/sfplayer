@@ -74,8 +74,14 @@ pub enum Modal {
 	Effects(EffectsDialog),
 	/// F1: scroll offset in rows.
 	Help(usize),
-	/// The quit command while recording (spec §6): Enter stops and quits, Esc stays.
-	ConfirmQuit,
+}
+
+/// What the confirmation window asks before something a key press does not take back (spec v1.3,
+/// F-26.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Question {
+	/// The quit command while a take runs (spec §6): stop the take and quit?
+	Quit,
 }
 
 /// The `[buttons]` of the main screen (spec v1.2 §3), in the order Tab walks them: top to bottom,
@@ -163,6 +169,9 @@ pub struct App {
 	pub locale: &'static str,
 	pub should_quit: bool,
 	pub modal: Option<Modal>,
+	/// The question the confirmation window is asking now. The window shows it with controls and
+	/// reports the answer through `answer`.
+	pub confirm: Option<Question>,
 	/// A path the user is to be asked for; the window takes it and shows the input dialog.
 	pub path_request: Option<PathRequest>,
 	pub keyboard: TextKeyboard,
@@ -185,6 +194,7 @@ impl App {
 			locale,
 			should_quit: false,
 			modal: None,
+			confirm: None,
 			path_request: None,
 			keyboard,
 			bindings: Bindings::default(),
@@ -208,6 +218,10 @@ impl App {
 			self.request_quit();
 			return None;
 		}
+		// The keys of an open question belong to the controls of its window.
+		if self.confirm.is_some() {
+			return None;
+		}
 		if self.modal.is_some() {
 			self.dirty = true;
 			return self.handle_modal_key(key);
@@ -221,11 +235,28 @@ impl App {
 	/// Quitting while a take runs asks first (spec §6); asked again, it quits.
 	fn request_quit(&mut self) {
 		self.dirty = true;
-		if self.recording.is_some() && !matches!(self.modal, Some(Modal::ConfirmQuit)) {
-			self.modal = Some(Modal::ConfirmQuit);
+		if self.recording.is_some() && self.confirm != Some(Question::Quit) {
+			// The question takes the place of whatever window was open.
+			self.modal = None;
+			self.confirm = Some(Question::Quit);
 			return;
 		}
 		self.should_quit = true;
+	}
+
+	/// The answer to the open question, from its window: a confirmation does what was asked about.
+	pub fn answer(&mut self, is_confirmed: bool) -> Option<Request> {
+		let question = self.confirm.take()?;
+		self.dirty = true;
+		if !is_confirmed {
+			return None;
+		}
+		match question {
+			Question::Quit => {
+				self.should_quit = true;
+				Some(Request::StopRecordingAndQuit)
+			}
+		}
 	}
 
 	/// A button of the main screen pressed with the mouse or with Enter: the same commands the hotkeys give.
@@ -360,7 +391,7 @@ impl App {
 
 	/// Key release events.
 	pub fn handle_release(&mut self, key: KeyEvent) -> Option<Request> {
-		if self.modal.is_some() {
+		if self.modal.is_some() || self.confirm.is_some() {
 			return None;
 		}
 		let KeyCode::Char(c) = key.code else {
@@ -391,18 +422,6 @@ impl App {
 					self.modal = None;
 					choice.map(Request::Apply)
 				}
-			},
-			Modal::ConfirmQuit => match key.code {
-				KeyCode::Enter => {
-					self.modal = None;
-					self.should_quit = true;
-					Some(Request::StopRecordingAndQuit)
-				}
-				KeyCode::Esc => {
-					self.modal = None;
-					None
-				}
-				_ => None,
 			},
 			Modal::Help(scroll) => {
 				match key.code {

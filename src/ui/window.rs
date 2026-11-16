@@ -20,10 +20,12 @@ use winit::event::ElementState;
 use super::app::{App, FRAME_INTERVAL, KEYBOARD_CHANNEL, Request};
 use super::buttons::{Buttons, Touch};
 use super::chord::{KeyCode, KeyEvent, KeyEventKind};
+use super::confirm_dialog::{ConfirmDialog, ConfirmOutcome};
 use super::dialog_screen;
 use super::fulfil::fulfil;
 use super::input_dialog::{InputDialog, InputOutcome};
 use super::keymap::{Reading, WindowKey, key_from_window, quits_from_a_field, reading_in_a_dialog};
+use super::keys::Action;
 use super::main_screen::{self, BACKGROUND, MIN_COLS, MIN_ROWS, TEXT};
 use super::path_input::{self, InputKind};
 use super::piano::Piano;
@@ -86,6 +88,7 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		piano: Piano::new(KEYBOARD_CHANNEL),
 		clipboard: SystemClipboard::new(),
 		input: None,
+		confirm: None,
 	};
 	GridWindow::new(WINDOW_TITLE, screen, rasterizer, grid_config, window_options)
 		.run(window)
@@ -144,6 +147,8 @@ struct Window {
 	clipboard: SystemClipboard,
 	/// The input dialog on widget controls, while it is open.
 	input: Option<InputDialog>,
+	/// The confirmation window on widget controls, while `App` has a question open.
+	confirm: Option<ConfirmDialog>,
 }
 
 impl Window {
@@ -267,6 +272,55 @@ impl Window {
 			Err(message) => dialog.set_error(message),
 		}
 	}
+
+	/// Keeps the confirmation window in step with the question `App` has open.
+	fn sync_confirm(&mut self) {
+		match (self.app.confirm, &self.confirm) {
+			(Some(question), Some(dialog)) if dialog.question() == question => {}
+			(Some(question), _) => self.confirm = Some(ConfirmDialog::new(question)),
+			(None, _) => self.confirm = None,
+		}
+	}
+
+	/// A key press or release for the open confirmation window.
+	fn key_to_confirm(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
+		let Some(dialog) = &mut self.confirm else {
+			return;
+		};
+		// The window sees releases too (the library tracks held keys by them); only presses act.
+		let routed = dialog.ui(self.app.locale).key(event, ctx);
+		if event.state != ElementState::Pressed {
+			return;
+		}
+		let outcome = dialog.settle(routed);
+		self.conclude_confirm(outcome, ctx);
+	}
+
+	/// A mouse event for the open confirmation window.
+	fn pointer_to_confirm(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
+		let Some(dialog) = &mut self.confirm else {
+			return;
+		};
+		let routed = dialog.ui(self.app.locale).pointer(event, ctx);
+		let outcome = dialog.settle(routed);
+		self.conclude_confirm(outcome, ctx);
+	}
+
+	/// Passes the answer of the confirmation window on to `App` and does what it asks for.
+	fn conclude_confirm(&mut self, outcome: ConfirmOutcome, ctx: &mut Ctx<'_>) {
+		let request = match outcome {
+			ConfirmOutcome::Pending => None,
+			ConfirmOutcome::Confirmed => self.app.answer(true),
+			ConfirmOutcome::Refused => self.app.answer(false),
+		};
+		self.apply(request);
+		if self.app.should_quit {
+			ctx.exit();
+			return;
+		}
+		self.sync_confirm();
+		self.refresh(ctx, true);
+	}
 }
 
 /// What a path entered in the folder dialog means: an empty one is the default folder (`Some(None)`),
@@ -304,6 +358,16 @@ impl AppHandler for Window {
 			}
 			self.input = None;
 		}
+		// The keys of an open question go to the controls of its window. The quit command goes on to
+		// `App`, where asking twice means quitting.
+		if self.confirm.is_some() {
+			let bindings = &self.app.bindings;
+			let is_quitting = command.is_some_and(|key| key.kind == KeyEventKind::Press && bindings.action_for(&key) == Some(Action::Quit));
+			if !is_quitting {
+				self.key_to_confirm(event, ctx);
+				return;
+			}
+		}
 		let Some(command) = command else {
 			return;
 		};
@@ -326,6 +390,7 @@ impl AppHandler for Window {
 			return;
 		}
 		self.adopt_path_request();
+		self.sync_confirm();
 		let force = self.app.take_dirty() || has_changed;
 		self.refresh(ctx, force);
 	}
@@ -346,12 +411,16 @@ impl AppHandler for Window {
 		let message = MouseMsg::from_pointer(event, ctx);
 		// A note the mouse holds on the piano is the piano's to end, even if a dialog opened meanwhile;
 		// a new one starts only on the bare main screen.
-		let is_screen_bare = self.input.is_none() && self.app.modal.is_none();
+		let is_screen_bare = self.input.is_none() && self.confirm.is_none() && self.app.modal.is_none();
 		if (is_screen_bare || self.piano.is_dragging()) && self.pointer_to_piano(&message, ctx) {
 			return;
 		}
 		if self.input.is_some() {
 			self.pointer_to_input(event, ctx);
+			return;
+		}
+		if self.confirm.is_some() {
+			self.pointer_to_confirm(event, ctx);
 			return;
 		}
 		let request = if self.app.modal.is_some() {
@@ -370,14 +439,23 @@ impl AppHandler for Window {
 		};
 		self.apply(request);
 		self.adopt_path_request();
+		self.sync_confirm();
 		self.refresh(ctx, true);
 	}
 
-	/// The input dialog is a modal layer of the widget library: it is drawn over the frame, not into it.
+	/// The windows on widget controls are modal layers of the library: drawn over the frame, not into it.
 	fn on_redraw(&mut self, ctx: &mut DrawCtx<'_>) {
-		let Self { input, clipboard, app, .. } = self;
+		let Self {
+			input,
+			confirm,
+			clipboard,
+			app,
+			..
+		} = self;
 		if let Some(dialog) = input {
 			dialog.ui(app.locale, clipboard).draw_modal(ctx);
+		} else if let Some(dialog) = confirm {
+			dialog.ui(app.locale).draw_modal(ctx);
 		}
 	}
 

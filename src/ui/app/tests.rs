@@ -291,16 +291,41 @@ fn quit_asks_for_confirmation_while_recording() {
 	assert_eq!(app.handle_key(plain(KeyCode::End)), None);
 	app.recording = Some(Duration::from_secs(12));
 	assert_eq!(app.handle_key(plain(KeyCode::F(10))), None);
-	assert_eq!(app.modal, Some(Modal::ConfirmQuit));
+	assert_eq!(app.confirm, Some(Question::Quit));
 	assert!(!app.should_quit);
-	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None, "Esc keeps recording");
-	assert!(app.modal.is_none() && !app.should_quit);
+	// The keys of the question belong to its window: nothing is played and no command runs.
+	assert_eq!(app.handle_key(plain(KeyCode::Char('z'))), None);
+	assert_eq!(app.handle_key(plain(KeyCode::F(9))), None);
+	assert_eq!(app.handle_key(plain(KeyCode::Enter)), None);
+	assert_eq!(app.confirm, Some(Question::Quit));
+
+	assert_eq!(app.answer(false), None, "a refusal keeps recording");
+	assert!(app.confirm.is_none() && !app.should_quit);
+
 	app.handle_key(plain(KeyCode::F(10)));
-	assert_eq!(app.handle_key(plain(KeyCode::Enter)), Some(Request::StopRecordingAndQuit));
-	assert!(app.should_quit);
+	assert_eq!(app.answer(true), Some(Request::StopRecordingAndQuit));
+	assert!(app.should_quit && app.confirm.is_none());
+
+	let mut twice = App::new("en");
+	twice.recording = Some(Duration::from_secs(1));
+	twice.handle_key(plain(KeyCode::F(10)));
+	twice.handle_key(plain(KeyCode::F(10)));
+	assert!(twice.should_quit, "asked again, it quits");
+
 	let mut idle = App::new("en");
 	idle.handle_key(plain(KeyCode::F(10)));
 	assert!(idle.should_quit, "no confirmation when not recording");
+	assert_eq!(idle.answer(true), None, "no question, no answer");
+}
+
+#[test]
+fn the_quit_question_takes_the_place_of_an_open_dialog() {
+	let mut app = App::new("en");
+	app.recording = Some(Duration::from_secs(1));
+	app.open_dialog(midi_dialog());
+	app.handle_key(plain(KeyCode::F(10)));
+	assert_eq!(app.modal, None);
+	assert_eq!(app.confirm, Some(Question::Quit));
 }
 
 /// Spec v1.3, F-28: a command that lost its default key runs from the key the config gives it.

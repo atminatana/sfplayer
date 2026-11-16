@@ -225,18 +225,6 @@ fn the_effects_dialog_shows_switches_levels_and_the_current_row() {
 }
 
 #[test]
-fn the_quit_confirmation_is_framed_in_red() {
-	let buf = shown(Modal::ConfirmQuit);
-	assert!(is_shown(&buf, "┌ Идёт запись ─"));
-	assert!(is_shown(&buf, "│Остановить запись и выйти?"));
-	assert!(is_shown(&buf, "│Enter — остановить и выйти · Esc — продолжить запись"));
-	assert_eq!(colours_of(&buf, "┌").0, ERROR);
-	let (top, left) = find(&buf, "┌ Идёт запись ─");
-	assert_eq!(lines_of(&buf)[top].chars().count() - left, 60);
-	assert_eq!(colours_of(&shown(Modal::Select(three_ports())), "┌").0, TEXT);
-}
-
-#[test]
 fn the_help_lists_the_bindings_and_scrolls() {
 	let buf = shown(Modal::Help(0));
 	assert!(is_shown(&buf, "┌ Справка ─"));
@@ -262,12 +250,7 @@ fn the_help_lists_the_bindings_and_scrolls() {
 fn a_dialog_covers_only_its_own_box() {
 	// Fill the screen with a pattern, draw each dialog over it, and compare everything outside the frame.
 	let pattern = "#".repeat(COLS);
-	for modal in [
-		Modal::Select(three_ports()),
-		Modal::Effects(effects_dialog()),
-		Modal::ConfirmQuit,
-		Modal::Help(0),
-	] {
+	for modal in [Modal::Select(three_ports()), Modal::Effects(effects_dialog()), Modal::Help(0)] {
 		let mut app = App::new("ru");
 		app.modal = Some(modal);
 		let mut buf = screen();
@@ -310,7 +293,6 @@ fn the_reported_area_is_exactly_the_frame_that_is_drawn() {
 		Modal::Select(midi_dialog(&["KeyStep", "loopMIDI"], None)),
 		Modal::Effects(effects_dialog()),
 		Modal::Help(0),
-		Modal::ConfirmQuit,
 	] {
 		let mut app = App::new("ru");
 		app.modal = Some(modal.clone());

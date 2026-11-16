@@ -3,6 +3,7 @@
 pub mod app;
 pub mod buttons;
 pub mod chord;
+pub mod confirm_dialog;
 pub mod dialog;
 pub mod dialog_screen;
 pub mod effects_dialog;
@@ -17,6 +18,8 @@ pub mod paint;
 pub mod path_input;
 pub mod piano;
 pub mod selector;
+#[cfg(test)]
+pub mod testkit;
 pub mod text_keyboard;
 pub mod view;
 pub mod window;

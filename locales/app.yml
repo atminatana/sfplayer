@@ -253,9 +253,12 @@ confirm.quit_title:
 confirm.quit_text:
   en: "Stop the recording and quit?"
   ru: "Остановить запись и выйти?"
-confirm.quit_hint:
-  en: "Enter — stop and quit · Esc — keep recording"
-  ru: "Enter — остановить и выйти · Esc — продолжить запись"
+confirm.quit_yes:
+  en: "Quit"
+  ru: "Выйти"
+confirm.no:
+  en: "No"
+  ru: "Нет"
 dialog.effects_title:
   en: "Effects"
   ru: "Эффекты"

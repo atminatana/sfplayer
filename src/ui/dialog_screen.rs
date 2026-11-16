@@ -1,5 +1,5 @@
-//! Drawing the modal windows (spec §6, v1.1 §4): the list selector, the effects dialog, the help table
-//! and the quit confirmation.
+//! Drawing the modal windows that are not on widget controls yet (spec §6, v1.1 §4): the list selector,
+//! the effects dialog and the help table.
 //!
 //! The dialogs themselves are state machines kept in `App::modal`; this module only shows them, as a
 //! framed box over the middle of the main screen.
@@ -14,7 +14,7 @@ use super::app::{App, Modal};
 use super::dialog::Dialog;
 use super::effects_dialog::{EffectRow, EffectsDialog};
 use super::keys::Bindings;
-use super::paint::{ERROR, HINT, LABEL, Pen, SELECTED, TEXT};
+use super::paint::{HINT, LABEL, Pen, SELECTED, TEXT};
 
 /// Rows of the list visible at once in a selector.
 const SELECTOR_LIST_ROWS: u16 = 10;
@@ -23,8 +23,6 @@ const SIDE_MARGIN: u16 = 8;
 const MIN_WIDTH: u16 = 40;
 /// The widest a dialog with a one-line key hint gets: the longest hint fits on the minimum grid.
 const WIDE: u16 = 88;
-/// The quit confirmation is a short question.
-const NARROW: u16 = 60;
 /// Marks the item that is active now in a selector.
 const CURRENT_MARK: &str = "●";
 
@@ -39,7 +37,6 @@ pub fn render(buf: &mut ScreenBuffer, app: &App) {
 		Modal::Select(dialog) => selector(buf, area, dialog, locale),
 		Modal::Effects(dialog) => effects(buf, area, dialog, locale),
 		Modal::Help(scroll) => help(buf, area, &app.bindings, *scroll, locale),
-		Modal::ConfirmQuit => confirm_quit(buf, area, locale),
 	}
 }
 
@@ -54,7 +51,6 @@ fn area_of(modal: &Modal, screen: Rect) -> Rect {
 		Modal::Select(_) => (WIDE, SELECTOR_LIST_ROWS + 6),
 		Modal::Effects(_) => (WIDE, 6),
 		Modal::Help(_) => (WIDE, screen.height.saturating_sub(4).max(8)),
-		Modal::ConfirmQuit => (NARROW, 5),
 	};
 	let width = screen
 		.width
@@ -151,13 +147,6 @@ fn effects(buf: &mut ScreenBuffer, area: Rect, dialog: &EffectsDialog, locale: &
 		list_row(buf, inner, row, &text, dialog.row() == effect);
 	}
 	hint(buf, inner, &t!("dialog.effects_hint", locale = locale));
-}
-
-/// Spec §6: quitting while a recording runs asks first. Enter stops the take and quits, Esc stays.
-fn confirm_quit(buf: &mut ScreenBuffer, area: Rect, locale: &str) {
-	let inner = frame(buf, area, &t!("confirm.quit_title", locale = locale), ERROR);
-	Pen::within(buf, inner, 0, 0).text(&t!("confirm.quit_text", locale = locale), TEXT);
-	hint(buf, inner, &t!("confirm.quit_hint", locale = locale));
 }
 
 /// F1: the hotkey table, generated from the bindings so it can never disagree with the handler (ADR 0004).
