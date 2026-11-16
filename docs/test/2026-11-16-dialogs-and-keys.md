@@ -53,3 +53,7 @@
 | `requests_that_need_the_audio_stream_do_nothing_without_it` | запись, транспорт, ноты и Panic без аудиопотока безвредны |
 
 Прогон: 378 passed, 0 failed (`target/step13/gates-2.2a.log`). Ограничение: ветки с настоящими устройствами не покрываются.
+
+## Шаг 2.2б (2026-11-16) — деление `app.rs`
+
+Тесты `fulfil` переехали в `src/ui/fulfil/tests.rs` без правок утверждений (изменились только импорты). Прогон: 378 passed, 0 failed (`target/step13/gates-2.2b.log`).

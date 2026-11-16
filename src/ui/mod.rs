@@ -6,6 +6,7 @@ pub mod chord;
 pub mod dialog;
 pub mod dialog_screen;
 pub mod effects_dialog;
+pub mod fulfil;
 pub mod i18n;
 pub mod input_dialog;
 pub mod keymap;

@@ -17,10 +17,11 @@ use gterm_widgets::{MouseMsg, Rect, SystemClipboard};
 use rust_i18n::t;
 use winit::event::ElementState;
 
-use super::app::{App, FRAME_INTERVAL, KEYBOARD_CHANNEL, Request, fulfil};
+use super::app::{App, FRAME_INTERVAL, KEYBOARD_CHANNEL, Request};
 use super::buttons::{Buttons, Touch};
 use super::chord::{KeyCode, KeyEvent, KeyEventKind};
 use super::dialog_screen;
+use super::fulfil::fulfil;
 use super::input_dialog::{InputDialog, InputOutcome};
 use super::keymap::{Reading, WindowKey, key_from_window, quits_from_a_field, reading_in_a_dialog};
 use super::main_screen::{self, BACKGROUND, MIN_COLS, MIN_ROWS, TEXT};
