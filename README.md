@@ -80,7 +80,7 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | S D G H J L ; | Black keys C# D# F# G# A# C# D# (text keyboard) |
 <!-- keys:end -->
 
-While a dialog is open, input goes to the dialog: ↑↓, PgUp/PgDn, Home/End move through lists and fields there, Enter applies, Esc cancels.
+While a window is open, input goes to it: Tab and Shift+Tab move between its controls, Enter acts on the control under the focus, Esc and a click outside the window close it and change nothing.
 
 The MIDI input and the audio output are chosen from a dropdown in their own line: the field shows the device in use. The list drops down on a click on the field, on Enter while the field has the focus, or on F2 and F3; ↑↓, PgUp/PgDn, Home/End and the wheel move the highlight, Enter or a click on a row connects the device, Esc and a click elsewhere close the list and change nothing. The devices are listed as they are when the list drops down; the rate and the buffer of an audio device are shown in the line once it is chosen.
 
@@ -90,7 +90,7 @@ F6 or the `[Effects]` button opens the effects window: the "Reverb" and "Chorus"
 
 F1 opens the help: the table of the keys in force. ↑↓, PgUp/PgDn and Home/End move the highlight through it, the wheel scrolls it; `[Close]`, Esc, Enter, F1 and a click outside the window close it.
 
-Labels in square brackets on the main screen are buttons. Press them with the mouse or from the keyboard: Tab and Shift+Tab move the focus from button to button (the button under the focus is underlined), Enter presses it. The `[−]` and `[+]` buttons in the "Master" line change the volume by 5 %. A click outside an open dialog closes it, like Esc.
+Labels in square brackets on the main screen are buttons. Press them with the mouse or from the keyboard: Tab and Shift+Tab move the focus from button to button (the button under the focus is underlined), Enter presses it. The `[−]` and `[+]` buttons in the "Master" line change the volume by 5 %.
 
 F4 opens the bank path dialog: as you type, matching folders and `.sf2` files appear under the field; with an empty field — the recent banks. ↑↓ or a mouse click put a row into the field, Enter opens a folder or loads a bank, Tab moves between the field, the list and the `[OK]` and `[Cancel]` buttons, Esc or a click outside the dialog cancels. Selection and the clipboard work in the field (Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A).
 

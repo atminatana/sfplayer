@@ -201,3 +201,7 @@
 Удалены вместе с кодом: `dialog_screen/tests.rs` (8), тесты в `selector.rs` (6) и `dialog.rs` (3); в `app/tests.rs` — `dialog_captures_keys_until_enter_or_esc`, `notes_are_not_played_while_a_modal_is_open`, `the_quit_question_takes_the_place_of_an_open_dialog`, `dismissing_a_dialog_does_what_esc_does_in_it`; в `keymap/tests.rs` — `text_is_read_as_the_layout_produced_it`, `in_a_dialog_plain_characters_are_text_and_chords_stay_commands`; в `window/tests.rs` — `a_mouse_event_is_inside_an_area_only_over_its_cells`.
 
 Прогон: 405 passed, 0 failed (`target/step13/gates-9.1.log`). Мутации: 14 из 14 пойманы (`target/step13/mutation-9.1.log`). Вручную, по снимку: вид справки по F1. Не проверено вживую: движение по таблице, колесо, закрытие.
+
+## Шаг 10.1 (2026-11-16) — версия и документы
+
+Новых тестов нет: шаг меняет номер версии и документы. Прогон: 405 passed, 0 failed (`target/step13/gates-10.1.log`); `tests/readme_keys.rs` — 2 passed. Структура двух README сверена сценарием `target/step13/readme_sync.py` (построчно: вид строки и число фрагментов кода) — расхождений нет, кроме языка в примере конфига.
