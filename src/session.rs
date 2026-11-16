@@ -11,7 +11,7 @@ pub use control::{EffectsAction, EffectsSettings, MixerAction};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 
 use ringbuf::traits::{Consumer, Producer};
 use ringbuf::{HeapCons, HeapProd};
@@ -114,14 +114,14 @@ pub struct Session {
 }
 
 impl Session {
-	/// Opens audio (silent until a bank is loaded), connects MIDI, loads the bank from settings, starts hot-plug polling.
-	/// Device problems become notices, not errors: the UI must come up so the user can fix the choice.
-	pub fn start(settings: &Settings, config: Config, config_path: PathBuf) -> Self {
+	/// The session before any device is opened: no audio stream, no MIDI port, nothing loaded. The
+	/// sender is the one the hot-plug watcher reports new port lists through.
+	fn idle(settings: &Settings, config: Config, config_path: PathBuf) -> (Self, Sender<Vec<MidiPortInfo>>) {
 		let master_percent = config.mixer.master.min(100);
 		let shared = Arc::new(AudioShared::new(f32::from(master_percent) / 100.0));
 		let (hotplug_tx, hotplug_rx) = mpsc::channel();
 		let timbre = Arc::new(Timbre::new(config.synth.builtin.wave, config.synth.builtin.adsr()));
-		let mut session = Self {
+		let session = Self {
 			config,
 			config_path,
 			shared,
@@ -154,6 +154,13 @@ impl Session {
 			transpose: 0,
 			notice: None,
 		};
+		(session, hotplug_tx)
+	}
+
+	/// Opens audio (silent until a bank is loaded), connects MIDI, loads the bank from settings, starts hot-plug polling.
+	/// Device problems become notices, not errors: the UI must come up so the user can fix the choice.
+	pub fn start(settings: &Settings, config: Config, config_path: PathBuf) -> Self {
+		let (mut session, hotplug_tx) = Self::idle(settings, config, config_path);
 		session.shared.set_omni_channel(
 			session
 				.config
@@ -544,3 +551,6 @@ impl Session {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests;
