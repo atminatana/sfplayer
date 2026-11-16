@@ -205,3 +205,11 @@
 ## Шаг 10.1 (2026-11-16) — версия и документы
 
 Новых тестов нет: шаг меняет номер версии и документы. Прогон: 405 passed, 0 failed (`target/step13/gates-10.1.log`); `tests/readme_keys.rs` — 2 passed. Структура двух README сверена сценарием `target/step13/readme_sync.py` (построчно: вид строки и число фрагментов кода) — расхождений нет, кроме языка в примере конфига.
+
+## Шаг 10.2 (2026-11-16) — верификация
+
+Новых тестов нет. Итог по плану v1.3: 405 тестов (396 unit + 3 i18n + 4 no_alloc + 2 readme), 0 падений (`target/step13/gates-10.1.log`); в gterm на опубликованной ревизии `106d1ce` — 341 тест в 48 наборах, 0 падений.
+
+Тесты, добавленные планом v1.3, по модулям: `session/tests.rs` 7, `ui/fulfil/tests.rs` 14, `ui/confirm_dialog/tests.rs` 7, `ui/controls/tests.rs` 22 (на месте тестов `buttons.rs`), `ui/devices.rs` 3, `ui/preset_dialog/tests.rs` 11, `ui/effects_dialog/tests.rs` 8, `ui/help_dialog/tests.rs` 6, `ui/window/tests.rs` +1; в gterm — `tests/slider.rs` 10, `tests/double_click.rs` 11, `app/clicks.rs` 5, `tests/combo_box.rs` +1.
+
+**Ограничение (ТЗ §10, «только вручную»):** вид окон и списков и работа мыши в живом окне. Вид проверен по снимкам на каждом шаге этапов 5–9; действия мышью — в подтверждении удаления записи (шаг 5.2) и раскрытие выпадающего списка кликом (шаг 6.1). Что не проверено вживую — раздел «Ручные проверки» отчёта `docs/verify/2026-11-16-dialogs-and-keys.md`.
