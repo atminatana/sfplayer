@@ -123,6 +123,7 @@ fn click_at(dialog: &mut InputDialog, col: i32, row: i32) -> InputOutcome {
 			col,
 			row,
 			modifiers: ModifiersState::empty(),
+			click_count: 1,
 		};
 		let routed = dialog.ui("ru", &mut clipboard).route_mouse(&message, SCREEN);
 		let step = dialog.settle(routed, None, fake_dir);

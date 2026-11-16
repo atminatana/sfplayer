@@ -74,5 +74,6 @@ pub fn left_click(col: i32, row: i32) -> [MouseMsg; 2] {
 		col,
 		row,
 		modifiers: ModifiersState::empty(),
+		click_count: 1,
 	})
 }

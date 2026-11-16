@@ -108,6 +108,7 @@ fn a_mouse_event_is_inside_an_area_only_over_its_cells() {
 		col,
 		row,
 		modifiers: winit::keyboard::ModifiersState::empty(),
+		click_count: 1,
 	};
 	for (col, row) in [(4, 8), (13, 10), (9, 9)] {
 		assert!(is_inside(area, &at(col, row)), "{col},{row}");

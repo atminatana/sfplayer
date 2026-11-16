@@ -502,6 +502,7 @@ fn click(buttons: &mut Buttons, buf: &ScreenBuffer, text: &str) -> Touch {
 		col: i32::try_from(col).expect("column"),
 		row: i32::try_from(row).expect("row"),
 		modifiers: ModifiersState::empty(),
+		click_count: 1,
 	};
 	buttons.handle_mouse(&at(MouseKind::Down));
 	buttons.handle_mouse(&at(MouseKind::Up))
@@ -878,6 +879,7 @@ fn every_button_of_the_synth_section_is_pressed_by_a_click_and_stands_in_the_tab
 			col: i32::try_from(col).expect("column"),
 			row: i32::try_from(row).expect("row"),
 			modifiers: ModifiersState::empty(),
+			click_count: 1,
 		};
 		buttons.handle_mouse(&at(MouseKind::Down));
 		assert_eq!(buttons.handle_mouse(&at(MouseKind::Up)), Touch::Pressed(id));

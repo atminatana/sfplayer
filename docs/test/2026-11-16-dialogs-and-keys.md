@@ -93,3 +93,7 @@
 Тесты `App` (`src/ui/app/tests.rs`): `quit_asks_for_confirmation_while_recording` переписан под вопрос и ответ (вопрос при записи, клавиши при открытом вопросе не играют и не вызывают команд, отказ, подтверждение, «спрошено дважды — выход», без записи — без вопроса); новый `the_quit_question_takes_the_place_of_an_open_dialog`. Из `dialog_screen/tests.rs` удалён снимок прежнего подтверждения.
 
 Прогон: 388 passed, 0 failed (`target/step13/gates-5.1.log`). Вручную, по снимкам живого окна: показ окна, отказ по Enter, фокус по Tab, выход по Enter на `[Выйти]`, сохранённый файл записи. Не проверено вживую: мышь в окне.
+
+## Этап 4 (2026-11-16) — тесты в репозитории gterm
+
+Состав и результаты — `docs/test/2026-11-16-double-click-slider.md` в gterm: +5 тестов счётчика нажатий, +11 в `tests/double_click.rs`, +1 в `tests/input.rs`, +10 в `tests/slider.rs`; 313 → 340 тестов, 0 падений. В sfplayer тесты не добавлялись: в восьми местах, где сообщение мыши собирается вручную, добавлено поле `click_count`. Прогон sfplayer на новой ревизии gterm: 388 passed, 0 failed (`target/step13/gates-4.4.log`).

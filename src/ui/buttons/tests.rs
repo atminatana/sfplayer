@@ -47,6 +47,7 @@ fn mouse(kind: MouseKind, col: i32, row: i32) -> MouseMsg {
 		col,
 		row,
 		modifiers: ModifiersState::empty(),
+		click_count: u8::from(matches!(kind, MouseKind::Down | MouseKind::Up)),
 	}
 }
 

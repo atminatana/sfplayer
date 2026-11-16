@@ -49,6 +49,7 @@ fn at(kind: MouseKind, column: i32, row: i32) -> MouseMsg {
 		col: i32::from(ORIGIN.0) + column,
 		row: i32::from(ORIGIN.1) + row,
 		modifiers: ModifiersState::empty(),
+		click_count: u8::from(matches!(kind, MouseKind::Down | MouseKind::Up)),
 	}
 }
 
@@ -220,6 +221,7 @@ fn the_note_ends_when_the_pointer_leaves_the_window_or_the_window_loses_the_focu
 		col: -1,
 		row: -1,
 		modifiers: ModifiersState::empty(),
+		click_count: 0,
 	};
 	assert_eq!(
 		piano.handle_mouse(&left_the_window, Some(ORIGIN), BASE, VELOCITY),
