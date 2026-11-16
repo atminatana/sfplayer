@@ -5,7 +5,6 @@ use gterm::cell::CellFlags;
 use super::*;
 use crate::audio::AudioDeviceInfo;
 use crate::midi::MidiPortInfo;
-use crate::session::EffectsSettings;
 use crate::ui::chord::{KeyCode, KeyEvent, KeyModifiers};
 use crate::ui::paint::BACKGROUND;
 
@@ -82,15 +81,6 @@ fn midi_dialog(names: &[&str], connected: Option<&str>) -> Dialog {
 
 fn three_ports() -> Dialog {
 	midi_dialog(&["Arturia KeyStep", "loopMIDI Port", "Roland A-49"], Some("loopMIDI Port"))
-}
-
-fn effects_dialog() -> EffectsDialog {
-	EffectsDialog::new(EffectsSettings {
-		reverb: true,
-		chorus: false,
-		reverb_level: 40,
-		chorus_level: 20,
-	})
 }
 
 #[test]
@@ -199,32 +189,6 @@ fn a_long_selector_list_scrolls_to_keep_the_cursor_visible() {
 }
 
 #[test]
-fn the_effects_dialog_shows_switches_levels_and_the_current_row() {
-	let mut dialog = effects_dialog();
-	let buf = shown(Modal::Effects(dialog.clone()));
-	assert!(is_shown(&buf, "┌ Эффекты ─"));
-	assert!(is_shown(&buf, "│Реверб   [x]  уровень  40"));
-	assert!(is_shown(&buf, "│Хорус    [ ]  уровень  20"));
-	assert!(is_shown(
-		&buf,
-		"│↑↓ — строка · Space — вкл/выкл · ←→ — уровень ±5 · Enter — сохранить · Esc — отмена"
-	));
-	assert_eq!(colours_of(&buf, "Реверб   [x]"), (BACKGROUND, TEXT));
-	assert_eq!(colours_of(&buf, "Хорус    [ ]"), (TEXT, BACKGROUND));
-
-	dialog.handle_key(press(KeyCode::Down));
-	dialog.handle_key(press(KeyCode::Char(' ')));
-	dialog.handle_key(press(KeyCode::Right));
-	let buf = shown(Modal::Effects(dialog));
-	assert!(is_shown(&buf, "│Хорус    [x]  уровень  25"));
-	assert_eq!(colours_of(&buf, "Хорус    [x]"), (BACKGROUND, TEXT));
-	assert_eq!(colours_of(&buf, "Реверб   [x]"), (TEXT, BACKGROUND));
-
-	let english = shown_in("en", Modal::Effects(effects_dialog()));
-	assert!(is_shown(&english, "│Reverb   [x]  level  40"));
-}
-
-#[test]
 fn the_help_lists_the_bindings_and_scrolls() {
 	let buf = shown(Modal::Help(0));
 	assert!(is_shown(&buf, "┌ Справка ─"));
@@ -250,7 +214,7 @@ fn the_help_lists_the_bindings_and_scrolls() {
 fn a_dialog_covers_only_its_own_box() {
 	// Fill the screen with a pattern, draw each dialog over it, and compare everything outside the frame.
 	let pattern = "#".repeat(COLS);
-	for modal in [Modal::Select(three_ports()), Modal::Effects(effects_dialog()), Modal::Help(0)] {
+	for modal in [Modal::Select(three_ports()), Modal::Help(0)] {
 		let mut app = App::new("ru");
 		app.modal = Some(modal);
 		let mut buf = screen();
@@ -289,11 +253,7 @@ fn dialogs_fit_a_grid_smaller_than_they_would_like() {
 fn the_reported_area_is_exactly_the_frame_that_is_drawn() {
 	let grid = Rect::of_screen(&screen());
 	assert_eq!(area(&App::new("ru"), grid), None, "no dialog, no area");
-	for modal in [
-		Modal::Select(midi_dialog(&["KeyStep", "loopMIDI"], None)),
-		Modal::Effects(effects_dialog()),
-		Modal::Help(0),
-	] {
+	for modal in [Modal::Select(midi_dialog(&["KeyStep", "loopMIDI"], None)), Modal::Help(0)] {
 		let mut app = App::new("ru");
 		app.modal = Some(modal.clone());
 		let area = area(&app, grid).expect("a dialog is open");

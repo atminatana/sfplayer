@@ -2,13 +2,14 @@
 
 use std::path::Path;
 
-use super::layers::record_dir_from;
+use super::layers::{effects_step, record_dir_from};
 use super::*;
 use crate::audio::{Levels, Mixer};
 use crate::config::{BuiltinConfig, EngineKind, RecordFormat};
 use crate::midi::MidiStatus;
 use crate::midi::player::Transport;
-use crate::session::MidiFile;
+use crate::session::{EffectsAction, EffectsSettings, MidiFile};
+use crate::ui::effects_dialog::EffectsOutcome;
 use crate::ui::view::{FileView, TakeView};
 
 fn view() -> View {
@@ -119,4 +120,31 @@ fn a_mouse_event_is_inside_an_area_only_over_its_cells() {
 	for (col, row) in [(3, 8), (14, 8), (4, 7), (4, 11), (-1, -1), (70_000, 9)] {
 		assert!(!is_inside(area, &at(col, row)), "{col},{row}");
 	}
+}
+
+#[test]
+fn what_the_effects_window_decides_is_applied_at_once_saved_on_ok_and_taken_back_otherwise() {
+	let settings = EffectsSettings {
+		reverb: true,
+		chorus: false,
+		reverb_level: 40,
+		chorus_level: 20,
+	};
+	let applied = Request::Effects(EffectsAction::Set(settings));
+	assert_eq!(effects_step(EffectsOutcome::Pending), (false, None));
+	assert_eq!(
+		effects_step(EffectsOutcome::Changed(settings)),
+		(false, Some(applied.clone())),
+		"a change is heard while the window stays open"
+	);
+	assert_eq!(
+		effects_step(EffectsOutcome::Accepted(settings)),
+		(true, Some(Request::SaveEffects(settings)))
+	);
+	assert_eq!(
+		effects_step(EffectsOutcome::Cancelled(Some(settings))),
+		(true, Some(applied)),
+		"what the window opened with is put back"
+	);
+	assert_eq!(effects_step(EffectsOutcome::Cancelled(None)), (true, None), "nothing was changed");
 }

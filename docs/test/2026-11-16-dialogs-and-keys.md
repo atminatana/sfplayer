@@ -157,3 +157,26 @@
 `src/ui/fulfil/tests.rs`: `the_preset_window_is_asked_for_only_when_a_bank_is_loaded` — без банка окно не запрашивается; с банком запрос несёт пресеты и действующий пресет.
 
 Прогон: 419 passed, 0 failed (`target/step13/gates-7.1.log`). Вручную, по снимку: вид окна по F5. Не проверено вживую: двойной клик, колесо, набор в фильтре.
+
+## Шаг 8.1 (2026-11-16) — окно эффектов
+
+`src/ui/effects_dialog/tests.rs` — 8 тестов (события через `route_key` / `route_mouse`, картинка из `modal_buffer`):
+
+| Тест | Что проверяет |
+| --- | --- |
+| `the_window_shows_a_switch_a_slider_and_a_level_for_each_effect` | размер и место окна, заголовок, флажки по настройкам, числа уровней у правой рамки, ползунки, кнопки, фокус на первом флажке; английский текст |
+| `a_switch_is_turned_by_space_enter_or_a_click_and_the_change_is_reported_at_once` | пробел, Enter и клик переключают флажок; каждое переключение сразу даёт `Changed` с новыми настройками |
+| `the_arrows_move_the_level_under_the_focus_by_five_and_home_and_end_go_to_the_limits` | ← → на 5, Home и End — 0 и 127, на границе событий нет, число следует за ползунком; ползунок хоруса меняет только хорус |
+| `a_click_on_the_track_sets_the_level_and_a_drag_leads_it` | клик в правый край — 127, в левый — 0, в середину — около половины; протяжка ведёт уровень и за пределами дорожки; после отпускания указатель ничего не ведёт |
+| `the_wheel_moves_the_level_under_the_pointer_by_five` | колесо над ползунком: вверх +5, два щелчка вниз −10 |
+| `ok_keeps_the_changes` | `[OK]` мышью и с клавиатуры (Tab до кнопки, Enter) даёт `Accepted` с текущими настройками |
+| `leaving_without_ok_goes_back_to_what_the_window_opened_with` | Esc, `[Отмена]`, клик вне окна и уход по команде выхода (`cancel`): без изменений — `Cancelled(None)`, после изменения — `Cancelled(исходные)`; изменил и вернул — не изменение |
+| `a_level_above_the_range_is_shown_at_its_limit` | уровень из конфига выше 127 показывается как 127 |
+
+`src/ui/window/tests.rs`: `what_the_effects_window_decides_is_applied_at_once_saved_on_ok_and_taken_back_otherwise` — что окно программы делает с решением окна эффектов: изменение — запрос `Effects(Set)` без закрытия, `[OK]` — `SaveEffects` и закрытие, отмена — закрытие и возврат исходных настроек, если было что возвращать.
+
+`src/ui/fulfil/tests.rs`: `the_effects_window_is_asked_for_with_the_current_settings` (прежний `the_effects_dialog_opens_with_the_current_settings`) — запрос окна несёт настройки из конфига.
+
+Удалены вместе с прежним автоматом: три теста в `effects_dialog.rs`, `f6_dialog_applies_changes_live_saves_on_enter_and_rolls_back_on_esc` и блок эффектов в `dismissing_a_dialog_does_what_esc_does_in_it` (`app/tests.rs`), `the_effects_dialog_shows_switches_levels_and_the_current_row` и строки эффектов в двух общих тестах (`dialog_screen/tests.rs`).
+
+Прогон: 423 passed, 0 failed (`target/step13/gates-8.1.log`). Мутации: 11 из 11 пойманы (`target/step13/mutation-8.1.log`). Вручную, по снимкам: вид окна по F6 и начальное состояние флажков. Не проверено вживую: переключение флажка, ползунок клавишами и мышью, `[OK]`, отмена с откатом.

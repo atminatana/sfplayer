@@ -138,7 +138,7 @@ fn the_midi_file_dialog_starts_from_the_remembered_file() {
 }
 
 #[test]
-fn the_effects_dialog_opens_with_the_current_settings() {
+fn the_effects_window_is_asked_for_with_the_current_settings() {
 	let file = ConfigFile::new();
 	let mut config = Config::default();
 	config.synth.reverb = true;
@@ -146,8 +146,11 @@ fn the_effects_dialog_opens_with_the_current_settings() {
 	let mut session = session_with(config, &file);
 	let mut app = App::new("en");
 	fulfil(Request::OpenEffectsDialog, &mut app, &mut session);
-	assert_eq!(app.modal, Some(Modal::Effects(EffectsDialog::new(session.effects()))));
-	assert_eq!(session.effects().reverb_level, 55);
+	assert_eq!(app.effects_request, Some(session.effects()));
+	assert_eq!(
+		app.effects_request.map(|effects| (effects.reverb, effects.reverb_level)),
+		Some((true, 55))
+	);
 }
 
 #[test]

@@ -280,12 +280,9 @@ dialog.effects_reverb:
 dialog.effects_chorus:
   en: "Chorus"
   ru: "Хорус"
-dialog.effects_level:
-  en: "level"
-  ru: "уровень"
 dialog.effects_hint:
-  en: "↑↓ row · Space on/off · ←→ level ±5 · Enter save · Esc cancel"
-  ru: "↑↓ — строка · Space — вкл/выкл · ←→ — уровень ±5 · Enter — сохранить · Esc — отмена"
+  en: "Space on/off · ←→ level ±5"
+  ru: "Space — вкл/выкл · ←→ — уровень ±5"
 
 # Main screen of the windowed UI (spec v1.2 §3).
 main.section_sources:

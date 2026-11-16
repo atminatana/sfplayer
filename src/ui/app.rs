@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use super::dialog::{Choice, Dialog, PresetRequest};
-use super::effects_dialog::{EffectsDialog, EffectsOutcome};
 use super::keys::{Action, Bindings};
 use super::meter::ClipHold;
 use super::path_input::PathRequest;
@@ -64,7 +63,7 @@ pub enum Request {
 	/// Semitone delta for `[` / `]`.
 	Transpose(i8),
 	Effects(EffectsAction),
-	/// Enter in the F6 dialog: apply and write the config.
+	/// `[OK]` in the effects window: apply and write the config.
 	SaveEffects(EffectsSettings),
 }
 
@@ -72,7 +71,6 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Modal {
 	Select(Dialog),
-	Effects(EffectsDialog),
 	/// F1: scroll offset in rows.
 	Help(usize),
 }
@@ -189,6 +187,8 @@ pub struct App {
 	pub dropdown_request: Option<Dropdown>,
 	/// The presets the user is to choose from; the window takes it and shows the preset window.
 	pub preset_request: Option<PresetRequest>,
+	/// The effects the user is to adjust; the window takes it and shows the effects window.
+	pub effects_request: Option<EffectsSettings>,
 	pub keyboard: TextKeyboard,
 	pub bindings: Bindings,
 	/// Elapsed time of the running recording, refreshed every frame; `None` when not recording.
@@ -213,6 +213,7 @@ impl App {
 			path_request: None,
 			dropdown_request: None,
 			preset_request: None,
+			effects_request: None,
 			keyboard,
 			bindings: Bindings::default(),
 			recording: None,
@@ -476,18 +477,6 @@ impl App {
 				}
 				None
 			}
-			Modal::Effects(dialog) => match dialog.handle_key(key) {
-				EffectsOutcome::Pending => None,
-				EffectsOutcome::Changed(settings) => Some(Request::Effects(EffectsAction::Set(settings))),
-				EffectsOutcome::Accepted(settings) => {
-					self.modal = None;
-					Some(Request::SaveEffects(settings))
-				}
-				EffectsOutcome::Cancelled(rollback) => {
-					self.modal = None;
-					rollback.map(|settings| Request::Effects(EffectsAction::Set(settings)))
-				}
-			},
 		}
 	}
 

@@ -1,5 +1,5 @@
-//! Drawing the modal windows that are not on widget controls yet (spec §6, v1.1 §4): the list selector,
-//! the effects dialog and the help table.
+//! Drawing the modal windows that are not on widget controls yet (spec §6, v1.1 §4): the list selector
+//! and the help table.
 //!
 //! The dialogs themselves are state machines kept in `App::modal`; this module only shows them, as a
 //! framed box over the middle of the main screen.
@@ -12,7 +12,6 @@ use rust_i18n::t;
 
 use super::app::{App, Modal};
 use super::dialog::Dialog;
-use super::effects_dialog::{EffectRow, EffectsDialog};
 use super::keys::Bindings;
 use super::paint::{HINT, LABEL, Pen, SELECTED, TEXT};
 
@@ -35,7 +34,6 @@ pub fn render(buf: &mut ScreenBuffer, app: &App) {
 	let area = area_of(modal, buf.area());
 	match modal {
 		Modal::Select(dialog) => selector(buf, area, dialog, locale),
-		Modal::Effects(dialog) => effects(buf, area, dialog, locale),
 		Modal::Help(scroll) => help(buf, area, &app.bindings, *scroll, locale),
 	}
 }
@@ -49,7 +47,6 @@ pub fn area(app: &App, screen: Rect) -> Option<Rect> {
 fn area_of(modal: &Modal, screen: Rect) -> Rect {
 	let (max_width, height) = match modal {
 		Modal::Select(_) => (WIDE, SELECTOR_LIST_ROWS + 6),
-		Modal::Effects(_) => (WIDE, 6),
 		Modal::Help(_) => (WIDE, screen.height.saturating_sub(4).max(8)),
 	};
 	let width = screen
@@ -119,34 +116,6 @@ fn selector(buf: &mut ScreenBuffer, area: Rect, dialog: &Dialog, locale: &str) {
 		Pen::within(buf, inner, 0, inner.height.saturating_sub(2)).text(detail, LABEL);
 	}
 	hint(buf, inner, &t!("dialog.hint", locale = locale));
-}
-
-/// F6 (spec v1.1 §4.2): one row per effect — switch and send level; the current row is highlighted.
-fn effects(buf: &mut ScreenBuffer, area: Rect, dialog: &EffectsDialog, locale: &str) {
-	let inner = frame(buf, area, &t!("dialog.effects_title", locale = locale), TEXT);
-	let settings = dialog.settings();
-	let level_label = t!("dialog.effects_level", locale = locale);
-	for (row, effect, name, is_on, level) in [
-		(
-			0,
-			EffectRow::Reverb,
-			t!("dialog.effects_reverb", locale = locale),
-			settings.reverb,
-			settings.reverb_level,
-		),
-		(
-			1,
-			EffectRow::Chorus,
-			t!("dialog.effects_chorus", locale = locale),
-			settings.chorus,
-			settings.chorus_level,
-		),
-	] {
-		let switch = if is_on { "[x]" } else { "[ ]" };
-		let text = format!("{name:<8} {switch}  {level_label} {level:>3}");
-		list_row(buf, inner, row, &text, dialog.row() == effect);
-	}
-	hint(buf, inner, &t!("dialog.effects_hint", locale = locale));
 }
 
 /// F1: the hotkey table, generated from the bindings so it can never disagree with the handler (ADR 0004).

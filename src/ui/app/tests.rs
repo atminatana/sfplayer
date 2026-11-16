@@ -248,40 +248,6 @@ fn alt_r_and_alt_c_toggle_effects() {
 }
 
 #[test]
-fn f6_dialog_applies_changes_live_saves_on_enter_and_rolls_back_on_esc() {
-	use crate::session::EffectsAction;
-	use crate::ui::effects_dialog::EffectsDialog;
-	let settings = EffectsSettings {
-		reverb: true,
-		chorus: false,
-		reverb_level: 40,
-		chorus_level: 20,
-	};
-	let mut app = App::new("en");
-	app.open_modal(Modal::Effects(EffectsDialog::new(settings)));
-	assert_eq!(app.handle_key(plain(KeyCode::F(3))), None, "hotkeys do not leak through the dialog");
-	let toggled = EffectsSettings { reverb: false, ..settings };
-	assert_eq!(
-		app.handle_key(plain(KeyCode::Char(' '))),
-		Some(Request::Effects(EffectsAction::Set(toggled)))
-	);
-	assert!(app.modal.is_some(), "still open after a change");
-	assert_eq!(app.handle_key(plain(KeyCode::Enter)), Some(Request::SaveEffects(toggled)));
-	assert!(app.modal.is_none());
-
-	app.open_modal(Modal::Effects(EffectsDialog::new(settings)));
-	app.handle_key(plain(KeyCode::Right));
-	assert_eq!(
-		app.handle_key(plain(KeyCode::Esc)),
-		Some(Request::Effects(EffectsAction::Set(settings))),
-		"Esc restores the opening state"
-	);
-	assert!(app.modal.is_none());
-	app.open_modal(Modal::Effects(EffectsDialog::new(settings)));
-	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None, "nothing to roll back");
-}
-
-#[test]
 fn quit_asks_for_confirmation_while_recording() {
 	let mut app = App::new("en");
 	// A take is started and stopped by its buttons; Home and End are free (spec v1.3, F-28).
@@ -472,18 +438,6 @@ fn dismissing_a_dialog_does_what_esc_does_in_it() {
 	app.open_dialog(midi_dialog());
 	assert_eq!(app.dismiss_modal(), None);
 	assert!(app.modal.is_none() && app.take_dirty());
-
-	// The effects dialog applies changes as they are made: leaving it this way rolls them back.
-	let before = EffectsSettings {
-		reverb: true,
-		reverb_level: 40,
-		chorus: false,
-		chorus_level: 20,
-	};
-	app.open_modal(Modal::Effects(EffectsDialog::new(before)));
-	app.handle_key(plain(KeyCode::Char(' ')));
-	assert_eq!(app.dismiss_modal(), Some(Request::Effects(EffectsAction::Set(before))));
-	assert!(app.modal.is_none());
 
 	// Esc bound to something else changes nothing: a click outside is not a key.
 	app.bindings = Bindings::from_config(

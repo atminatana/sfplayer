@@ -1,7 +1,7 @@
 //! The program window and what is built on widget controls (ADR 0018): the path dialog, the
-//! confirmation, the preset window and the controls of the main screen. The program window holds the open window, hands
-//! it keys and the mouse, and acts on what it decides; it fills the list of a device dropdown when
-//! the list drops down.
+//! confirmation, the preset window, the effects window and the controls of the main screen. The
+//! program window holds the open window, hands it keys and the mouse, and acts on what it decides;
+//! it fills the list of a device dropdown when the list drops down.
 
 use std::path::{Path, PathBuf};
 
@@ -11,12 +11,13 @@ use winit::event::ElementState;
 
 use super::Window;
 use crate::audio;
-use crate::session::Notice;
+use crate::session::{EffectsAction, Notice};
 use crate::ui::app::{Dropdown, Request};
 use crate::ui::confirm_dialog::{ConfirmDialog, ConfirmOutcome};
 use crate::ui::controls::Touch;
 use crate::ui::devices::DeviceRows;
 use crate::ui::dialog::Choice;
+use crate::ui::effects_dialog::{EffectsDialog, EffectsOutcome};
 use crate::ui::input_dialog::{InputDialog, InputOutcome};
 use crate::ui::path_input::{self, InputKind};
 use crate::ui::preset_dialog::{PresetDialog, PresetOutcome};
@@ -163,6 +164,57 @@ impl Window {
 		}
 	}
 
+	/// Shows the effects window `App` was asked for.
+	pub(super) fn adopt_effects_request(&mut self) {
+		if let Some(settings) = self.app.effects_request.take() {
+			self.controls.close_dropdowns();
+			self.effects = Some(EffectsDialog::new(settings));
+		}
+	}
+
+	/// A key press or release for the open effects window.
+	pub(super) fn key_to_effects(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
+		let Some(dialog) = &mut self.effects else {
+			return;
+		};
+		// The window sees releases too (the library tracks held keys by them); only presses act.
+		let routed = dialog.ui(self.app.locale).key(event, ctx);
+		if event.state != ElementState::Pressed {
+			return;
+		}
+		let outcome = dialog.settle(routed);
+		self.conclude_effects(outcome);
+		self.refresh(ctx, true);
+	}
+
+	/// A mouse event for the open effects window.
+	pub(super) fn pointer_to_effects(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
+		let Some(dialog) = &mut self.effects else {
+			return;
+		};
+		let routed = dialog.ui(self.app.locale).pointer(event, ctx);
+		let outcome = dialog.settle(routed);
+		self.conclude_effects(outcome);
+		self.refresh(ctx, true);
+	}
+
+	/// Leaves the effects window the way `[Cancel]` does: what was changed in it is taken back.
+	pub(super) fn cancel_effects(&mut self) {
+		if let Some(dialog) = &self.effects {
+			let outcome = dialog.cancel();
+			self.conclude_effects(outcome);
+		}
+	}
+
+	/// Acts on what the effects window decided.
+	fn conclude_effects(&mut self, outcome: EffectsOutcome) {
+		let (is_closing, request) = effects_step(outcome);
+		if is_closing {
+			self.effects = None;
+		}
+		self.apply(request);
+	}
+
 	/// Does what a touched control of the main screen asks for: a pressed button gives its command, a
 	/// dropdown that has just opened gets its list, a chosen row connects its device.
 	pub(super) fn touched(&mut self, touch: Touch) -> Option<Request> {
@@ -266,6 +318,18 @@ impl Window {
 		}
 		self.sync_confirm();
 		self.refresh(ctx, true);
+	}
+}
+
+/// What the decision of the effects window means for the window — whether it closes — and for the
+/// session. A change is applied at once, so it is heard while the window is open; `[OK]` saves it;
+/// leaving the window any other way puts back what it opened with, if anything was changed.
+pub(super) fn effects_step(outcome: EffectsOutcome) -> (bool, Option<Request>) {
+	match outcome {
+		EffectsOutcome::Pending => (false, None),
+		EffectsOutcome::Changed(settings) => (false, Some(Request::Effects(EffectsAction::Set(settings)))),
+		EffectsOutcome::Accepted(settings) => (true, Some(Request::SaveEffects(settings))),
+		EffectsOutcome::Cancelled(rollback) => (true, rollback.map(|settings| Request::Effects(EffectsAction::Set(settings)))),
 	}
 }
 

@@ -86,6 +86,8 @@ The MIDI input and the audio output are chosen from a dropdown in their own line
 
 F5 or the `[Preset]` button opens the preset window: typed text keeps the lines that have it in the name or the number, ↑↓ and PgUp/PgDn move the highlight, Enter, `[OK]` or a double click on a row apply the preset, Esc, `[Cancel]` and a click outside the window close it and change nothing. The preset in use is marked with `●`.
 
+F6 or the `[Effects]` button opens the effects window: the "Reverb" and "Chorus" lines each have a switch and a slider of the send level (0…127). Tab and Shift+Tab move between the switches, the sliders and the buttons; Space or a click turns a switch; ← → change the level under the focus by 5, Home and End set 0 and 127; a click on the track puts the level there, a drag leads it after the pointer, the wheel changes it by 5. Changes are heard at once; `[OK]` keeps them, `[Cancel]`, Esc and a click outside the window put back what the window opened with.
+
 Labels in square brackets on the main screen are buttons. Press them with the mouse or from the keyboard: Tab and Shift+Tab move the focus from button to button (the button under the focus is underlined), Enter presses it. The `[−]` and `[+]` buttons in the "Master" line change the volume by 5 %. A click outside an open dialog closes it, like Esc.
 
 F4 opens the bank path dialog: as you type, matching folders and `.sf2` files appear under the field; with an empty field — the recent banks. ↑↓ or a mouse click put a row into the field, Enter opens a folder or loads a bank, Tab moves between the field, the list and the `[OK]` and `[Cancel]` buttons, Esc or a click outside the dialog cancels. Selection and the clipboard work in the field (Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A).
@@ -219,7 +221,7 @@ Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How t
 ## Limitations
 
 - macOS is not supported: the gterm window library runs on Windows and Linux.
-- In the selection windows (MIDI input, audio output, preset), the effects window and the help the mouse does not act — choices are made with keys; a click outside the window closes it. The mouse works on the buttons of the main screen and in the path dialogs (F4, F7).
+- In the help window the mouse does not act — it is scrolled with keys; a click outside the window closes it.
 - A MIDI take holds what was played, not the state of the synthesizer when it began: the preset and the effect levels chosen before the take are not in the file, and it plays with the preset chosen at playback. Time in the file is as fine as the audio buffer (about 5 ms with 256 frames at 48 kHz).
 - SF3 banks are not supported.
 - MIDI files of format 2 and files timed in SMPTE frames are not played; there is no seeking in a file.

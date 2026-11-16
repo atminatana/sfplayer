@@ -1,8 +1,7 @@
 //! Applying the requests of the UI to the session: the one place of the UI that knows `Session`.
 
-use super::app::{App, Modal, Request};
+use super::app::{App, Request};
 use super::dialog::{Choice, PresetRequest};
-use super::effects_dialog::EffectsDialog;
 use super::path_input::{InputKind, PathRequest};
 use crate::session::{EffectsAction, Session};
 
@@ -30,7 +29,7 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 				history: record.recent_dirs.clone(),
 			});
 		}
-		Request::OpenEffectsDialog => app.open_modal(Modal::Effects(EffectsDialog::new(session.effects()))),
+		Request::OpenEffectsDialog => app.effects_request = Some(session.effects()),
 		Request::OpenSf2Dialog => {
 			let initial = session
 				.bank

@@ -23,6 +23,7 @@ use super::confirm_dialog::ConfirmDialog;
 use super::controls::{Controls, Touch};
 use super::devices::DeviceRows;
 use super::dialog_screen;
+use super::effects_dialog::EffectsDialog;
 use super::fulfil::fulfil;
 use super::input_dialog::InputDialog;
 use super::keymap::{Reading, WindowKey, key_from_window, quits_from_a_field, reading_in_a_dialog};
@@ -93,6 +94,7 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		input: None,
 		confirm: None,
 		preset: None,
+		effects: None,
 	};
 	GridWindow::new(WINDOW_TITLE, screen, rasterizer, grid_config, window_options)
 		.run(window)
@@ -159,6 +161,8 @@ struct Window {
 	confirm: Option<ConfirmDialog>,
 	/// The preset window on widget controls, while it is open.
 	preset: Option<PresetDialog>,
+	/// The effects window on widget controls, while it is open.
+	effects: Option<EffectsDialog>,
 }
 
 impl Window {
@@ -251,15 +255,22 @@ impl AppHandler for Window {
 			}
 			self.preset = None;
 		}
-		// The keys of an open question go to the controls of its window. The quit command goes on to
-		// `App`, where asking twice means quitting.
-		if self.confirm.is_some() {
-			let bindings = &self.app.bindings;
-			let is_quitting = command.is_some_and(|key| key.kind == KeyEventKind::Press && bindings.action_for(&key) == Some(Action::Quit));
+		let bindings = &self.app.bindings;
+		let is_quitting = command.is_some_and(|key| key.kind == KeyEventKind::Press && bindings.action_for(&key) == Some(Action::Quit));
+		// The effects window has no field to type into, so every quit key quits from it; the window is
+		// left the way `[Cancel]` leaves it.
+		if self.effects.is_some() {
 			if !is_quitting {
-				self.key_to_confirm(event, ctx);
+				self.key_to_effects(event, ctx);
 				return;
 			}
+			self.cancel_effects();
+		}
+		// The keys of an open question go to the controls of its window. The quit command goes on to
+		// `App`, where asking twice means quitting.
+		if self.confirm.is_some() && !is_quitting {
+			self.key_to_confirm(event, ctx);
+			return;
 		}
 		let Some(command) = command else {
 			return;
@@ -284,6 +295,7 @@ impl AppHandler for Window {
 		}
 		self.adopt_path_request();
 		self.adopt_preset_request();
+		self.adopt_effects_request();
 		self.adopt_dropdown_request();
 		self.sync_confirm();
 		let force = self.app.take_dirty() || has_changed;
@@ -311,7 +323,8 @@ impl AppHandler for Window {
 		let message = MouseMsg::from_pointer(event, ctx);
 		// A note the mouse holds on the piano is the piano's to end, even if a dialog opened meanwhile;
 		// a new one starts only on the bare main screen.
-		let has_window = self.input.is_some() || self.confirm.is_some() || self.preset.is_some() || self.app.modal.is_some();
+		let has_dialog = self.input.is_some() || self.confirm.is_some() || self.preset.is_some() || self.effects.is_some();
+		let has_window = has_dialog || self.app.modal.is_some();
 		let is_screen_bare = !has_window && self.controls.open_dropdown().is_none();
 		if (is_screen_bare || self.piano.is_dragging()) && self.pointer_to_piano(&message, ctx) {
 			return;
@@ -326,6 +339,10 @@ impl AppHandler for Window {
 		}
 		if self.preset.is_some() {
 			self.pointer_to_preset(event, ctx);
+			return;
+		}
+		if self.effects.is_some() {
+			self.pointer_to_effects(event, ctx);
 			return;
 		}
 		let request = if self.app.modal.is_some() {
@@ -344,6 +361,7 @@ impl AppHandler for Window {
 		self.apply(request);
 		self.adopt_path_request();
 		self.adopt_preset_request();
+		self.adopt_effects_request();
 		self.sync_confirm();
 		self.refresh(ctx, true);
 	}
@@ -356,6 +374,7 @@ impl AppHandler for Window {
 			input,
 			confirm,
 			preset,
+			effects,
 			controls,
 			clipboard,
 			app,
@@ -367,6 +386,8 @@ impl AppHandler for Window {
 			dialog.ui(app.locale, &take).draw_modal(ctx);
 		} else if let Some(dialog) = preset {
 			dialog.ui(app.locale, clipboard).draw_modal(ctx);
+		} else if let Some(dialog) = effects {
+			dialog.ui(app.locale).draw_modal(ctx);
 		} else {
 			controls.draw_layer(ctx);
 		}
