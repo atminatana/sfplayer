@@ -19,3 +19,4 @@
 | [0013](0013-builtin-synth-shared-effects.md) | Встроенный синтезатор — второй движок за `SynthEngine`; эффекты с общим управлением (v1.2) | Accepted |
 | [0014](0014-smf-reader-and-sequencer-thread.md) | MIDI-файл: собственный разбор SMF и поток-секвенсор со своим кольцом (v1.2) | Accepted |
 | [0015](0015-midi-take.md) | Запись MIDI: события из аудио-потока с меткой по счётчику кадров, файл SMF формата 0 (v1.2) | Accepted |
+| [0016](0016-dependency-licences.md) | Лицензии зависимостей: MPL-2.0 без правок и Unicode-3.0 допустимы (v1.3) | Accepted |
