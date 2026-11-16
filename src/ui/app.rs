@@ -6,7 +6,7 @@
 use std::time::{Duration, Instant};
 
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use super::dialog::{Choice, Dialog};
+use super::dialog::{Choice, Dialog, PresetRequest};
 use super::effects_dialog::{EffectsDialog, EffectsOutcome};
 use super::keys::{Action, Bindings};
 use super::meter::ClipHold;
@@ -187,6 +187,8 @@ pub struct App {
 	/// A dropdown of the main screen asked for by its key; the window takes it and drops the list
 	/// down.
 	pub dropdown_request: Option<Dropdown>,
+	/// The presets the user is to choose from; the window takes it and shows the preset window.
+	pub preset_request: Option<PresetRequest>,
 	pub keyboard: TextKeyboard,
 	pub bindings: Bindings,
 	/// Elapsed time of the running recording, refreshed every frame; `None` when not recording.
@@ -210,6 +212,7 @@ impl App {
 			confirm: None,
 			path_request: None,
 			dropdown_request: None,
+			preset_request: None,
 			keyboard,
 			bindings: Bindings::default(),
 			recording: None,

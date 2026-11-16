@@ -39,6 +39,14 @@ enum Choices {
 	Presets(Vec<(u16, u8)>),
 }
 
+/// What the preset window is asked to show: the presets of the loaded bank and the one in use
+/// (`None` — the bank plays its first preset).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetRequest {
+	pub presets: Vec<PresetInfo>,
+	pub current: Option<(u16, u8)>,
+}
+
 /// What the UI asks the session to do after a dialog closes with Enter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Choice {

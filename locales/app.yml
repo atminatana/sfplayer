@@ -79,6 +79,9 @@ dialog.empty:
 dialog.no_match:
   en: "no matches"
   ru: "нет совпадений"
+dialog.preset_hint:
+  en: "type to filter · ↑↓ move · a double click applies"
+  ru: "набор — фильтр · ↑↓ — выбор · двойной клик — применить"
 dialog.hint:
   en: "↑↓ PgUp PgDn move · type to filter · Enter apply · Esc cancel"
   ru: "↑↓ PgUp PgDn — выбор · набор текста — фильтр · Enter — применить · Esc — отмена"

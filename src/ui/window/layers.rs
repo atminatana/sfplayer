@@ -1,5 +1,5 @@
 //! The program window and what is built on widget controls (ADR 0018): the path dialog, the
-//! confirmation and the controls of the main screen. The program window holds the open window, hands
+//! confirmation, the preset window and the controls of the main screen. The program window holds the open window, hands
 //! it keys and the mouse, and acts on what it decides; it fills the list of a device dropdown when
 //! the list drops down.
 
@@ -16,8 +16,10 @@ use crate::ui::app::{Dropdown, Request};
 use crate::ui::confirm_dialog::{ConfirmDialog, ConfirmOutcome};
 use crate::ui::controls::Touch;
 use crate::ui::devices::DeviceRows;
+use crate::ui::dialog::Choice;
 use crate::ui::input_dialog::{InputDialog, InputOutcome};
 use crate::ui::path_input::{self, InputKind};
+use crate::ui::preset_dialog::{PresetDialog, PresetOutcome};
 use crate::ui::view::{Size, take_summary};
 
 impl Window {
@@ -92,6 +94,72 @@ impl Window {
 				self.session.save_config();
 			}
 			Err(message) => dialog.set_error(message),
+		}
+	}
+
+	/// Shows the preset window `App` was asked for.
+	pub(super) fn adopt_preset_request(&mut self) {
+		if let Some(request) = self.app.preset_request.take() {
+			self.controls.close_dropdowns();
+			self.preset = Some(PresetDialog::new(&request));
+		}
+	}
+
+	/// A key press or release for the open preset window.
+	pub(super) fn key_to_preset(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
+		let Self {
+			preset, clipboard, app, ..
+		} = self;
+		let Some(dialog) = preset else {
+			return;
+		};
+		// The window sees releases too (the library tracks held keys by them); only presses act.
+		let routed = dialog.ui(app.locale, clipboard).key(event, ctx);
+		if event.state != ElementState::Pressed {
+			return;
+		}
+		let outcome = dialog.settle(routed, Some(&event.logical_key));
+		self.conclude_preset(outcome);
+		self.refresh(ctx, true);
+	}
+
+	/// A mouse event for the open preset window.
+	pub(super) fn pointer_to_preset(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
+		let Self {
+			preset, clipboard, app, ..
+		} = self;
+		let Some(dialog) = preset else {
+			return;
+		};
+		let routed = dialog.ui(app.locale, clipboard).pointer(event, ctx);
+		let outcome = dialog.settle(routed, None);
+		self.conclude_preset(outcome);
+		self.refresh(ctx, true);
+	}
+
+	/// Text from an input method for the filter of the open preset window.
+	pub(super) fn text_to_preset(&mut self, text: &str, ctx: &mut Ctx<'_>) {
+		let Self {
+			preset, clipboard, app, ..
+		} = self;
+		let Some(dialog) = preset else {
+			return;
+		};
+		let routed = dialog.ui(app.locale, clipboard).text(text);
+		let outcome = dialog.settle(routed, None);
+		self.conclude_preset(outcome);
+		self.refresh(ctx, true);
+	}
+
+	/// Acts on what the preset window decided: a chosen preset is applied and saved.
+	fn conclude_preset(&mut self, outcome: PresetOutcome) {
+		match outcome {
+			PresetOutcome::Pending => {}
+			PresetOutcome::Cancelled => self.preset = None,
+			PresetOutcome::Chosen { bank, program } => {
+				self.preset = None;
+				self.apply(Some(Request::Apply(Choice::SelectPreset { bank, program })));
+			}
 		}
 	}
 

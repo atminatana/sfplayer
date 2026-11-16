@@ -77,3 +77,23 @@ pub fn left_click(col: i32, row: i32) -> [MouseMsg; 2] {
 		click_count: 1,
 	})
 }
+
+/// The four messages of a double click on a screen cell: the second press and its release carry the
+/// count 2.
+pub fn left_double_click(col: i32, row: i32) -> [MouseMsg; 4] {
+	let [press, release] = left_click(col, row);
+	let second = |message: MouseMsg| MouseMsg { click_count: 2, ..message };
+	[press, release, second(press), second(release)]
+}
+
+/// The wheel turned by `lines` over a screen cell: positive is up.
+pub fn wheel(col: i32, row: i32, lines: f32) -> MouseMsg {
+	MouseMsg {
+		kind: MouseKind::Wheel { lines },
+		button: None,
+		col,
+		row,
+		modifiers: ModifiersState::empty(),
+		click_count: 0,
+	}
+}

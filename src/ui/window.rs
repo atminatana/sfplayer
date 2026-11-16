@@ -30,6 +30,7 @@ use super::keys::Action;
 use super::main_screen::{self, BACKGROUND, MIN_COLS, MIN_ROWS, TEXT};
 use super::path_input;
 use super::piano::Piano;
+use super::preset_dialog::PresetDialog;
 use super::view::View;
 use crate::session::{Notice, Session};
 
@@ -91,6 +92,7 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		clipboard: SystemClipboard::new(),
 		input: None,
 		confirm: None,
+		preset: None,
 	};
 	GridWindow::new(WINDOW_TITLE, screen, rasterizer, grid_config, window_options)
 		.run(window)
@@ -155,6 +157,8 @@ struct Window {
 	input: Option<InputDialog>,
 	/// The confirmation window on widget controls, while `App` has a question open.
 	confirm: Option<ConfirmDialog>,
+	/// The preset window on widget controls, while it is open.
+	preset: Option<PresetDialog>,
 }
 
 impl Window {
@@ -239,6 +243,14 @@ impl AppHandler for Window {
 			}
 			self.input = None;
 		}
+		if self.preset.is_some() {
+			let is_quitting = command.is_some_and(|key| quits_from_a_field(&self.app.bindings, &key));
+			if !is_quitting {
+				self.key_to_preset(event, ctx);
+				return;
+			}
+			self.preset = None;
+		}
 		// The keys of an open question go to the controls of its window. The quit command goes on to
 		// `App`, where asking twice means quitting.
 		if self.confirm.is_some() {
@@ -271,14 +283,20 @@ impl AppHandler for Window {
 			return;
 		}
 		self.adopt_path_request();
+		self.adopt_preset_request();
 		self.adopt_dropdown_request();
 		self.sync_confirm();
 		let force = self.app.take_dirty() || has_changed;
 		self.refresh(ctx, force);
 	}
 
-	/// Text that arrives outside key presses (input methods) belongs to the field of the input dialog.
+	/// Text that arrives outside key presses (input methods) belongs to the field of the open window:
+	/// the filter of the preset window or the path of the input dialog.
 	fn on_text(&mut self, text: &str, ctx: &mut Ctx<'_>) {
+		if self.preset.is_some() {
+			self.text_to_preset(text, ctx);
+			return;
+		}
 		let Self { input, clipboard, app, .. } = self;
 		let Some(dialog) = input else {
 			return;
@@ -293,7 +311,7 @@ impl AppHandler for Window {
 		let message = MouseMsg::from_pointer(event, ctx);
 		// A note the mouse holds on the piano is the piano's to end, even if a dialog opened meanwhile;
 		// a new one starts only on the bare main screen.
-		let has_window = self.input.is_some() || self.confirm.is_some() || self.app.modal.is_some();
+		let has_window = self.input.is_some() || self.confirm.is_some() || self.preset.is_some() || self.app.modal.is_some();
 		let is_screen_bare = !has_window && self.controls.open_dropdown().is_none();
 		if (is_screen_bare || self.piano.is_dragging()) && self.pointer_to_piano(&message, ctx) {
 			return;
@@ -304,6 +322,10 @@ impl AppHandler for Window {
 		}
 		if self.confirm.is_some() {
 			self.pointer_to_confirm(event, ctx);
+			return;
+		}
+		if self.preset.is_some() {
+			self.pointer_to_preset(event, ctx);
 			return;
 		}
 		let request = if self.app.modal.is_some() {
@@ -321,6 +343,7 @@ impl AppHandler for Window {
 		};
 		self.apply(request);
 		self.adopt_path_request();
+		self.adopt_preset_request();
 		self.sync_confirm();
 		self.refresh(ctx, true);
 	}
@@ -332,6 +355,7 @@ impl AppHandler for Window {
 		let Self {
 			input,
 			confirm,
+			preset,
 			controls,
 			clipboard,
 			app,
@@ -341,6 +365,8 @@ impl AppHandler for Window {
 			dialog.ui(app.locale, clipboard).draw_modal(ctx);
 		} else if let Some(dialog) = confirm {
 			dialog.ui(app.locale, &take).draw_modal(ctx);
+		} else if let Some(dialog) = preset {
+			dialog.ui(app.locale, clipboard).draw_modal(ctx);
 		} else {
 			controls.draw_layer(ctx);
 		}

@@ -135,3 +135,25 @@
 `src/ui/devices.rs` — 3 теста: строки и запросы для MIDI-портов и аудиоустройств, пустой список. `src/ui/main_screen/tests.rs`: снимки двух строк на русском и английском, обход кольца мимо списков, фокус первого кадра на поле MIDI-входа. `src/ui/app/tests.rs`: F2 и F3 просят раскрыть список. `src/ui/fulfil/tests.rs`: запрос окна пресета под новым именем.
 
 Прогон: 408 passed, 0 failed (`target/step13/gates-6.1.log`). Вручную, по снимкам: вид полей, раскрытие по F3 и кликом, закрытие по Esc, клик после закрытия. Не проверено вживую: выбор другого устройства, F2 при наличии MIDI-портов, колесо.
+
+## Шаг 7.1 (2026-11-16) — окно пресета
+
+`src/ui/preset_dialog/tests.rs` — 11 тестов (события через `route_key` / `route_mouse`, картинка из `modal_buffer`):
+
+| Тест | Что проверяет |
+| --- | --- |
+| `the_window_shows_the_filter_the_presets_and_the_buttons` | размер и место окна, заголовок, поле, строки, отметка действующего пресета, выделение, подсказка, кнопки; короткий список без полосы прокрутки; английский текст |
+| `the_list_starts_on_the_preset_in_use_or_on_the_first_one` | начальное выделение: действующий пресет, первый при его отсутствии |
+| `typing_narrows_the_list_whatever_the_case` | отбор по названию и по номеру без учёта регистра; Backspace расширяет список |
+| `with_no_match_the_window_says_so_and_nothing_can_be_chosen` | «нет совпадений»; Enter, `[OK]` и ↓ ничего не делают; пустой банк — «выбирать нечего» |
+| `the_arrows_walk_the_list_from_the_field_and_enter_chooses` | ↑ ↓ PgUp PgDn из поля с упором в края, выбор по Enter |
+| `enter_and_ok_choose_the_highlighted_preset` | Enter и `[OK]`; после отбора выбирается пресет, а не место в суженном списке |
+| `a_click_highlights_a_row_and_a_double_click_chooses_it` | клик выделяет, двойной клик применяет; двойной клик мимо списка — ничего |
+| `esc_cancel_and_a_click_outside_close_the_window_without_choosing` | три способа закрыть без выбора |
+| `tab_goes_from_the_field_to_the_list_and_on_to_the_buttons` | кольцо Tab; клавиши списка; Enter в списке и на кнопках |
+| `the_wheel_scrolls_a_long_list_and_leaves_the_highlight_where_it_is` | длинный список с полосой прокрутки; колесо листает, выделение на месте |
+| `lines_are_matched_by_a_part_of_them_whatever_the_case` | чистая функция отбора |
+
+`src/ui/fulfil/tests.rs`: `the_preset_window_is_asked_for_only_when_a_bank_is_loaded` — без банка окно не запрашивается; с банком запрос несёт пресеты и действующий пресет.
+
+Прогон: 419 passed, 0 failed (`target/step13/gates-7.1.log`). Вручную, по снимку: вид окна по F5. Не проверено вживую: двойной клик, колесо, набор в фильтре.

@@ -18,6 +18,7 @@ pub mod meter;
 pub mod paint;
 pub mod path_input;
 pub mod piano;
+pub mod preset_dialog;
 pub mod selector;
 #[cfg(test)]
 pub mod testkit;

@@ -1,7 +1,7 @@
 //! Applying the requests of the UI to the session: the one place of the UI that knows `Session`.
 
 use super::app::{App, Modal, Request};
-use super::dialog::{Choice, Dialog};
+use super::dialog::{Choice, PresetRequest};
 use super::effects_dialog::EffectsDialog;
 use super::path_input::{InputKind, PathRequest};
 use crate::session::{EffectsAction, Session};
@@ -12,7 +12,10 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 		Request::Mixer(action) => session.apply_mixer(action),
 		Request::OpenPresetDialog => {
 			if let Some(loaded) = &session.bank {
-				app.open_dialog(Dialog::preset(loaded.bank.presets(), session.preset_for()));
+				app.preset_request = Some(PresetRequest {
+					presets: loaded.bank.presets().to_vec(),
+					current: session.preset_for(),
+				});
 			}
 		}
 		Request::OpenRecordDialog => {

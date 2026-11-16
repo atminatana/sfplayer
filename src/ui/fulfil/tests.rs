@@ -11,7 +11,6 @@ use crate::midi::MidiEvent;
 use crate::session::{EffectsSettings, MixerAction};
 use crate::synth::{AdsrPreset, Wave};
 use crate::ui::app::KEYBOARD_CHANNEL;
-use crate::ui::dialog::DialogKind;
 
 static CONFIG_COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -58,20 +57,24 @@ fn a_master_key_changes_the_volume_in_the_session_and_in_the_config() {
 }
 
 #[test]
-fn the_preset_dialog_opens_only_when_a_bank_is_loaded() {
+fn the_preset_window_is_asked_for_only_when_a_bank_is_loaded() {
 	let file = ConfigFile::new();
 	let mut session = session_with(Config::default(), &file);
 	let mut app = App::new("en");
 	fulfil(Request::OpenPresetDialog, &mut app, &mut session);
-	assert_eq!(app.modal, None);
+	assert_eq!(app.preset_request, None);
 
 	session.load_bank(&sine_bank()).expect("the test bank loads");
 	fulfil(Request::OpenPresetDialog, &mut app, &mut session);
-	let Some(Modal::Select(dialog)) = &app.modal else {
-		panic!("the preset dialog is open");
-	};
-	assert_eq!(dialog.kind, DialogKind::Preset);
-	assert!(!dialog.selector.visible().is_empty());
+	let request = app.preset_request.take().expect("the preset window is asked for");
+	assert!(!request.presets.is_empty());
+	assert_eq!(request.current, None, "the bank plays its first preset");
+	assert_eq!(app.modal, None);
+
+	session.select_preset(request.presets[0].bank, request.presets[0].program);
+	fulfil(Request::OpenPresetDialog, &mut app, &mut session);
+	let request = app.preset_request.take().expect("asked again");
+	assert_eq!(request.current, Some((request.presets[0].bank, request.presets[0].program)));
 }
 
 #[test]
