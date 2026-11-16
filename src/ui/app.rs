@@ -566,4 +566,6 @@ pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 }
 
 #[cfg(test)]
+mod fulfil_tests;
+#[cfg(test)]
 mod tests;

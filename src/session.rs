@@ -159,6 +159,19 @@ impl Session {
 		(session, hotplug_tx)
 	}
 
+	/// A session with no device opened, for the tests of the layers above it.
+	#[cfg(test)]
+	pub(crate) fn detached(config: Config, config_path: PathBuf) -> Self {
+		let settings = Settings {
+			sf2: None,
+			midi_in: None,
+			audio_out: None,
+			buffer_frames: crate::cli::DEFAULT_BUFFER_FRAMES,
+			sample_rate: None,
+		};
+		Self::idle(&settings, config, config_path).0
+	}
+
 	/// Opens audio (silent until a bank is loaded), connects MIDI, loads the bank from settings, starts hot-plug polling.
 	/// Device problems become notices, not errors: the UI must come up so the user can fix the choice.
 	pub fn start(settings: &Settings, config: Config, config_path: PathBuf) -> Self {

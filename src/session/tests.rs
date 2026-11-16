@@ -3,20 +3,9 @@
 
 use super::*;
 
-fn settings() -> Settings {
-	Settings {
-		sf2: None,
-		midi_in: None,
-		audio_out: None,
-		buffer_frames: 256,
-		sample_rate: None,
-	}
-}
-
 /// A session that has opened nothing; nothing here saves its config, so the file is never written.
 fn idle_session(config: Config) -> Session {
-	let (session, _hotplug) = Session::idle(&settings(), config, PathBuf::from("never-written.toml"));
-	session
+	Session::detached(config, PathBuf::from("never-written.toml"))
 }
 
 #[test]
