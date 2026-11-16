@@ -1,11 +1,12 @@
 //! The program window and what is built on widget controls (ADR 0018): the path dialog, the
-//! confirmation, the preset window, the effects window and the controls of the main screen. The
+//! confirmation, the preset window, the effects window, the help and the controls of the main screen. The
 //! program window holds the open window, hands it keys and the mouse, and acts on what it decides;
 //! it fills the list of a device dropdown when the list drops down.
 
 use std::path::{Path, PathBuf};
 
 use gterm::app::{Ctx, PointerEvent};
+use gterm_widgets::Rect;
 use rust_i18n::t;
 use winit::event::ElementState;
 
@@ -18,6 +19,7 @@ use crate::ui::controls::Touch;
 use crate::ui::devices::DeviceRows;
 use crate::ui::dialog::Choice;
 use crate::ui::effects_dialog::{EffectsDialog, EffectsOutcome};
+use crate::ui::help_dialog::{HelpDialog, HelpOutcome};
 use crate::ui::input_dialog::{InputDialog, InputOutcome};
 use crate::ui::path_input::{self, InputKind};
 use crate::ui::preset_dialog::{PresetDialog, PresetOutcome};
@@ -213,6 +215,46 @@ impl Window {
 			self.effects = None;
 		}
 		self.apply(request);
+	}
+
+	/// Shows the help `App` was asked for: the table of the bindings in force.
+	pub(super) fn adopt_help_request(&mut self) {
+		if std::mem::take(&mut self.app.is_help_requested) {
+			self.controls.close_dropdowns();
+			self.help = Some(HelpDialog::new(self.app.bindings.help_rows(self.app.locale)));
+		}
+	}
+
+	/// A key press or release for the open help window.
+	pub(super) fn key_to_help(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
+		let grid_rows = Rect::of_screen(ctx.screen).height;
+		let Some(dialog) = &mut self.help else {
+			return;
+		};
+		// The window sees releases too (the library tracks held keys by them); only presses act.
+		let routed = dialog.ui(self.app.locale, grid_rows).key(event, ctx);
+		if event.state != ElementState::Pressed {
+			return;
+		}
+		// A held key is no new press: the F1 that opened the window does not close it while held.
+		let key = (!event.repeat).then_some(&event.logical_key);
+		if dialog.settle(routed, key) == HelpOutcome::Closed {
+			self.help = None;
+		}
+		self.refresh(ctx, true);
+	}
+
+	/// A mouse event for the open help window.
+	pub(super) fn pointer_to_help(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
+		let grid_rows = Rect::of_screen(ctx.screen).height;
+		let Some(dialog) = &mut self.help else {
+			return;
+		};
+		let routed = dialog.ui(self.app.locale, grid_rows).pointer(event, ctx);
+		if dialog.settle(routed, None) == HelpOutcome::Closed {
+			self.help = None;
+		}
+		self.refresh(ctx, true);
 	}
 
 	/// Does what a touched control of the main screen asks for: a pressed button gives its command, a

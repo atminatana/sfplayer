@@ -22,11 +22,11 @@ use super::chord::{KeyCode, KeyEvent, KeyEventKind};
 use super::confirm_dialog::ConfirmDialog;
 use super::controls::{Controls, Touch};
 use super::devices::DeviceRows;
-use super::dialog_screen;
 use super::effects_dialog::EffectsDialog;
 use super::fulfil::fulfil;
+use super::help_dialog::HelpDialog;
 use super::input_dialog::InputDialog;
-use super::keymap::{Reading, WindowKey, key_from_window, quits_from_a_field, reading_in_a_dialog};
+use super::keymap::{WindowKey, key_from_window, quits_from_a_field};
 use super::keys::Action;
 use super::main_screen::{self, BACKGROUND, MIN_COLS, MIN_ROWS, TEXT};
 use super::path_input;
@@ -95,6 +95,7 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		confirm: None,
 		preset: None,
 		effects: None,
+		help: None,
 	};
 	GridWindow::new(WINDOW_TITLE, screen, rasterizer, grid_config, window_options)
 		.run(window)
@@ -128,14 +129,6 @@ impl FrameState {
 	}
 }
 
-/// Whether the mouse event is over a cell of `area`.
-fn is_inside(area: Rect, message: &MouseMsg) -> bool {
-	match (u16::try_from(message.col), u16::try_from(message.row)) {
-		(Ok(col), Ok(row)) => area.contains(col, row),
-		_ => false,
-	}
-}
-
 fn blink_phase(elapsed: Duration) -> bool {
 	(elapsed.as_millis() / BLINK_HALF_PERIOD_MS).is_multiple_of(2)
 }
@@ -163,6 +156,8 @@ struct Window {
 	preset: Option<PresetDialog>,
 	/// The effects window on widget controls, while it is open.
 	effects: Option<EffectsDialog>,
+	/// The help window on widget controls, while it is open.
+	help: Option<HelpDialog>,
 }
 
 impl Window {
@@ -180,7 +175,6 @@ impl Window {
 			return;
 		}
 		main_screen::render(ctx.screen, &self.app, &state.view, &mut self.controls);
-		dialog_screen::render(ctx.screen, &self.app);
 		self.shown = Some(state);
 		ctx.redraw();
 	}
@@ -198,7 +192,7 @@ impl Window {
 			}
 			self.controls.close_dropdowns();
 		}
-		if self.app.modal.is_some() || action.is_some() {
+		if action.is_some() {
 			return (self.app.handle_key(key), false);
 		}
 		match self.controls.handle_key(&key) {
@@ -234,7 +228,7 @@ impl AppHandler for Window {
 
 	fn on_key(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
 		let window_key = WindowKey::of(event, ctx.modifiers);
-		let command = key_from_window(&window_key, Reading::Command);
+		let command = key_from_window(&window_key);
 		// A held Enter must not go on to act in the dialog its first press opened.
 		if command.is_some_and(|key| key.code == KeyCode::Enter && key.kind == KeyEventKind::Repeat) {
 			return;
@@ -266,20 +260,21 @@ impl AppHandler for Window {
 			}
 			self.cancel_effects();
 		}
+		if self.help.is_some() {
+			if !is_quitting {
+				self.key_to_help(event, ctx);
+				return;
+			}
+			self.help = None;
+		}
 		// The keys of an open question go to the controls of its window. The quit command goes on to
 		// `App`, where asking twice means quitting.
 		if self.confirm.is_some() && !is_quitting {
 			self.key_to_confirm(event, ctx);
 			return;
 		}
-		let Some(command) = command else {
+		let Some(key) = command else {
 			return;
-		};
-		// Hotkeys and notes go by the place of the key; what is typed into a dialog goes by the layout.
-		let key = if self.app.modal.is_some() && reading_in_a_dialog(&command) == Reading::Text {
-			key_from_window(&window_key, Reading::Text).unwrap_or(command)
-		} else {
-			command
 		};
 		// Raw key stream for diagnosing input (auto-repeat, release events); spec N-07.
 		tracing::debug!(code = ?key.code, kind = ?key.kind, modifiers = ?key.modifiers, "key event");
@@ -296,6 +291,7 @@ impl AppHandler for Window {
 		self.adopt_path_request();
 		self.adopt_preset_request();
 		self.adopt_effects_request();
+		self.adopt_help_request();
 		self.adopt_dropdown_request();
 		self.sync_confirm();
 		let force = self.app.take_dirty() || has_changed;
@@ -323,8 +319,8 @@ impl AppHandler for Window {
 		let message = MouseMsg::from_pointer(event, ctx);
 		// A note the mouse holds on the piano is the piano's to end, even if a dialog opened meanwhile;
 		// a new one starts only on the bare main screen.
-		let has_dialog = self.input.is_some() || self.confirm.is_some() || self.preset.is_some() || self.effects.is_some();
-		let has_window = has_dialog || self.app.modal.is_some();
+		let has_dialog = self.input.is_some() || self.confirm.is_some() || self.preset.is_some();
+		let has_window = has_dialog || self.effects.is_some() || self.help.is_some();
 		let is_screen_bare = !has_window && self.controls.open_dropdown().is_none();
 		if (is_screen_bare || self.piano.is_dragging()) && self.pointer_to_piano(&message, ctx) {
 			return;
@@ -345,18 +341,13 @@ impl AppHandler for Window {
 			self.pointer_to_effects(event, ctx);
 			return;
 		}
-		let request = if self.app.modal.is_some() {
-			// A dialog takes the mouse from the screen under it; a click outside closes it like Esc.
-			let dialog = dialog_screen::area(&self.app, Rect::of_screen(ctx.screen));
-			if !message.is_left_down() || dialog.is_some_and(|area| is_inside(area, &message)) {
-				return;
-			}
-			self.app.dismiss_modal()
-		} else {
-			match self.controls.handle_mouse(&message, Rect::of_screen(ctx.screen)) {
-				Touch::Missed => return,
-				touch => self.touched(touch),
-			}
+		if self.help.is_some() {
+			self.pointer_to_help(event, ctx);
+			return;
+		}
+		let request = match self.controls.handle_mouse(&message, Rect::of_screen(ctx.screen)) {
+			Touch::Missed => return,
+			touch => self.touched(touch),
 		};
 		self.apply(request);
 		self.adopt_path_request();
@@ -375,6 +366,7 @@ impl AppHandler for Window {
 			confirm,
 			preset,
 			effects,
+			help,
 			controls,
 			clipboard,
 			app,
@@ -388,6 +380,9 @@ impl AppHandler for Window {
 			dialog.ui(app.locale, clipboard).draw_modal(ctx);
 		} else if let Some(dialog) = effects {
 			dialog.ui(app.locale).draw_modal(ctx);
+		} else if let Some(dialog) = help {
+			let grid_rows = u16::try_from(ctx.grid().rows).unwrap_or(u16::MAX);
+			dialog.ui(app.locale, grid_rows).draw_modal(ctx);
 		} else {
 			controls.draw_layer(ctx);
 		}

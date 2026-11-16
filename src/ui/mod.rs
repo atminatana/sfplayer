@@ -6,9 +6,9 @@ pub mod confirm_dialog;
 pub mod controls;
 pub mod devices;
 pub mod dialog;
-pub mod dialog_screen;
 pub mod effects_dialog;
 pub mod fulfil;
+pub mod help_dialog;
 pub mod i18n;
 pub mod input_dialog;
 pub mod keymap;
@@ -19,7 +19,6 @@ pub mod paint;
 pub mod path_input;
 pub mod piano;
 pub mod preset_dialog;
-pub mod selector;
 #[cfg(test)]
 pub mod testkit;
 pub mod text_keyboard;

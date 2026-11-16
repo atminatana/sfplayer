@@ -69,7 +69,6 @@ fn the_preset_window_is_asked_for_only_when_a_bank_is_loaded() {
 	let request = app.preset_request.take().expect("the preset window is asked for");
 	assert!(!request.presets.is_empty());
 	assert_eq!(request.current, None, "the bank plays its first preset");
-	assert_eq!(app.modal, None);
 
 	session.select_preset(request.presets[0].bank, request.presets[0].program);
 	fulfil(Request::OpenPresetDialog, &mut app, &mut session);
@@ -279,6 +278,5 @@ fn requests_that_need_the_audio_stream_do_nothing_without_it() {
 	}
 	assert_eq!(session.recording_elapsed(), None);
 	assert_eq!(session.notice, None);
-	assert_eq!(app.modal, None);
 	assert_eq!(file.saved(), None);
 }

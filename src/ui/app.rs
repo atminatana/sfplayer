@@ -6,11 +6,10 @@
 use std::time::{Duration, Instant};
 
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use super::dialog::{Choice, Dialog, PresetRequest};
+use super::dialog::{Choice, PresetRequest};
 use super::keys::{Action, Bindings};
 use super::meter::ClipHold;
 use super::path_input::PathRequest;
-use super::selector::SelectorOutcome;
 use super::text_keyboard::TextKeyboard;
 use crate::config::{AdsrField, EngineKind, KeyboardConfig, RecordFormat};
 use crate::midi::MidiEvent;
@@ -65,14 +64,6 @@ pub enum Request {
 	Effects(EffectsAction),
 	/// `[OK]` in the effects window: apply and write the config.
 	SaveEffects(EffectsSettings),
-}
-
-/// The modal window on top of the main screen, if any.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Modal {
-	Select(Dialog),
-	/// F1: scroll offset in rows.
-	Help(usize),
 }
 
 /// What the confirmation window asks before something a key press does not take back (spec v1.3,
@@ -176,7 +167,6 @@ impl Dropdown {
 pub struct App {
 	pub locale: &'static str,
 	pub should_quit: bool,
-	pub modal: Option<Modal>,
 	/// The question the confirmation window is asking now. The window shows it with controls and
 	/// reports the answer through `answer`.
 	pub confirm: Option<Question>,
@@ -189,6 +179,8 @@ pub struct App {
 	pub preset_request: Option<PresetRequest>,
 	/// The effects the user is to adjust; the window takes it and shows the effects window.
 	pub effects_request: Option<EffectsSettings>,
+	/// The help was asked for; the window takes the flag and shows the help window.
+	pub is_help_requested: bool,
 	pub keyboard: TextKeyboard,
 	pub bindings: Bindings,
 	/// Elapsed time of the running recording, refreshed every frame; `None` when not recording.
@@ -208,12 +200,12 @@ impl App {
 		Self {
 			locale,
 			should_quit: false,
-			modal: None,
 			confirm: None,
 			path_request: None,
 			dropdown_request: None,
 			preset_request: None,
 			effects_request: None,
+			is_help_requested: false,
 			keyboard,
 			bindings: Bindings::default(),
 			recording: None,
@@ -239,7 +231,8 @@ impl App {
 		self.recording = recording;
 	}
 
-	/// Handles one key press. Quit works everywhere; with a modal open every other key belongs to it.
+	/// Handles one key press on the main screen: the keys of an open window go to the window and do
+	/// not come here. Quit works everywhere.
 	pub fn handle_key(&mut self, key: KeyEvent) -> Option<Request> {
 		let action = self.bindings.action_for(&key);
 		if action == Some(Action::Quit) {
@@ -249,10 +242,6 @@ impl App {
 		// The keys of an open question belong to the controls of its window.
 		if self.confirm.is_some() {
 			return None;
-		}
-		if self.modal.is_some() {
-			self.dirty = true;
-			return self.handle_modal_key(key);
 		}
 		match action {
 			Some(action) => self.perform(action),
@@ -264,8 +253,6 @@ impl App {
 	fn request_quit(&mut self) {
 		self.dirty = true;
 		if self.recording.is_some() && self.confirm != Some(Question::Quit) {
-			// The question takes the place of whatever window was open.
-			self.modal = None;
 			self.confirm = Some(Question::Quit);
 			return;
 		}
@@ -359,7 +346,7 @@ impl App {
 				None
 			}
 			Action::Help => {
-				self.modal = Some(Modal::Help(0));
+				self.is_help_requested = true;
 				None
 			}
 			// The devices are chosen from dropdowns of the screen: their keys ask the window to drop
@@ -433,7 +420,7 @@ impl App {
 
 	/// Key release events.
 	pub fn handle_release(&mut self, key: KeyEvent) -> Option<Request> {
-		if self.modal.is_some() || self.confirm.is_some() {
+		if self.confirm.is_some() {
 			return None;
 		}
 		let KeyCode::Char(c) = key.code else {
@@ -449,51 +436,6 @@ impl App {
 		}
 		self.dirty = true;
 		Some(Request::Notes(events))
-	}
-
-	fn handle_modal_key(&mut self, key: KeyEvent) -> Option<Request> {
-		match self.modal.as_mut()? {
-			Modal::Select(dialog) => match dialog.selector.handle_key(key) {
-				SelectorOutcome::Pending => None,
-				SelectorOutcome::Cancelled => {
-					self.modal = None;
-					None
-				}
-				SelectorOutcome::Chosen(row) => {
-					let choice = dialog.choice(row);
-					self.modal = None;
-					choice.map(Request::Apply)
-				}
-			},
-			Modal::Help(scroll) => {
-				match key.code {
-					KeyCode::Esc | KeyCode::F(1) | KeyCode::Enter => self.modal = None,
-					KeyCode::Up => *scroll = scroll.saturating_sub(1),
-					KeyCode::Down => *scroll += 1,
-					KeyCode::PageUp => *scroll = scroll.saturating_sub(10),
-					KeyCode::PageDown => *scroll += 10,
-					KeyCode::Home => *scroll = 0,
-					_ => {}
-				}
-				None
-			}
-		}
-	}
-
-	/// A click outside the open dialog closes it the way Esc does (spec v1.2 §4.1).
-	pub fn dismiss_modal(&mut self) -> Option<Request> {
-		self.modal.as_ref()?;
-		self.dirty = true;
-		self.handle_modal_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
-	}
-
-	pub fn open_modal(&mut self, modal: Modal) {
-		self.modal = Some(modal);
-		self.dirty = true;
-	}
-
-	pub fn open_dialog(&mut self, dialog: Dialog) {
-		self.open_modal(Modal::Select(dialog));
 	}
 
 	/// Returns and clears the redraw flag.

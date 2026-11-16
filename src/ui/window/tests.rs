@@ -104,25 +104,6 @@ fn a_folder_for_takes_is_anything_but_an_existing_file() {
 }
 
 #[test]
-fn a_mouse_event_is_inside_an_area_only_over_its_cells() {
-	let area = Rect::new(4, 8, 10, 3);
-	let at = |col, row| MouseMsg {
-		kind: gterm_widgets::MouseKind::Down,
-		button: Some(winit::event::MouseButton::Left),
-		col,
-		row,
-		modifiers: winit::keyboard::ModifiersState::empty(),
-		click_count: 1,
-	};
-	for (col, row) in [(4, 8), (13, 10), (9, 9)] {
-		assert!(is_inside(area, &at(col, row)), "{col},{row}");
-	}
-	for (col, row) in [(3, 8), (14, 8), (4, 7), (4, 11), (-1, -1), (70_000, 9)] {
-		assert!(!is_inside(area, &at(col, row)), "{col},{row}");
-	}
-}
-
-#[test]
 fn what_the_effects_window_decides_is_applied_at_once_saved_on_ok_and_taken_back_otherwise() {
 	let settings = EffectsSettings {
 		reverb: true,

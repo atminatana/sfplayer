@@ -180,3 +180,24 @@
 Удалены вместе с прежним автоматом: три теста в `effects_dialog.rs`, `f6_dialog_applies_changes_live_saves_on_enter_and_rolls_back_on_esc` и блок эффектов в `dismissing_a_dialog_does_what_esc_does_in_it` (`app/tests.rs`), `the_effects_dialog_shows_switches_levels_and_the_current_row` и строки эффектов в двух общих тестах (`dialog_screen/tests.rs`).
 
 Прогон: 423 passed, 0 failed (`target/step13/gates-8.1.log`). Мутации: 11 из 11 пойманы (`target/step13/mutation-8.1.log`). Вручную, по снимкам: вид окна по F6 и начальное состояние флажков. Не проверено вживую: переключение флажка, ползунок клавишами и мышью, `[OK]`, отмена с откатом.
+
+## Шаг 9.1 (2026-11-16) — справка и уборка прежних окон
+
+`src/ui/help_dialog/tests.rs` — 6 тестов (события через `route_key` / `route_mouse`, картинка из `modal_buffer`):
+
+| Тест | Что проверяет |
+| --- | --- |
+| `the_window_shows_the_table_of_the_bindings_in_force` | окно на наименьшей сетке: место и размер (по две свободные строки сверху и снизу), заголовок; нарисованные строки равны началу `Bindings::help_rows` строка в строку; полоса прокрутки есть; клавиши жирные; первая строка выделена; подсказка, `[Закрыть]`; английский текст |
+| `a_table_that_fits_is_shown_whole_and_has_no_scrollbar` | на высокой сетке окно — по высоте таблицы, вся таблица равна `help_rows`, полосы нет; таблица других привязок показана как дана, вторая колонка начинается после самых широких клавиш; пустая таблица |
+| `the_arrows_and_the_page_keys_move_through_the_table` | ↑ ↓ с упором в края, End показывает последнюю строку и прокручивает таблицу, Home возвращает, PgDn / PgUp — на страницу |
+| `the_wheel_scrolls_the_table_and_leaves_the_highlight_where_it_is` | колесо листает на число щелчков в обе стороны, упирается в последнюю страницу, выделение не двигает |
+| `esc_enter_f1_the_button_and_a_click_outside_close_the_window` | пять способов закрыть; с клавиатуры — Tab на кнопку, Enter или пробел |
+| `nothing_else_closes_the_window` | прочие клавиши и набор символа окно не закрывают; клик по строке выделяет её; удержанная клавиша (без нового нажатия) не закрывает |
+
+`src/ui/app/tests.rs`: `f1_asks_for_the_help` (вместо `f1_opens_help_which_scrolls_and_closes`) — F1 выставляет запрос справки; `the_quit_key_sets_the_flag` — прежний тест без части про окно выбора.
+
+`src/ui/keymap/tests.rs`: в `a_command_is_read_by_the_place_of_the_key_whatever_the_layout` добавлены случаи «клавиша дала несколько символов или ни одного» (раньше проверялись в удалённом тесте чтения текста).
+
+Удалены вместе с кодом: `dialog_screen/tests.rs` (8), тесты в `selector.rs` (6) и `dialog.rs` (3); в `app/tests.rs` — `dialog_captures_keys_until_enter_or_esc`, `notes_are_not_played_while_a_modal_is_open`, `the_quit_question_takes_the_place_of_an_open_dialog`, `dismissing_a_dialog_does_what_esc_does_in_it`; в `keymap/tests.rs` — `text_is_read_as_the_layout_produced_it`, `in_a_dialog_plain_characters_are_text_and_chords_stay_commands`; в `window/tests.rs` — `a_mouse_event_is_inside_an_area_only_over_its_cells`.
+
+Прогон: 405 passed, 0 failed (`target/step13/gates-9.1.log`). Мутации: 14 из 14 пойманы (`target/step13/mutation-9.1.log`). Вручную, по снимку: вид справки по F1. Не проверено вживую: движение по таблице, колесо, закрытие.

@@ -1,9 +1,8 @@
 //! From window key events to the UI's own key type (spec v1.2 §4.3).
 //!
-//! A character key can be read two ways. As a **command** it is named by its place on the keyboard —
-//! the character a US layout has there — so hotkeys and the note keys work whatever language the user
-//! types in. As **text** it is the character the current layout produces, which is what a filter or a
-//! path field wants. Named keys (arrows, F-keys, Enter…) read the same either way.
+//! A character key is named by its place on the keyboard — the character a US layout has there — so
+//! hotkeys and the note keys work whatever language the user types in. Text typed into a field does
+//! not come this way: the windows on widget controls take the key events of the window themselves.
 
 use winit::event::ElementState;
 use winit::keyboard::{Key, KeyCode as PhysicalCode, ModifiersState, NamedKey, PhysicalKey};
@@ -109,15 +108,6 @@ const NUMPAD_KEYS: [(PhysicalCode, char); 15] = [
 	(PhysicalCode::NumpadDecimal, '.'),
 ];
 
-/// How a character key is read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Reading {
-	/// By its place on the keyboard, as on a US layout: hotkeys and notes.
-	Command,
-	/// The character the current layout produces: text typed into a dialog.
-	Text,
-}
-
 /// The parts of a window key event the translation needs. (A `winit` key event cannot be built in
 /// tests, its parts can.)
 #[derive(Debug, Clone, Copy)]
@@ -142,7 +132,7 @@ impl<'a> WindowKey<'a> {
 }
 
 /// Translates a window key event into the UI's own type; `None` for keys the UI does not distinguish.
-pub(super) fn key_from_window(key: &WindowKey<'_>, reading: Reading) -> Option<KeyEvent> {
+pub(super) fn key_from_window(key: &WindowKey<'_>) -> Option<KeyEvent> {
 	let held = key.held;
 	let mut modifiers = KeyModifiers::NONE;
 	for (is_held, modifier) in [
@@ -158,8 +148,8 @@ pub(super) fn key_from_window(key: &WindowKey<'_>, reading: Reading) -> Option<K
 	let code = match named_code(key.logical, held.shift_key()) {
 		Some(code) => code,
 		None => {
-			let by_place = match (reading, key.physical) {
-				(Reading::Command, PhysicalKey::Code(code)) => us_character(code, held.shift_key()),
+			let by_place = match key.physical {
+				PhysicalKey::Code(code) => us_character(code, held.shift_key()),
 				_ => None,
 			};
 			// A key with no place on a US keyboard still has the character its layout gives it.
@@ -172,19 +162,6 @@ pub(super) fn key_from_window(key: &WindowKey<'_>, reading: Reading) -> Option<K
 		(ElementState::Pressed, false) => KeyEventKind::Press,
 	};
 	Some(KeyEvent { code, modifiers, kind })
-}
-
-/// Which way to read the key for a modal dialog: plain and shifted character keys are text there,
-/// everything else — chords with Ctrl or Alt, named keys — stays a command.
-pub(super) fn reading_in_a_dialog(command: &KeyEvent) -> Reading {
-	let is_chord = command
-		.modifiers
-		.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
-	if matches!(command.code, KeyCode::Char(character) if character != ' ') && !is_chord {
-		Reading::Text
-	} else {
-		Reading::Command
-	}
 }
 
 fn named_code(logical: &Key, is_shift_held: bool) -> Option<KeyCode> {

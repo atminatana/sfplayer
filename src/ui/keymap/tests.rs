@@ -1,4 +1,4 @@
-//! Tests of the key translation: physical place for commands, layout character for text.
+//! Tests of the key translation: a character key is read by its place on the keyboard.
 
 use winit::keyboard::SmolStr;
 
@@ -22,17 +22,13 @@ fn key<'a>(code: PhysicalCode, logical: &'a Key, held: ModifiersState) -> Window
 }
 
 fn command(code: PhysicalCode, logical: &Key, held: ModifiersState) -> Option<KeyEvent> {
-	key_from_window(&key(code, logical, held), Reading::Command)
-}
-
-fn text(code: PhysicalCode, logical: &Key, held: ModifiersState) -> Option<KeyEvent> {
-	key_from_window(&key(code, logical, held), Reading::Text)
+	key_from_window(&key(code, logical, held))
 }
 
 const NONE: ModifiersState = ModifiersState::empty();
 
 #[test]
-fn named_keys_translate_to_the_ui_key_codes_in_both_readings() {
+fn named_keys_translate_to_the_ui_key_codes() {
 	for (named, physical, code) in [
 		(NamedKey::ArrowUp, PhysicalCode::ArrowUp, KeyCode::Up),
 		(NamedKey::ArrowDown, PhysicalCode::ArrowDown, KeyCode::Down),
@@ -56,8 +52,7 @@ fn named_keys_translate_to_the_ui_key_codes_in_both_readings() {
 	] {
 		let logical = Key::Named(named);
 		let expected = Some(KeyEvent::new(code, KeyModifiers::NONE));
-		assert_eq!(command(physical, &logical, NONE), expected, "{named:?} as a command");
-		assert_eq!(text(physical, &logical, NONE), expected, "{named:?} as text");
+		assert_eq!(command(physical, &logical, NONE), expected, "{named:?}");
 	}
 	// Keys the UI does not distinguish never reach the handlers.
 	for (named, physical) in [
@@ -122,7 +117,7 @@ fn modifiers_and_event_kinds_are_carried_over() {
 			is_repeat,
 			held: NONE,
 		};
-		key_from_window(&key, Reading::Command).map(|key| key.kind)
+		key_from_window(&key).map(|key| key.kind)
 	};
 	assert_eq!(kind_of(ElementState::Pressed, false), Some(KeyEventKind::Press));
 	assert_eq!(kind_of(ElementState::Pressed, true), Some(KeyEventKind::Repeat));
@@ -176,27 +171,9 @@ fn a_command_is_read_by_the_place_of_the_key_whatever_the_layout() {
 		Some(KeyEvent::new(KeyCode::Char('<'), KeyModifiers::NONE))
 	);
 	assert_eq!(command(PhysicalCode::IntlBackslash, &Key::Dead(None), NONE), None);
-}
-
-#[test]
-fn text_is_read_as_the_layout_produced_it() {
-	assert_eq!(
-		text(PhysicalCode::KeyZ, &character("я"), NONE),
-		Some(KeyEvent::new(KeyCode::Char('я'), KeyModifiers::NONE))
-	);
-	assert_eq!(
-		text(PhysicalCode::KeyZ, &character("Я"), ModifiersState::SHIFT),
-		Some(KeyEvent::new(KeyCode::Char('Я'), KeyModifiers::SHIFT))
-	);
-	assert_eq!(
-		text(PhysicalCode::Digit2, &character("\""), ModifiersState::SHIFT),
-		Some(KeyEvent::new(KeyCode::Char('"'), KeyModifiers::SHIFT)),
-		"the Russian layout has a quote on Shift+2"
-	);
-	// A key that produced more than one character, or none, is not a single key press for the UI.
-	assert_eq!(text(PhysicalCode::KeyA, &character("ab"), NONE), None);
-	assert_eq!(text(PhysicalCode::KeyA, &character(""), NONE), None);
-	assert_eq!(text(PhysicalCode::Backquote, &Key::Dead(Some('`')), NONE), None);
+	// Nor is a key that produced more than one character, or none, a single key press.
+	assert_eq!(command(PhysicalCode::IntlBackslash, &character("ab"), NONE), None);
+	assert_eq!(command(PhysicalCode::IntlBackslash, &character(""), NONE), None);
 }
 
 #[test]
@@ -247,20 +224,6 @@ fn the_note_rows_play_in_a_russian_layout() {
 	assert_eq!(note(PhysicalCode::Slash, "."), Some(76));
 	assert_eq!(note(PhysicalCode::Semicolon, "ж"), Some(75));
 	assert_eq!(note(PhysicalCode::KeyQ, "й"), None, "the upper rows are not note keys");
-}
-
-#[test]
-fn in_a_dialog_plain_characters_are_text_and_chords_stay_commands() {
-	let reading = |code, modifiers| reading_in_a_dialog(&KeyEvent::new(code, modifiers));
-	assert_eq!(reading(KeyCode::Char('z'), KeyModifiers::NONE), Reading::Text);
-	assert_eq!(reading(KeyCode::Char('Z'), KeyModifiers::SHIFT), Reading::Text);
-	assert_eq!(reading(KeyCode::Char('/'), KeyModifiers::NONE), Reading::Text);
-	// Chords, named keys and the space bar (a switch in the effects dialog) are commands.
-	assert_eq!(reading(KeyCode::Char('c'), KeyModifiers::CONTROL), Reading::Command);
-	assert_eq!(reading(KeyCode::Char('r'), KeyModifiers::ALT), Reading::Command);
-	assert_eq!(reading(KeyCode::Char(' '), KeyModifiers::NONE), Reading::Command);
-	assert_eq!(reading(KeyCode::Enter, KeyModifiers::NONE), Reading::Command);
-	assert_eq!(reading(KeyCode::F(10), KeyModifiers::NONE), Reading::Command);
 }
 
 #[test]

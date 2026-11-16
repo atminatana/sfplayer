@@ -38,16 +38,6 @@ impl<'a> Pen<'a> {
 		Self { buf, clip, x, y }
 	}
 
-	/// A pen at column `column` and row `row` of `area`, confined to it.
-	pub(super) fn within(buf: &'a mut ScreenBuffer, area: Rect, column: u16, row: u16) -> Self {
-		Self {
-			buf,
-			clip: area,
-			x: area.x.saturating_add(column),
-			y: area.y.saturating_add(row),
-		}
-	}
-
 	pub(super) fn text(&mut self, text: &str, color: Color) -> &mut Self {
 		self.styled(text, Style::new().fg(color))
 	}

@@ -52,12 +52,6 @@ notice.sf2_error:
   en: "SoundFont: %{error}"
   ru: "SoundFont: %{error}"
 
-dialog.midi_title:
-  en: "MIDI input"
-  ru: "MIDI-вход"
-dialog.audio_title:
-  en: "Audio output"
-  ru: "Аудиовыход"
 dialog.preset_title:
   en: "Preset (all channels except 10)"
   ru: "Пресет (все каналы, кроме 10)"
@@ -82,15 +76,6 @@ dialog.no_match:
 dialog.preset_hint:
   en: "type to filter · ↑↓ move · a double click applies"
   ru: "набор — фильтр · ↑↓ — выбор · двойной клик — применить"
-dialog.hint:
-  en: "↑↓ PgUp PgDn move · type to filter · Enter apply · Esc cancel"
-  ru: "↑↓ PgUp PgDn — выбор · набор текста — фильтр · Enter — применить · Esc — отмена"
-dialog.audio_buffer_range:
-  en: "buffer %{min}..%{max} frames"
-  ru: "буфер %{min}..%{max} кадров"
-dialog.audio_buffer_unknown:
-  en: "buffer range unknown"
-  ru: "диапазон буфера неизвестен"
 notice.audio_reopened:
   en: "Audio output switched to %{device}"
   ru: "Аудиовыход переключён на %{device}"
@@ -110,6 +95,9 @@ help.title:
 help.hint:
   en: "↑↓ PgUp PgDn scroll · Esc or F1 close"
   ru: "↑↓ PgUp PgDn — прокрутка · Esc или F1 — закрыть"
+help.close:
+  en: "Close"
+  ru: "Закрыть"
 help.action.help:
   en: "This help"
   ru: "Эта справка"

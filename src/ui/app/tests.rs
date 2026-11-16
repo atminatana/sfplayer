@@ -2,7 +2,6 @@
 
 use super::*;
 use crate::midi::MidiEvent;
-use crate::midi::MidiPortInfo;
 
 fn press(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
 	press_kind(code, modifiers, KeyEventKind::Press)
@@ -18,29 +17,9 @@ fn plain(code: KeyCode) -> KeyEvent {
 	press(code, KeyModifiers::NONE)
 }
 
-fn midi_dialog() -> Dialog {
-	Dialog::midi(
-		&[
-			MidiPortInfo {
-				index: 0,
-				name: "KeyStep".into(),
-			},
-			MidiPortInfo {
-				index: 1,
-				name: "loopMIDI".into(),
-			},
-		],
-		None,
-	)
-}
-
 #[test]
-fn the_quit_key_sets_the_flag_even_inside_a_dialog() {
+fn the_quit_key_sets_the_flag() {
 	let mut app = App::new("en");
-	app.handle_key(plain(KeyCode::F(10)));
-	assert!(app.should_quit);
-	let mut app = App::new("en");
-	app.open_dialog(midi_dialog());
 	app.handle_key(plain(KeyCode::F(10)));
 	assert!(app.should_quit);
 }
@@ -65,37 +44,12 @@ fn function_keys_request_dialogs_and_rescan() {
 	assert_eq!(app.dropdown_request.take(), Some(Dropdown::MidiIn));
 	assert_eq!(app.handle_key(plain(KeyCode::F(3))), None);
 	assert_eq!(app.dropdown_request.take(), Some(Dropdown::AudioOut));
-	assert!(app.modal.is_none() && app.take_dirty());
+	assert!(app.take_dirty());
 	assert_eq!(app.handle_key(plain(KeyCode::F(4))), Some(Request::OpenSf2Dialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(5))), Some(Request::OpenPresetDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(6))), Some(Request::OpenEffectsDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(7))), Some(Request::OpenRecordDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(8))), Some(Request::Rescan));
-}
-
-#[test]
-fn dialog_captures_keys_until_enter_or_esc() {
-	let mut app = App::new("en");
-	app.open_dialog(midi_dialog());
-	assert_eq!(
-		app.handle_key(plain(KeyCode::F(3))),
-		None,
-		"other hotkeys are swallowed while a dialog is open"
-	);
-	assert!(app.modal.is_some());
-	for c in "loop".chars() {
-		app.handle_key(plain(KeyCode::Char(c)));
-	}
-	match &app.modal {
-		Some(Modal::Select(dialog)) => assert_eq!(dialog.selector.filter(), "loop"),
-		other => panic!("unexpected modal {other:?}"),
-	}
-	assert_eq!(app.handle_key(plain(KeyCode::Enter)), Some(Request::Apply(Choice::ConnectMidi(1))));
-	assert!(app.modal.is_none());
-
-	app.open_dialog(midi_dialog());
-	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None);
-	assert!(app.modal.is_none());
 }
 
 #[test]
@@ -129,30 +83,14 @@ fn f9_requests_panic_and_the_midi_file_has_no_keys_of_its_own() {
 	assert_eq!(app.handle_key(plain(KeyCode::Char(' '))), None);
 	assert_eq!(app.handle_key(plain(KeyCode::Backspace)), None);
 	assert_eq!(app.handle_key(plain(KeyCode::F(11))), None);
-	// In a dialog they belong to the dialog, as any key does.
-	app.open_dialog(midi_dialog());
-	assert_eq!(app.handle_key(plain(KeyCode::Char(' '))), None);
-	assert_eq!(app.handle_key(plain(KeyCode::Backspace)), None);
-	assert_eq!(app.handle_key(plain(KeyCode::F(11))), None);
-	assert!(app.modal.is_some());
 }
 
 #[test]
-fn f1_opens_help_which_scrolls_and_closes() {
+fn f1_asks_for_the_help() {
 	let mut app = App::new("en");
+	app.take_dirty();
 	assert_eq!(app.handle_key(plain(KeyCode::F(1))), None);
-	assert_eq!(app.modal, Some(Modal::Help(0)));
-	app.handle_key(plain(KeyCode::Down));
-	app.handle_key(plain(KeyCode::PageDown));
-	assert_eq!(app.modal, Some(Modal::Help(11)));
-	app.handle_key(plain(KeyCode::Up));
-	assert_eq!(app.modal, Some(Modal::Help(10)));
-	assert_eq!(app.handle_key(plain(KeyCode::F(3))), None, "hotkeys do not leak through the help");
-	app.handle_key(plain(KeyCode::F(1)));
-	assert!(app.modal.is_none());
-	app.handle_key(plain(KeyCode::F(1)));
-	app.handle_key(plain(KeyCode::Esc));
-	assert!(app.modal.is_none());
+	assert!(app.is_help_requested && app.take_dirty());
 }
 
 #[test]
@@ -211,18 +149,6 @@ fn ctrl_arrows_change_octave_and_velocity_and_panic_forgets_held_notes() {
 		}]))
 	);
 	assert_eq!(app.handle_key(plain(KeyCode::F(9))), Some(Request::Panic));
-	assert_eq!(app.keyboard.held_count(), 0);
-}
-
-#[test]
-fn notes_are_not_played_while_a_modal_is_open() {
-	let mut app = App::new("en");
-	app.open_dialog(midi_dialog());
-	assert_eq!(app.handle_key(plain(KeyCode::Char('z'))), None);
-	assert_eq!(
-		app.handle_release(press_kind(KeyCode::Char('z'), KeyModifiers::NONE, KeyEventKind::Release)),
-		None
-	);
 	assert_eq!(app.keyboard.held_count(), 0);
 }
 
@@ -329,16 +255,6 @@ fn the_quit_command_replaces_the_question_about_a_take() {
 	assert!(!app.should_quit);
 }
 
-#[test]
-fn the_quit_question_takes_the_place_of_an_open_dialog() {
-	let mut app = App::new("en");
-	app.recording = Some(Duration::from_secs(1));
-	app.open_dialog(midi_dialog());
-	app.handle_key(plain(KeyCode::F(10)));
-	assert_eq!(app.modal, None);
-	assert_eq!(app.confirm, Some(Question::Quit));
-}
-
 /// Spec v1.3, F-28: a command that lost its default key runs from the key the config gives it.
 #[test]
 fn commands_without_a_default_key_run_from_a_configured_one() {
@@ -428,27 +344,4 @@ fn the_format_cannot_be_changed_under_a_running_take() {
 		app.press_button(ButtonId::FormatOgg),
 		Some(Request::SetRecordFormat(RecordFormat::OggVorbis))
 	);
-}
-
-#[test]
-fn dismissing_a_dialog_does_what_esc_does_in_it() {
-	let mut app = App::new("en");
-	assert_eq!(app.dismiss_modal(), None, "nothing is open");
-	app.take_dirty();
-	app.open_dialog(midi_dialog());
-	assert_eq!(app.dismiss_modal(), None);
-	assert!(app.modal.is_none() && app.take_dirty());
-
-	// Esc bound to something else changes nothing: a click outside is not a key.
-	app.bindings = Bindings::from_config(
-		&[("notes_off", "Ctrl+F2"), ("quit", "Esc")]
-			.into_iter()
-			.map(|(command, chord)| (command.to_owned(), chord.to_owned()))
-			.collect(),
-		&KeyboardConfig::default(),
-	)
-	.expect("valid bindings");
-	app.modal = Some(Modal::Help(0));
-	assert_eq!(app.dismiss_modal(), None);
-	assert!(app.modal.is_none() && !app.should_quit);
 }
