@@ -8,9 +8,12 @@ use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 use super::*;
 use crate::ui::testkit::{SCREEN, cell_of, colours_of, is_shown, is_underlined, left_click, lines_of};
 
+/// The running take as the program window names it for the question about deleting it.
+const TAKE: &str = "00:42 · 4.6 МБ";
+
 fn press_with(dialog: &mut ConfirmDialog, key: &Key, text: Option<&str>, modifiers: ModifiersState) -> ConfirmOutcome {
 	let message = KeyMsg { key, text, modifiers };
-	let routed = dialog.ui("ru").route_key(&message);
+	let routed = dialog.ui("ru", TAKE).route_key(&message);
 	dialog.settle(routed)
 }
 
@@ -20,14 +23,14 @@ fn press(dialog: &mut ConfirmDialog, named: NamedKey) -> ConfirmOutcome {
 
 /// The window as drawn: where it sits on the screen and its cells.
 fn drawn(dialog: &mut ConfirmDialog, locale: &str) -> (Rect, ScreenBuffer) {
-	dialog.ui(locale).modal_buffer(SCREEN).expect("the window is a modal layer")
+	dialog.ui(locale, TAKE).modal_buffer(SCREEN).expect("the window is a modal layer")
 }
 
 /// A left click on a screen cell; the answer of the press or of the release, whichever gave one.
 fn click_at(dialog: &mut ConfirmDialog, col: i32, row: i32) -> ConfirmOutcome {
 	let mut outcome = ConfirmOutcome::Pending;
 	for message in left_click(col, row) {
-		let routed = dialog.ui("ru").route_mouse(&message, SCREEN);
+		let routed = dialog.ui("ru", TAKE).route_mouse(&message, SCREEN);
 		let step = dialog.settle(routed);
 		if step != ConfirmOutcome::Pending {
 			outcome = step;
@@ -60,6 +63,30 @@ fn the_window_shows_the_question_in_a_red_frame_with_the_focus_on_the_refusal() 
 	assert!(lines_of(&english)[0].starts_with("┌ Recording in progress ─"));
 	assert!(is_shown(&english, "Stop the recording and quit?"));
 	assert!(is_shown(&english, "[Quit]   [No]"));
+}
+
+#[test]
+fn the_question_about_a_take_names_its_length_and_size() {
+	let mut dialog = ConfirmDialog::new(Question::DeleteTake);
+	let (area, buf) = drawn(&mut dialog, "ru");
+	assert_eq!((area.width, area.height), (WIDTH, HEIGHT));
+	assert!(lines_of(&buf)[0].starts_with("┌ Отмена записи ─"), "{}", lines_of(&buf)[0]);
+	assert!(is_shown(&buf, "Удалить запись 00:42 · 4.6 МБ?"));
+	assert!(is_shown(&buf, "[Удалить]   [Нет]"));
+	assert_eq!(colours_of(&buf, "┌").0, ERROR);
+	assert!(is_underlined(&buf, "[Нет]") && !is_underlined(&buf, "[Удалить]"));
+
+	let (_, english) = drawn(&mut dialog, "en");
+	assert!(lines_of(&english)[0].starts_with("┌ Cancel the take ─"));
+	assert!(is_shown(&english, "Delete the take 00:42 · 4.6 МБ?"));
+	assert!(is_shown(&english, "[Delete]   [No]"));
+
+	// The answers are those of any question.
+	assert_eq!(press(&mut dialog, NamedKey::Enter), ConfirmOutcome::Refused);
+	assert_eq!(
+		click(&mut ConfirmDialog::new(Question::DeleteTake), "[Удалить]"),
+		ConfirmOutcome::Confirmed
+	);
 }
 
 #[test]

@@ -12,6 +12,7 @@ use super::Window;
 use crate::ui::confirm_dialog::{ConfirmDialog, ConfirmOutcome};
 use crate::ui::input_dialog::{InputDialog, InputOutcome};
 use crate::ui::path_input::{self, InputKind};
+use crate::ui::view::{Size, take_summary};
 
 impl Window {
 	/// Shows the input dialog for the path `App` wants asked.
@@ -97,13 +98,22 @@ impl Window {
 		}
 	}
 
+	/// The running take as the question about deleting it names it; empty while no take runs.
+	pub(super) fn take_summary(&self) -> String {
+		match (self.session.recording_elapsed(), self.session.recording_file()) {
+			(Some(elapsed), Some((_, bytes))) => take_summary(elapsed, Size::of(bytes), self.app.locale),
+			_ => String::new(),
+		}
+	}
+
 	/// A key press or release for the open confirmation window.
 	pub(super) fn key_to_confirm(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
+		let take = self.take_summary();
 		let Some(dialog) = &mut self.confirm else {
 			return;
 		};
 		// The window sees releases too (the library tracks held keys by them); only presses act.
-		let routed = dialog.ui(self.app.locale).key(event, ctx);
+		let routed = dialog.ui(self.app.locale, &take).key(event, ctx);
 		if event.state != ElementState::Pressed {
 			return;
 		}
@@ -113,10 +123,11 @@ impl Window {
 
 	/// A mouse event for the open confirmation window.
 	pub(super) fn pointer_to_confirm(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
+		let take = self.take_summary();
 		let Some(dialog) = &mut self.confirm else {
 			return;
 		};
-		let routed = dialog.ui(self.app.locale).pointer(event, ctx);
+		let routed = dialog.ui(self.app.locale, &take).pointer(event, ctx);
 		let outcome = dialog.settle(routed);
 		self.conclude_confirm(outcome, ctx);
 	}

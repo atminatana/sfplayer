@@ -23,18 +23,21 @@ impl Question {
 	fn title_key(self) -> &'static str {
 		match self {
 			Self::Quit => "confirm.quit_title",
+			Self::DeleteTake => "confirm.delete_title",
 		}
 	}
 
 	fn text_key(self) -> &'static str {
 		match self {
 			Self::Quit => "confirm.quit_text",
+			Self::DeleteTake => "confirm.delete_text",
 		}
 	}
 
 	fn action_key(self) -> &'static str {
 		match self {
 			Self::Quit => "confirm.quit_yes",
+			Self::DeleteTake => "confirm.delete_yes",
 		}
 	}
 }
@@ -76,13 +79,15 @@ impl ConfirmDialog {
 		self.question
 	}
 
-	/// The window as a modal layer; built anew for every event and every frame.
-	pub fn ui<'a>(&'a mut self, locale: &str) -> Ui<'a, ConfirmMsg> {
+	/// The window as a modal layer; built anew for every event and every frame. `take` names the
+	/// running take — its length and size — for the question about deleting it; the question about
+	/// quitting does not use it.
+	pub fn ui<'a>(&'a mut self, locale: &str, take: &str) -> Ui<'a, ConfirmMsg> {
 		let Self { question, action, refusal } = self;
 		let plain = Style::new().fg(TEXT).bg(BACKGROUND);
 		let focused = Style::new().underlined();
 
-		let text = t!(question.text_key(), locale = locale).into_owned();
+		let text = t!(question.text_key(), locale = locale, take = take).into_owned();
 		let question_row = Ui::widget(Paragraph::new(Line::styled(text, plain)).centered());
 
 		let action_label = format!("[{}]", t!(question.action_key(), locale = locale));

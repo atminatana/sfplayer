@@ -2,6 +2,8 @@
 //! testable (spec v1.1 §2; plan v1.2 step 1.2). Also the texts that depend only on this model: which
 //! line a notice belongs to and how it reads.
 
+use std::time::Duration;
+
 use cpal::BufferSize;
 use rust_i18n::t;
 
@@ -82,6 +84,29 @@ impl Size {
 			Self::TenthsOfMegabyte(tenths_of_megabyte(bytes))
 		}
 	}
+
+	/// The size as the screen words it: "12 KB", "4.6 MB".
+	pub fn text(self, locale: &str) -> String {
+		match self {
+			Self::Kilobytes(kilobytes) => t!("main.kilobytes", locale = locale, value = kilobytes).into_owned(),
+			Self::TenthsOfMegabyte(tenths) => t!(
+				"main.megabytes",
+				locale = locale,
+				value = format!("{}.{}", tenths / 10, tenths % 10)
+			)
+			.into_owned(),
+		}
+	}
+}
+
+/// The elapsed time of a take as the screen shows it: `mm:ss`.
+pub fn clock_text(elapsed: Duration) -> String {
+	format!("{:02}:{:02}", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+}
+
+/// A running take as the question about deleting it names it: `mm:ss · size`.
+pub fn take_summary(elapsed: Duration, size: Size, locale: &str) -> String {
+	format!("{} · {}", clock_text(elapsed), size.text(locale))
 }
 
 /// Bytes as tenths of a megabyte, rounded to the nearest.
@@ -302,6 +327,20 @@ mod tests {
 			"what would read 1024 KB is a megabyte"
 		);
 		assert_eq!(Size::of(5 * 1024 * 1024), Size::TenthsOfMegabyte(50));
+	}
+
+	#[test]
+	fn a_take_is_worded_by_its_length_and_its_size() {
+		assert_eq!(clock_text(Duration::from_secs(0)), "00:00");
+		assert_eq!(clock_text(Duration::from_millis(59_999)), "00:59");
+		assert_eq!(clock_text(Duration::from_secs(62 * 60 + 5)), "62:05");
+		assert_eq!(Size::Kilobytes(12).text("en"), "12 KB");
+		assert_eq!(Size::TenthsOfMegabyte(46).text("en"), "4.6 MB");
+		assert_eq!(Size::TenthsOfMegabyte(120).text("ru"), "12.0 МБ");
+		assert_eq!(
+			take_summary(Duration::from_secs(42), Size::TenthsOfMegabyte(46), "ru"),
+			"00:42 · 4.6 МБ"
+		);
 	}
 
 	#[test]

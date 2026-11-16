@@ -17,7 +17,7 @@ use crate::ui::app::{App, ButtonId};
 use crate::ui::buttons::{Buttons, Look};
 use crate::ui::meter::{dbfs_text, level_ratio};
 use crate::ui::paint::Pen;
-use crate::ui::view::{NoticeTarget, Size, TakeView, View, notice_target, notice_text};
+use crate::ui::view::{NoticeTarget, TakeView, View, clock_text, notice_target, notice_text};
 
 /// The last `room` cells of `text`; what is cut off at the front is marked with `…`.
 pub(super) fn fitted_end(text: &str, room: usize) -> String {
@@ -164,22 +164,13 @@ pub(super) fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str
 	pen.gap(2);
 	// What follows the buttons has the row up to one cell short of the right edge.
 	let room = usize::from(buf_width(&pen).saturating_sub(pen.x + 1));
-	let size_text = |size: Size| match size {
-		Size::Kilobytes(kilobytes) => t!("main.kilobytes", locale = locale, value = kilobytes).into_owned(),
-		Size::TenthsOfMegabyte(tenths) => t!(
-			"main.megabytes",
-			locale = locale,
-			value = format!("{}.{}", tenths / 10, tenths % 10)
-		)
-		.into_owned(),
-	};
 	match (recording, view.line_error(NoticeTarget::Record)) {
 		(Some(elapsed), _) => {
-			let time = format!("{:02}:{:02}", elapsed.as_secs() / 60, elapsed.as_secs() % 60);
+			let time = clock_text(elapsed);
 			let mut indicator = format!("{} {}", record_dot(elapsed), t!("status.rec", locale = locale, time = time));
 			// The size and the name of the file being written follow the timer (spec v1.2 §3).
 			if let TakeView::Recording { name, size } = &view.take {
-				indicator = format!("{indicator} · {} · {name}", size_text(*size));
+				indicator = format!("{indicator} · {} · {name}", size.text(locale));
 			}
 			pen.styled(&fitted(&indicator, room), Style::new().fg(ERROR).bold());
 		}
@@ -189,7 +180,7 @@ pub(super) fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str
 		(None, None) => match &view.take {
 			TakeView::Saved { path, size } => {
 				// A path too long for the row loses its beginning: the file name is what tells takes apart.
-				let size = size_text(*size);
+				let size = size.text(locale);
 				let frame = t!("main.saved", locale = locale, path = "", size = size).chars().count();
 				let saved = t!(
 					"main.saved",

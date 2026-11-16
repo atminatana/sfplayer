@@ -259,6 +259,15 @@ confirm.quit_yes:
 confirm.no:
   en: "No"
   ru: "Нет"
+confirm.delete_title:
+  en: "Cancel the take"
+  ru: "Отмена записи"
+confirm.delete_text:
+  en: "Delete the take %{take}?"
+  ru: "Удалить запись %{take}?"
+confirm.delete_yes:
+  en: "Delete"
+  ru: "Удалить"
 dialog.effects_title:
   en: "Effects"
   ru: "Эффекты"

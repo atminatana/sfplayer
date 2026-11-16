@@ -54,7 +54,7 @@ pub enum Request {
 	/// The Start and Stop buttons of a take (spec v1.1 §4.3).
 	StartRecord,
 	StopRecord,
-	/// The Cancel button: the take is thrown away (spec v1.2, F-23).
+	/// The take is thrown away: the Cancel button, once confirmed (spec v1.2 F-23, v1.3 F-27).
 	CancelRecord,
 	/// Quit confirmed while recording: stop the take, then quit.
 	StopRecordingAndQuit,
@@ -82,6 +82,8 @@ pub enum Modal {
 pub enum Question {
 	/// The quit command while a take runs (spec §6): stop the take and quit?
 	Quit,
+	/// The Cancel button of a take (spec v1.3, F-27): throw the take away?
+	DeleteTake,
 }
 
 /// The `[buttons]` of the main screen (spec v1.2 §3), in the order Tab walks them: top to bottom,
@@ -211,6 +213,16 @@ impl App {
 		self.clipping = self.clip_hold.is_lit(now);
 	}
 
+	/// The elapsed time of the running take, refreshed on every tick. A take that ended by itself
+	/// takes the question about deleting it along: there is nothing left to delete.
+	pub fn set_recording(&mut self, recording: Option<Duration>) {
+		if recording.is_none() && self.confirm == Some(Question::DeleteTake) {
+			self.confirm = None;
+			self.dirty = true;
+		}
+		self.recording = recording;
+	}
+
 	/// Handles one key press. Quit works everywhere; with a modal open every other key belongs to it.
 	pub fn handle_key(&mut self, key: KeyEvent) -> Option<Request> {
 		let action = self.bindings.action_for(&key);
@@ -256,6 +268,7 @@ impl App {
 				self.should_quit = true;
 				Some(Request::StopRecordingAndQuit)
 			}
+			Question::DeleteTake => Some(Request::CancelRecord),
 		}
 	}
 
@@ -296,7 +309,14 @@ impl App {
 			ButtonId::FileStart => self.ask(Request::FilePlay),
 			ButtonId::FilePause => self.ask(Request::FilePause),
 			ButtonId::FileStop => self.perform(Action::FileStop),
-			ButtonId::RecordCancel => self.ask(Request::CancelRecord),
+			// Throwing a take away is asked about first (spec v1.3, F-27).
+			ButtonId::RecordCancel => {
+				self.dirty = true;
+				if self.recording.is_some() {
+					self.confirm = Some(Question::DeleteTake);
+				}
+				None
+			}
 			ButtonId::FormatMidi => self.choose_format(RecordFormat::Midi),
 		}
 	}

@@ -318,6 +318,53 @@ fn quit_asks_for_confirmation_while_recording() {
 	assert_eq!(idle.answer(true), None, "no question, no answer");
 }
 
+/// Spec v1.3, F-27: the Cancel button throws nothing away until the question is answered.
+#[test]
+fn the_cancel_button_asks_before_a_take_is_thrown_away() {
+	let mut app = App::new("en");
+	assert_eq!(app.press_button(ButtonId::RecordCancel), None);
+	assert_eq!(app.confirm, None, "no take, nothing to ask about");
+
+	app.recording = Some(Duration::from_secs(42));
+	assert_eq!(app.press_button(ButtonId::RecordCancel), None, "the take is not touched yet");
+	assert_eq!(app.confirm, Some(Question::DeleteTake));
+	assert_eq!(app.answer(false), None, "a refusal leaves the take running");
+	assert_eq!(app.confirm, None);
+
+	app.press_button(ButtonId::RecordCancel);
+	assert_eq!(app.answer(true), Some(Request::CancelRecord));
+	assert!(app.confirm.is_none() && !app.should_quit);
+}
+
+#[test]
+fn a_take_that_ends_by_itself_closes_the_question_about_deleting_it() {
+	let mut app = App::new("en");
+	app.set_recording(Some(Duration::from_secs(3)));
+	app.press_button(ButtonId::RecordCancel);
+	app.take_dirty();
+	app.set_recording(Some(Duration::from_secs(4)));
+	assert_eq!(app.confirm, Some(Question::DeleteTake), "the take runs on: the question stays");
+	app.set_recording(None);
+	assert_eq!(app.confirm, None);
+	assert!(app.take_dirty(), "the window is to be redrawn without the question");
+
+	// The question about quitting is not about the take: it stays.
+	app.set_recording(Some(Duration::from_secs(1)));
+	app.handle_key(plain(KeyCode::F(10)));
+	app.set_recording(None);
+	assert_eq!(app.confirm, Some(Question::Quit));
+}
+
+#[test]
+fn the_quit_command_replaces_the_question_about_a_take() {
+	let mut app = App::new("en");
+	app.recording = Some(Duration::from_secs(5));
+	app.press_button(ButtonId::RecordCancel);
+	app.handle_key(plain(KeyCode::F(10)));
+	assert_eq!(app.confirm, Some(Question::Quit));
+	assert!(!app.should_quit);
+}
+
 #[test]
 fn the_quit_question_takes_the_place_of_an_open_dialog() {
 	let mut app = App::new("en");
@@ -368,7 +415,6 @@ fn every_available_button_gives_the_command_of_its_hotkey() {
 		(ButtonId::FormatMidi, Request::SetRecordFormat(RecordFormat::Midi)),
 		(ButtonId::RecordStart, Request::StartRecord),
 		(ButtonId::RecordStop, Request::StopRecord),
-		(ButtonId::RecordCancel, Request::CancelRecord),
 		(ButtonId::MidiFile, Request::OpenMidiFileDialog),
 		(ButtonId::FileStart, Request::FilePlay),
 		(ButtonId::FilePause, Request::FilePause),

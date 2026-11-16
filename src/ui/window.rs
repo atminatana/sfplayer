@@ -312,6 +312,7 @@ impl AppHandler for Window {
 
 	/// The windows on widget controls are modal layers of the library: drawn over the frame, not into it.
 	fn on_redraw(&mut self, ctx: &mut DrawCtx<'_>) {
+		let take = self.take_summary();
 		let Self {
 			input,
 			confirm,
@@ -322,7 +323,7 @@ impl AppHandler for Window {
 		if let Some(dialog) = input {
 			dialog.ui(app.locale, clipboard).draw_modal(ctx);
 		} else if let Some(dialog) = confirm {
-			dialog.ui(app.locale).draw_modal(ctx);
+			dialog.ui(app.locale, &take).draw_modal(ctx);
 		}
 	}
 
@@ -340,7 +341,8 @@ impl AppHandler for Window {
 
 	fn on_tick(&mut self, ctx: &mut Ctx<'_>) {
 		self.session.poll();
-		self.app.recording = self.session.recording_elapsed();
+		self.app.set_recording(self.session.recording_elapsed());
+		self.sync_confirm();
 		self.app.update_meters(self.session.shared.clips(), Instant::now());
 		let force = self.app.take_dirty();
 		self.refresh(ctx, force);

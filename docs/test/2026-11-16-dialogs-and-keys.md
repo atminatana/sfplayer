@@ -97,3 +97,17 @@
 ## Этап 4 (2026-11-16) — тесты в репозитории gterm
 
 Состав и результаты — `docs/test/2026-11-16-double-click-slider.md` в gterm: +5 тестов счётчика нажатий, +11 в `tests/double_click.rs`, +1 в `tests/input.rs`, +10 в `tests/slider.rs`; 313 → 340 тестов, 0 падений. В sfplayer тесты не добавлялись: в восьми местах, где сообщение мыши собирается вручную, добавлено поле `click_count`. Прогон sfplayer на новой ревизии gterm: 388 passed, 0 failed (`target/step13/gates-4.4.log`).
+
+## Шаг 5.2 (2026-11-16) — подтверждение отмены записи
+
+| Тест | Файл | Что проверяет |
+| --- | --- | --- |
+| `the_cancel_button_asks_before_a_take_is_thrown_away` | `src/ui/app/tests.rs` | без записи кнопка ничего не спрашивает; при записи открывает вопрос и запрос отмены не отдаёт; отказ — ничего; подтверждение — запрос отмены |
+| `a_take_that_ends_by_itself_closes_the_question_about_deleting_it` | там же | вопрос о записи закрывается с её окончанием и просит перерисовку; вопрос о выходе остаётся |
+| `the_quit_command_replaces_the_question_about_a_take` | там же | команда выхода при открытом вопросе о записи задаёт вопрос о выходе |
+| `the_question_about_a_take_names_its_length_and_size` | `src/ui/confirm_dialog/tests.rs` | заголовок, вопрос с длительностью и размером, кнопки `[Удалить]` `[Нет]`, фокус, красная рамка; английский текст; ответы |
+| `a_take_is_worded_by_its_length_and_its_size` | `src/ui/view.rs` | `мм:сс`, размер в КБ и МБ на двух языках, сводка «время · размер» |
+
+Изменён `every_available_button_gives_the_command_of_its_hotkey`: кнопка `[Отмена]` убрана из списка кнопок, сразу дающих запрос.
+
+Прогон: 393 passed, 0 failed (`target/step13/gates-5.2.log`). Вручную, по снимкам живого окна, мышью: вопрос по клику, отказ, удаление, сообщение, исчезновение файла.
