@@ -1,28 +1,16 @@
 //! Applying the requests of the UI to the session: the one place of the UI that knows `Session`.
 
 use super::app::{App, Modal, Request};
-use super::dialog::{Choice, Dialog, DialogKind};
+use super::dialog::{Choice, Dialog};
 use super::effects_dialog::EffectsDialog;
 use super::path_input::{InputKind, PathRequest};
-use crate::audio;
-use crate::session::{EffectsAction, Notice, Session};
+use crate::session::{EffectsAction, Session};
 
 /// Applies a UI request to the session and the app (dialog contents come from the session).
 pub fn fulfil(request: Request, app: &mut App, session: &mut Session) {
 	match request {
 		Request::Mixer(action) => session.apply_mixer(action),
-		Request::OpenDialog(DialogKind::MidiInput) => {
-			session.rescan();
-			app.open_dialog(Dialog::midi(&session.midi_ports, session.connected_midi_port()));
-		}
-		Request::OpenDialog(DialogKind::AudioOutput) => match audio::list_output_devices() {
-			Ok(devices) => {
-				let current = session.audio().map(|stream| stream.device_name.clone());
-				app.open_dialog(Dialog::audio(&devices, current.as_deref(), app.locale));
-			}
-			Err(error) => session.notice = Some(Notice::AudioError(error.to_string())),
-		},
-		Request::OpenDialog(DialogKind::Preset) => {
+		Request::OpenPresetDialog => {
 			if let Some(loaded) = &session.bank {
 				app.open_dialog(Dialog::preset(loaded.bank.presets(), session.preset_for()));
 			}

@@ -7,14 +7,14 @@ use gterm_widgets::{BufferExt, Rect, Style, Widget};
 use rust_i18n::t;
 
 use super::{
-	DISABLED, ERROR, GOOD, HINT, KEYBOARD_STATE_X, LABEL, MESSAGE, METER_TRACK, NOTHING, POSITION_CELLS, POSITION_TRACK, TEXT, VALUE,
-	VALUE_X, buf_width, fitted, label, piano_origin, put, rule, section, sub_label,
+	DEVICE_CELLS, DISABLED, ERROR, GOOD, HINT, KEYBOARD_STATE_X, LABEL, MESSAGE, METER_TRACK, NOTHING, POSITION_CELLS, POSITION_TRACK,
+	TEXT, VALUE, VALUE_X, buf_width, fitted, label, piano_origin, put, rule, section, sub_label,
 };
 use crate::midi::MidiStatus;
 use crate::midi::player::Transport;
 use crate::session::MidiFile;
-use crate::ui::app::{App, ButtonId};
-use crate::ui::buttons::{Buttons, Look};
+use crate::ui::app::{App, ButtonId, Dropdown};
+use crate::ui::controls::{Controls, Look};
 use crate::ui::paint::Pen;
 use crate::ui::piano;
 use crate::ui::view::{FileView, NoticeTarget, View, note_names};
@@ -28,7 +28,7 @@ fn notes(buf: &mut ScreenBuffer, y: u16, keys: u128, end: u16) {
 	};
 }
 
-pub(super) fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, buttons: &mut Buttons) {
+pub(super) fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, controls: &mut Controls) {
 	let after_title = section(buf, y, &t!("main.section_sources", locale = locale));
 	rule(buf, after_title, y);
 
@@ -47,35 +47,31 @@ pub(super) fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, v
 		piano::draw(buf, piano_x, piano_y, app.keyboard.base_key(), sounding);
 	}
 
-	let midi_in = t!("main.midi_in", locale = locale);
-	label(buf, y + 4, &midi_in);
-	let mut pen = Pen::at(buf, VALUE_X, y + 4);
-	put(&mut pen, buttons, ButtonId::MidiIn, &midi_in, Look::Normal);
-	pen.gap(2);
-	match &view.midi {
-		MidiStatus::Connected(port) => {
-			pen.text(port, TEXT).gap(2).text(&t!("main.opened", locale = locale), GOOD);
-		}
-		MidiStatus::Disconnected(port) => {
-			pen.text(&t!("header.disconnected", locale = locale, port = port), ERROR);
-		}
-		MidiStatus::NoPort => {
-			pen.text(&t!("header.no_device", locale = locale), ERROR);
-		}
+	label(buf, y + 4, &t!("main.midi_in", locale = locale));
+	// The port is chosen in place: the field shows the one in use, or says that there is none.
+	let (port, absent) = match &view.midi {
+		MidiStatus::Connected(port) => (Some(port.as_str()), String::new()),
+		MidiStatus::Disconnected(port) => (None, t!("header.disconnected", locale = locale, port = port).into_owned()),
+		MidiStatus::NoPort => (None, t!("header.no_device", locale = locale).into_owned()),
+	};
+	let field = controls.place_dropdown(Dropdown::MidiIn, VALUE_X, y + 4, DEVICE_CELLS, port, &absent);
+	let mut pen = Pen::at(buf, VALUE_X + field + 2, y + 4);
+	if port.is_some() {
+		pen.text(&t!("main.opened", locale = locale), GOOD).gap(2);
 	}
 	if let Some(error) = view.line_error(NoticeTarget::Midi) {
-		pen.gap(2).text(error, ERROR);
+		pen.text(error, ERROR);
 	}
 	sub_label(buf, y + 5, &t!("main.notes", locale = locale));
 	let right_edge = buf.area().width.saturating_sub(1);
 	notes(buf, y + 5, view.midi_notes, right_edge);
 
-	midi_file(buf, y + 6, locale, &view.file, buttons);
+	midi_file(buf, y + 6, locale, &view.file, controls);
 }
 
 /// The MIDI file row — the file, or why there is none to play, and the transport buttons at the right
 /// end — and under it, once a file is chosen, where its playback is.
-fn midi_file(buf: &mut ScreenBuffer, y: u16, locale: &str, file: &FileView, buttons: &mut Buttons) {
+fn midi_file(buf: &mut ScreenBuffer, y: u16, locale: &str, file: &FileView, controls: &mut Controls) {
 	let title = t!("main.midi_file", locale = locale);
 	label(buf, y, &title);
 	let transport = [
@@ -86,7 +82,7 @@ fn midi_file(buf: &mut ScreenBuffer, y: u16, locale: &str, file: &FileView, butt
 	// Brackets and the gap before each of the three.
 	let transport_width: usize = transport.iter().map(|(_, name)| name.chars().count() + 3).sum();
 	let mut pen = Pen::at(buf, VALUE_X, y);
-	put(&mut pen, buttons, ButtonId::MidiFile, &title, Look::Normal);
+	put(&mut pen, controls, ButtonId::MidiFile, &title, Look::Normal);
 	pen.gap(2);
 	// What is said about the file ends where the buttons begin, one cell short of the right edge.
 	let room = usize::from(buf_width(&pen)).saturating_sub(usize::from(pen.x) + transport_width + 2);
@@ -111,7 +107,7 @@ fn midi_file(buf: &mut ScreenBuffer, y: u16, locale: &str, file: &FileView, butt
 		pen.gap(1);
 		put(
 			&mut pen,
-			buttons,
+			controls,
 			*id,
 			name,
 			if is_available { Look::Normal } else { Look::Disabled },

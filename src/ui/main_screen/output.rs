@@ -9,12 +9,12 @@ use gterm_widgets::{Rect, Style, Widget};
 use rust_i18n::t;
 
 use super::{
-	ERROR, GOOD, HINT, LABEL_X, MASTER_CELLS, MESSAGE, METER_CELLS, METER_TRACK, METER_ZONES, MINUS, PLUS, RECORD_BLINK_HALF_PERIOD_MS,
-	RECORD_DOT, TEXT, VALUE, VALUE_X, buf_width, fitted, label, put, rule, section,
+	DEVICE_CELLS, ERROR, GOOD, HINT, LABEL_X, MASTER_CELLS, MESSAGE, METER_CELLS, METER_TRACK, METER_ZONES, MINUS, PLUS,
+	RECORD_BLINK_HALF_PERIOD_MS, RECORD_DOT, TEXT, VALUE, VALUE_X, buf_width, fitted, label, put, rule, section,
 };
 use crate::config::RecordFormat;
-use crate::ui::app::{App, ButtonId};
-use crate::ui::buttons::{Buttons, Look};
+use crate::ui::app::{App, ButtonId, Dropdown};
+use crate::ui::controls::{Controls, Look};
 use crate::ui::meter::{dbfs_text, level_ratio};
 use crate::ui::paint::Pen;
 use crate::ui::view::{NoticeTarget, TakeView, View, clock_text, notice_target, notice_text};
@@ -29,35 +29,31 @@ pub(super) fn fitted_end(text: &str, room: usize) -> String {
 	format!("…{kept}")
 }
 
-pub(super) fn output(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, buttons: &mut Buttons) {
+pub(super) fn output(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, controls: &mut Controls) {
 	let after_title = section(buf, y, &t!("main.section_output", locale = locale));
 	rule(buf, after_title, y);
 
-	let audio_out = t!("main.audio_out", locale = locale);
-	label(buf, y + 1, &audio_out);
-	let mut pen = Pen::at(buf, VALUE_X, y + 1);
-	put(&mut pen, buttons, ButtonId::AudioOut, &audio_out, Look::Normal);
-	pen.gap(2);
-	let audio_error = view.line_error(NoticeTarget::Audio);
-	match &view.audio {
-		Some(audio) => {
+	label(buf, y + 1, &t!("main.audio_out", locale = locale));
+	// The device is chosen in place: the field shows the one in use, or says that there is none.
+	let device = view.audio.as_ref().map(|audio| audio.device.as_str());
+	let no_device = t!("header.no_device", locale = locale);
+	let field = controls.place_dropdown(Dropdown::AudioOut, VALUE_X, y + 1, DEVICE_CELLS, device, &no_device);
+	let mut pen = Pen::at(buf, VALUE_X + field + 2, y + 1);
+	// An error takes the room of the rate and the buffer: while it is there, it is what matters.
+	match (view.line_error(NoticeTarget::Audio), &view.audio) {
+		(Some(error), _) => {
+			pen.text(error, ERROR);
+		}
+		(None, Some(audio)) => {
 			let buffer = match audio.buffer {
 				Some(frames) => t!("header.buffer", locale = locale, frames = frames),
 				None => t!("header.buffer_default", locale = locale),
 			};
-			pen.text(&audio.device, TEXT)
+			pen.text(&format!("{} Hz / {buffer}", audio.sample_rate), HINT)
 				.gap(2)
-				.text(&format!("{} Hz / {buffer}", audio.sample_rate), HINT)
-				.gap(2);
-			match audio_error {
-				Some(error) => pen.text(error, ERROR),
-				None => pen.text(&t!("header.audio_ok", locale = locale), GOOD),
-			};
+				.text(&t!("header.audio_ok", locale = locale), GOOD);
 		}
-		None => {
-			let no_device = t!("header.no_device", locale = locale);
-			pen.text(audio_error.unwrap_or(&no_device), ERROR);
-		}
+		(None, None) => {}
 	}
 
 	let silence = t!("meter.silence", locale = locale);
@@ -77,13 +73,13 @@ pub(super) fn output(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, vi
 	label(buf, y + 4, &t!("main.master", locale = locale));
 	let mixer = &view.mixer;
 	let mut pen = Pen::at(buf, VALUE_X, y + 4);
-	put(&mut pen, buttons, ButtonId::MasterDown, MINUS, Look::Normal);
+	put(&mut pen, controls, ButtonId::MasterDown, MINUS, Look::Normal);
 	pen.gap(1);
 	let meter_x = pen.x;
 	level_meter(buf, meter_x, y + 4, MASTER_CELLS, f64::from(mixer.master) / 100.0);
 	let mut pen = Pen::at(buf, meter_x + MASTER_CELLS + 1, y + 4);
 	pen.text(&format!("{:>3}%", mixer.master), VALUE).gap(1);
-	put(&mut pen, buttons, ButtonId::MasterUp, PLUS, Look::Normal);
+	put(&mut pen, controls, ButtonId::MasterUp, PLUS, Look::Normal);
 	if mixer.master_muted {
 		pen.gap(2)
 			.styled(&t!("mixer.mute", locale = locale), Style::new().fg(MESSAGE).bold());
@@ -98,7 +94,7 @@ fn level_meter(buf: &mut ScreenBuffer, x: u16, y: u16, cells: u16, ratio: f64) {
 		.render(Rect::new(x, y, cells, 1), buf);
 }
 
-pub(super) fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, buttons: &mut Buttons) {
+pub(super) fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, controls: &mut Controls) {
 	let after_title = section(buf, y, &t!("main.section_record", locale = locale));
 	rule(buf, after_title, y);
 	let recording = app.recording;
@@ -107,7 +103,7 @@ pub(super) fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str
 	let mut pen = Pen::at(buf, VALUE_X, y + 1);
 	put(
 		&mut pen,
-		buttons,
+		controls,
 		ButtonId::Folder,
 		&t!("main.folder_button", locale = locale),
 		Look::Normal,
@@ -123,11 +119,11 @@ pub(super) fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str
 		(false, true) => Look::Disabled,
 	};
 	let mut pen = Pen::at(buf, VALUE_X, y + 2);
-	put(&mut pen, buttons, ButtonId::FormatFlac, "FLAC", format_look(RecordFormat::Flac));
+	put(&mut pen, controls, ButtonId::FormatFlac, "FLAC", format_look(RecordFormat::Flac));
 	pen.gap(1);
-	put(&mut pen, buttons, ButtonId::FormatOgg, "OGG", format_look(RecordFormat::OggVorbis));
+	put(&mut pen, controls, ButtonId::FormatOgg, "OGG", format_look(RecordFormat::OggVorbis));
 	pen.gap(1);
-	put(&mut pen, buttons, ButtonId::FormatMidi, "MIDI", format_look(RecordFormat::Midi));
+	put(&mut pen, controls, ButtonId::FormatMidi, "MIDI", format_look(RecordFormat::Midi));
 	let recorded = match view.record_format {
 		RecordFormat::Flac | RecordFormat::OggVorbis => t!("main.format_audio", locale = locale),
 		RecordFormat::Midi => t!("main.format_midi", locale = locale),
@@ -139,7 +135,7 @@ pub(super) fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str
 	let mut pen = Pen::at(buf, VALUE_X, y + 3);
 	put(
 		&mut pen,
-		buttons,
+		controls,
 		ButtonId::RecordStart,
 		&t!("main.start", locale = locale),
 		unless(recording.is_some()),
@@ -147,7 +143,7 @@ pub(super) fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str
 	pen.gap(1);
 	put(
 		&mut pen,
-		buttons,
+		controls,
 		ButtonId::RecordStop,
 		&t!("main.stop", locale = locale),
 		unless(recording.is_none()),
@@ -156,7 +152,7 @@ pub(super) fn audio_file(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str
 	// Cancelling throws the take away: the button is red while there is a take to throw away.
 	put(
 		&mut pen,
-		buttons,
+		controls,
 		ButtonId::RecordCancel,
 		&t!("main.cancel", locale = locale),
 		if recording.is_some() { Look::Danger } else { Look::Disabled },

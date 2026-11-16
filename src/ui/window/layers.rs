@@ -1,6 +1,7 @@
-//! The program window and the windows built on widget controls (ADR 0018): the path dialog and the
-//! confirmation. The program window holds the open one, hands it keys and the mouse, and acts on
-//! what it decides.
+//! The program window and what is built on widget controls (ADR 0018): the path dialog, the
+//! confirmation and the controls of the main screen. The program window holds the open window, hands
+//! it keys and the mouse, and acts on what it decides; it fills the list of a device dropdown when
+//! the list drops down.
 
 use std::path::{Path, PathBuf};
 
@@ -9,7 +10,12 @@ use rust_i18n::t;
 use winit::event::ElementState;
 
 use super::Window;
+use crate::audio;
+use crate::session::Notice;
+use crate::ui::app::{Dropdown, Request};
 use crate::ui::confirm_dialog::{ConfirmDialog, ConfirmOutcome};
+use crate::ui::controls::Touch;
+use crate::ui::devices::DeviceRows;
 use crate::ui::input_dialog::{InputDialog, InputOutcome};
 use crate::ui::path_input::{self, InputKind};
 use crate::ui::view::{Size, take_summary};
@@ -86,6 +92,52 @@ impl Window {
 				self.session.save_config();
 			}
 			Err(message) => dialog.set_error(message),
+		}
+	}
+
+	/// Does what a touched control of the main screen asks for: a pressed button gives its command, a
+	/// dropdown that has just opened gets its list, a chosen row connects its device.
+	pub(super) fn touched(&mut self, touch: Touch) -> Option<Request> {
+		match touch {
+			Touch::Missed | Touch::Changed => None,
+			Touch::Pressed(button) => self.app.press_button(button),
+			Touch::Opened(which) => {
+				self.load_dropdown(which);
+				None
+			}
+			Touch::Chosen(which, row) => self.device_rows[which as usize].choice(row).map(Request::Apply),
+		}
+	}
+
+	/// Fills the list of a dropdown that has just been opened with the devices the system has now.
+	/// With nothing to choose from the list closes again: the field already says there is no device.
+	fn load_dropdown(&mut self, which: Dropdown) {
+		let rows = match which {
+			Dropdown::MidiIn => {
+				self.session.rescan();
+				DeviceRows::midi(&self.session.midi_ports)
+			}
+			Dropdown::AudioOut => match audio::list_output_devices() {
+				Ok(devices) => DeviceRows::audio(&devices),
+				Err(error) => {
+					self.session.notice = Some(Notice::AudioError(error.to_string()));
+					DeviceRows::default()
+				}
+			},
+		};
+		if rows.names().is_empty() {
+			self.controls.close_dropdowns();
+		}
+		self.controls.set_items(which, rows.names().to_vec());
+		self.device_rows[which as usize] = rows;
+	}
+
+	/// Drops down the list of the dropdown `App` was asked for by its key.
+	pub(super) fn adopt_dropdown_request(&mut self) {
+		if let Some(which) = self.app.dropdown_request.take()
+			&& self.controls.open(which)
+		{
+			self.load_dropdown(which);
 		}
 	}
 

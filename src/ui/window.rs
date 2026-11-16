@@ -17,10 +17,11 @@ use gterm::font::{FONT_SCALE, FontFamily, glyph_px_for};
 use gterm::rasterizer::Rasterizer;
 use gterm_widgets::{MouseMsg, Rect, SystemClipboard};
 
-use super::app::{App, FRAME_INTERVAL, KEYBOARD_CHANNEL, Request};
-use super::buttons::{Buttons, Touch};
+use super::app::{App, Dropdown, FRAME_INTERVAL, KEYBOARD_CHANNEL, Request};
 use super::chord::{KeyCode, KeyEvent, KeyEventKind};
 use super::confirm_dialog::ConfirmDialog;
+use super::controls::{Controls, Touch};
+use super::devices::DeviceRows;
 use super::dialog_screen;
 use super::fulfil::fulfil;
 use super::input_dialog::InputDialog;
@@ -84,7 +85,8 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		app,
 		session,
 		shown: None,
-		buttons: Buttons::new(),
+		controls: Controls::new(),
+		device_rows: Dropdown::ALL.map(|_| DeviceRows::default()),
 		piano: Piano::new(KEYBOARD_CHANNEL),
 		clipboard: SystemClipboard::new(),
 		input: None,
@@ -139,8 +141,12 @@ struct Window {
 	session: Session,
 	/// What the last drawn frame showed; `None` before the first frame.
 	shown: Option<FrameState>,
-	/// The `[buttons]` of the main screen: where the last frame put them, the focus, the one held down.
-	buttons: Buttons,
+	/// The buttons and the device dropdowns of the main screen: where the last frame put them, the
+	/// focus, the button held down, the list that is open.
+	controls: Controls,
+	/// What the rows of each device dropdown mean, in the order of `Dropdown::ALL`: taken from the
+	/// system when the list was last opened.
+	device_rows: [DeviceRows; 2],
 	/// The on-screen piano: the note the mouse holds on it.
 	piano: Piano,
 	/// Where Ctrl+V takes text from for the field of the input dialog.
@@ -165,23 +171,31 @@ impl Window {
 		if !force && self.shown.as_ref() == Some(&state) {
 			return;
 		}
-		main_screen::render(ctx.screen, &self.app, &state.view, &mut self.buttons);
+		main_screen::render(ctx.screen, &self.app, &state.view, &mut self.controls);
 		dialog_screen::render(ctx.screen, &self.app);
 		self.shown = Some(state);
 		ctx.redraw();
 	}
 
-	/// A key press on the main screen. A command key goes to `App`; of the rest, Tab and Enter belong
-	/// to the buttons, and what is left may be a note. The flag tells that the picture changed without
-	/// `App` knowing (the focus moved).
+	/// A key press on the main screen. The open list of a dropdown takes every key but the quit
+	/// command. Otherwise a command key goes to `App`; of the rest, Tab and Enter belong to the
+	/// controls, and what is left may be a note. The flag tells that the picture changed without
+	/// `App` knowing (the focus moved, a list was walked).
 	fn key_on_screen(&mut self, key: KeyEvent) -> (Option<Request>, bool) {
-		if self.app.modal.is_some() || self.app.bindings.action_for(&key).is_some() {
+		let action = self.app.bindings.action_for(&key);
+		if self.controls.open_dropdown().is_some() {
+			if action != Some(Action::Quit) {
+				let touch = self.controls.handle_key(&key);
+				return (self.touched(touch), touch != Touch::Missed);
+			}
+			self.controls.close_dropdowns();
+		}
+		if self.app.modal.is_some() || action.is_some() {
 			return (self.app.handle_key(key), false);
 		}
-		match self.buttons.handle_key(&key) {
+		match self.controls.handle_key(&key) {
 			Touch::Missed => (self.app.handle_key(key), false),
-			Touch::Changed => (None, true),
-			Touch::Pressed(button) => (self.app.press_button(button), true),
+			touch => (self.touched(touch), true),
 		}
 	}
 
@@ -257,6 +271,7 @@ impl AppHandler for Window {
 			return;
 		}
 		self.adopt_path_request();
+		self.adopt_dropdown_request();
 		self.sync_confirm();
 		let force = self.app.take_dirty() || has_changed;
 		self.refresh(ctx, force);
@@ -278,7 +293,8 @@ impl AppHandler for Window {
 		let message = MouseMsg::from_pointer(event, ctx);
 		// A note the mouse holds on the piano is the piano's to end, even if a dialog opened meanwhile;
 		// a new one starts only on the bare main screen.
-		let is_screen_bare = self.input.is_none() && self.confirm.is_none() && self.app.modal.is_none();
+		let has_window = self.input.is_some() || self.confirm.is_some() || self.app.modal.is_some();
+		let is_screen_bare = !has_window && self.controls.open_dropdown().is_none();
 		if (is_screen_bare || self.piano.is_dragging()) && self.pointer_to_piano(&message, ctx) {
 			return;
 		}
@@ -298,10 +314,9 @@ impl AppHandler for Window {
 			}
 			self.app.dismiss_modal()
 		} else {
-			match self.buttons.handle_mouse(&message) {
+			match self.controls.handle_mouse(&message, Rect::of_screen(ctx.screen)) {
 				Touch::Missed => return,
-				Touch::Changed => None,
-				Touch::Pressed(button) => self.app.press_button(button),
+				touch => self.touched(touch),
 			}
 		};
 		self.apply(request);
@@ -310,12 +325,14 @@ impl AppHandler for Window {
 		self.refresh(ctx, true);
 	}
 
-	/// The windows on widget controls are modal layers of the library: drawn over the frame, not into it.
+	/// The windows on widget controls and the open list of a dropdown are layers of the library: drawn
+	/// over the frame, not into it.
 	fn on_redraw(&mut self, ctx: &mut DrawCtx<'_>) {
 		let take = self.take_summary();
 		let Self {
 			input,
 			confirm,
+			controls,
 			clipboard,
 			app,
 			..
@@ -324,6 +341,8 @@ impl AppHandler for Window {
 			dialog.ui(app.locale, clipboard).draw_modal(ctx);
 		} else if let Some(dialog) = confirm {
 			dialog.ui(app.locale, &take).draw_modal(ctx);
+		} else {
+			controls.draw_layer(ctx);
 		}
 	}
 

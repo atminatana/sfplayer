@@ -16,9 +16,13 @@ use crate::midi::player::Transport;
 use crate::session::MidiFile;
 use crate::session::Notice;
 use crate::synth::AdsrPreset;
-use crate::ui::buttons::Touch;
+use crate::ui::app::Dropdown;
 use crate::ui::chord::{KeyCode, KeyEvent, KeyModifiers};
+use crate::ui::controls::Touch;
 use crate::ui::view::{AudioView, BankView, FileView, Size, TakeView};
+
+/// The grid the screen is drawn on in these tests: the smallest one it fits in.
+const GRID: Rect = Rect::new(0, 0, MIN_COLS, MIN_ROWS);
 
 fn view() -> View {
 	View {
@@ -82,7 +86,7 @@ fn lines_of(buf: &ScreenBuffer) -> Vec<String> {
 
 fn rendered(app: &App, view: &View) -> ScreenBuffer {
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
-	render(&mut buf, app, view, &mut Buttons::new());
+	render(&mut buf, app, view, &mut Controls::new());
 	buf
 }
 
@@ -125,7 +129,7 @@ fn full_frame_matches_the_layout_mockup() {
 		" Клавиатура        —                                                 окт 4 vel 100",
 		"                                │ ██ ██  │ ██ ██ ██  │ ██ ██  │",
 		"                                │  │  │  │  │  │  │  │  │  │  │",
-		" MIDI-вход         [MIDI-вход]  Arturia KeyStep 37  открыто",
+		" MIDI-вход         Arturia KeyStep 37                     ▾  открыто",
 		"   → ноты          —",
 		" MIDI-файл         [MIDI-файл]  файл не выбран  [Старт] [Пауза] [Стоп]",
 		"",
@@ -135,7 +139,7 @@ fn full_frame_matches_the_layout_mockup() {
 		" Эффекты           [Эффекты]  рев 40  хор выкл",
 		"",
 		"ВЫХОД ──────────────────────────────────────────────────────────────────────────────────────────",
-		" Аудио выход       [Аудио выход]  Speakers  48000 Hz / 256 кадров  OK",
+		" Аудио выход       Speakers                               ▾  48000 Hz / 256 кадров  OK",
 		" L                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS",
 		" R                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS",
 		" Мастер            [−] ████████████████░░░░  80% [+]",
@@ -165,7 +169,7 @@ fn english_screen_uses_the_dictionary_for_every_label() {
 	for text in [
 		"MIDI SOURCES ──",
 		" Keyboard ",
-		" MIDI input        [MIDI input]  Arturia KeyStep 37  open",
+		" MIDI input        Arturia KeyStep 37                     ▾  open",
 		"   → notes ",
 		" MIDI file         [MIDI file]  no file selected  [Start] [Pause] [Stop]",
 		"PROCESSOR  [Synth] [Sound Font] ──",
@@ -173,7 +177,7 @@ fn english_screen_uses_the_dictionary_for_every_label() {
 		" Preset            [Preset]  000:000 Grand Piano",
 		" Effects           [Effects]  rev 40  cho off",
 		"OUTPUT ──",
-		" Audio output      [Audio output]  Speakers  48000 Hz / 256 frames  OK",
+		" Audio output      Speakers                               ▾  48000 Hz / 256 frames  OK",
 		" Master            [−] ",
 		"AUDIO FILE ──",
 		" Folder            [Folder for files]  D:/Music/sf2_player",
@@ -299,7 +303,7 @@ fn buttons_show_what_is_chosen_and_what_is_unavailable() {
 	assert_eq!(buf.cell(col, row).bg, VALUE);
 	assert_eq!(colour_of(&buf, "[MIDI-файл]"), TEXT, "a file can be chosen");
 	assert_eq!(colour_of(&buf, "[Пауза]"), DISABLED);
-	assert_eq!(colour_of(&buf, "[MIDI-вход]"), TEXT);
+	assert_eq!(colour_of(&buf, "Arturia KeyStep 37"), TEXT, "the port in use");
 
 	let mut vorbis = view();
 	vorbis.record_format = RecordFormat::OggVorbis;
@@ -450,7 +454,7 @@ fn notices_not_tied_to_a_setting_go_to_the_message_line_in_yellow() {
 fn a_grid_below_the_minimum_shows_only_the_hint() {
 	for (cols, rows) in [(MIN_COLS - 1, MIN_ROWS), (MIN_COLS, MIN_ROWS - 1), (20, 5)] {
 		let mut buf = screen(usize::from(cols), usize::from(rows));
-		render(&mut buf, &App::new("ru"), &view(), &mut Buttons::new());
+		render(&mut buf, &App::new("ru"), &view(), &mut Controls::new());
 		let lines = lines_of(&buf);
 		let hint: String = "Увеличьте окно до 96×31".chars().take(usize::from(cols)).collect();
 		assert_eq!(lines[0], hint);
@@ -460,7 +464,7 @@ fn a_grid_below_the_minimum_shows_only_the_hint() {
 
 	// A larger grid keeps the layout: the piano stays centred, the status goes to the last row.
 	let mut wide = screen(120, 40);
-	render(&mut wide, &App::new("ru"), &view(), &mut Buttons::new());
+	render(&mut wide, &App::new("ru"), &view(), &mut Controls::new());
 	let (piano_row, piano_col) = find(&wide, "│ ██ ██  │ ██ ██ ██  │ ██ ██  │");
 	assert_eq!(piano_col, (120 - usize::from(piano::WIDTH)) / 2);
 	assert_eq!(
@@ -482,7 +486,7 @@ fn a_frame_drawn_over_another_leaves_no_leftovers() {
 	let mut noisy = view();
 	noisy.notice = Some(Notice::RecordSaved("take.flac".into()));
 	noisy.record_format = RecordFormat::OggVorbis;
-	let mut buttons = Buttons::new();
+	let mut buttons = Controls::new();
 	render(&mut buf, &app, &noisy, &mut buttons);
 	render(&mut buf, &App::new("ru"), &view(), &mut buttons);
 	let clean = rendered_ru(&view());
@@ -494,7 +498,7 @@ fn a_frame_drawn_over_another_leaves_no_leftovers() {
 }
 
 /// A left click, press and release, on the first cell of `text`; what the release did.
-fn click(buttons: &mut Buttons, buf: &ScreenBuffer, text: &str) -> Touch {
+fn click(buttons: &mut Controls, buf: &ScreenBuffer, text: &str) -> Touch {
 	let (row, col) = find(buf, text);
 	let at = |kind| MouseMsg {
 		kind,
@@ -504,35 +508,42 @@ fn click(buttons: &mut Buttons, buf: &ScreenBuffer, text: &str) -> Touch {
 		modifiers: ModifiersState::empty(),
 		click_count: 1,
 	};
-	buttons.handle_mouse(&at(MouseKind::Down));
-	buttons.handle_mouse(&at(MouseKind::Up))
+	buttons.handle_mouse(&at(MouseKind::Down), GRID);
+	buttons.handle_mouse(&at(MouseKind::Up), GRID)
+}
+
+/// Tab to the next button: a dropdown on the way is passed by.
+fn next_button(buttons: &mut Controls) {
+	let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+	buttons.handle_key(&tab);
+	while buttons.focused().is_none() && buttons.focused_dropdown().is_some() {
+		buttons.handle_key(&tab);
+	}
 }
 
 /// The buttons Tab stops at, starting from the one under the focus, once round the ring.
-fn ring(buttons: &mut Buttons) -> Vec<ButtonId> {
+fn ring(buttons: &mut Controls) -> Vec<ButtonId> {
 	let mut stops = Vec::new();
 	while let Some(focused) = buttons.focused().filter(|focused| !stops.contains(focused)) {
 		stops.push(focused);
-		buttons.handle_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+		next_button(buttons);
 	}
 	stops
 }
 
 #[test]
 fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
-	let mut buttons = Buttons::new();
+	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &App::new("ru"), &view(), &mut buttons);
 	// The text of a button as it stands on the screen, with enough around it to be unique.
 	let available = [
-		(ButtonId::MidiIn, "[MIDI-вход]"),
 		(ButtonId::MidiFile, "[MIDI-файл]"),
 		(ButtonId::EngineSynth, "[Synth]"),
 		(ButtonId::EngineSf2, "[Sound Font]"),
 		(ButtonId::Sf2File, "[Файл Sound Font]"),
 		(ButtonId::Preset, "[Пресет]"),
 		(ButtonId::Effects, "[Эффекты]"),
-		(ButtonId::AudioOut, "[Аудио выход]"),
 		(ButtonId::MasterDown, "[−]"),
 		(ButtonId::MasterUp, "[+]"),
 		(ButtonId::Folder, "[Папка для файлов]"),
@@ -547,7 +558,7 @@ fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
 	}
 
 	// Tab goes through the same buttons top to bottom, left to right; Enter presses each.
-	click(&mut buttons, &buf, "[MIDI-вход]");
+	click(&mut buttons, &buf, "[MIDI-файл]");
 	let order: Vec<ButtonId> = available.iter().map(|(id, _)| *id).collect();
 	assert_eq!(ring(&mut buttons), order);
 	for id in order {
@@ -555,7 +566,7 @@ fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
 			buttons.handle_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
 			Touch::Pressed(id)
 		);
-		buttons.handle_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+		next_button(&mut buttons);
 	}
 
 	// What the screen shows unavailable does not react.
@@ -565,13 +576,16 @@ fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
 }
 
 #[test]
-fn the_button_under_the_focus_is_underlined_from_the_first_frame() {
+fn the_control_under_the_focus_is_underlined_from_the_first_frame() {
 	let buf = rendered_ru(&view());
 	let is_underlined = |text: &str| {
 		let (row, col) = find(&buf, text);
 		buf.cell(col, row).flags.contains(CellFlags::UNDERLINE)
 	};
-	assert!(is_underlined("[MIDI-вход]"));
+	assert!(
+		is_underlined("Arturia KeyStep 37"),
+		"the first control of the screen is the MIDI input"
+	);
 	assert!(!is_underlined("[Файл Sound Font]") && !is_underlined("[FLAC]") && !is_underlined("[MIDI-файл]"));
 }
 
@@ -579,7 +593,7 @@ fn the_button_under_the_focus_is_underlined_from_the_first_frame() {
 fn a_running_take_locks_the_format_and_takes_start_away() {
 	let mut app = App::new("ru");
 	app.recording = Some(Duration::from_secs(3));
-	let mut buttons = Buttons::new();
+	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &app, &view(), &mut buttons);
 	// The chosen format stays lit, the other goes dark, and neither reacts.
@@ -597,19 +611,20 @@ fn a_running_take_locks_the_format_and_takes_start_away() {
 
 #[test]
 fn on_a_grid_below_the_minimum_no_button_reacts() {
-	let mut buttons = Buttons::new();
+	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &App::new("ru"), &view(), &mut buttons);
-	assert_eq!(buttons.focused(), Some(ButtonId::MidiIn));
+	assert_eq!(buttons.focused_dropdown(), Some(Dropdown::MidiIn));
 	let mut small = screen(usize::from(MIN_COLS) - 1, usize::from(MIN_ROWS));
 	render(&mut small, &App::new("ru"), &view(), &mut buttons);
 	assert_eq!(buttons.focused(), None);
+	assert_eq!(buttons.focused_dropdown(), None);
 	assert_eq!(
 		buttons.handle_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
 		Touch::Missed
 	);
-	// Where `[MIDI-вход]` stood on the full screen.
-	assert_eq!(click(&mut buttons, &buf, "[MIDI-вход]"), Touch::Missed);
+	// Where `[MIDI-файл]` stood on the full screen.
+	assert_eq!(click(&mut buttons, &buf, "[MIDI-файл]"), Touch::Missed);
 }
 
 /// A note map with the given MIDI keys set.
@@ -727,7 +742,7 @@ fn the_synth_screen_matches_the_layout_mockup() {
 		" Эффекты           [Эффекты]  рев 40  хор выкл",
 		"",
 		"ВЫХОД ──────────────────────────────────────────────────────────────────────────────────────────",
-		" Аудио выход       [Аудио выход]  Speakers  48000 Hz / 256 кадров  OK",
+		" Аудио выход       Speakers                               ▾  48000 Hz / 256 кадров  OK",
 		" L                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS",
 		" R                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS",
 		" Мастер            [−] ████████████████░░░░  80% [+]",
@@ -838,7 +853,7 @@ fn the_synth_rows_show_the_timbre_and_mark_a_hand_made_envelope() {
 
 #[test]
 fn every_button_of_the_synth_section_is_pressed_by_a_click_and_stands_in_the_tab_ring() {
-	let mut buttons = Buttons::new();
+	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &App::new("ru"), &synth_view(), &mut buttons);
 	let section = [
@@ -881,18 +896,17 @@ fn every_button_of_the_synth_section_is_pressed_by_a_click_and_stands_in_the_tab
 			modifiers: ModifiersState::empty(),
 			click_count: 1,
 		};
-		buttons.handle_mouse(&at(MouseKind::Down));
-		assert_eq!(buttons.handle_mouse(&at(MouseKind::Up)), Touch::Pressed(id));
+		buttons.handle_mouse(&at(MouseKind::Down), GRID);
+		assert_eq!(buttons.handle_mouse(&at(MouseKind::Up), GRID), Touch::Pressed(id));
 	}
 
 	// Tab walks them between the MIDI input and the output, in the order they stand on the screen;
 	// the buttons of the Sound Font are not in the ring.
-	click(&mut buttons, &buf, "[MIDI-вход]");
+	click(&mut buttons, &buf, "[MIDI-файл]");
 	let stops = ring(&mut buttons);
 	assert_eq!(
-		stops[..20],
+		stops[..19],
 		[
-			ButtonId::MidiIn,
 			ButtonId::MidiFile,
 			ButtonId::EngineSynth,
 			ButtonId::EngineSf2,
@@ -1048,7 +1062,7 @@ fn a_long_file_name_is_cut_so_that_the_transport_buttons_stay_on_the_screen() {
 	);
 	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 1, "up to one cell short of the edge");
 	// The buttons are still where a click finds them.
-	let mut buttons = Buttons::new();
+	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &App::new("ru"), &long, &mut buttons);
 	assert_eq!(click(&mut buttons, &buf, "[Пауза]"), Touch::Pressed(ButtonId::FilePause));
@@ -1062,20 +1076,14 @@ fn a_long_file_name_is_cut_so_that_the_transport_buttons_stay_on_the_screen() {
 
 #[test]
 fn the_transport_buttons_stand_in_the_tab_ring_after_the_file_button() {
-	let mut buttons = Buttons::new();
+	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &App::new("ru"), &file_view(Transport::Paused), &mut buttons);
-	click(&mut buttons, &buf, "[MIDI-вход]");
+	click(&mut buttons, &buf, "[MIDI-файл]");
 	let stops = ring(&mut buttons);
 	assert_eq!(
-		stops[..5],
-		[
-			ButtonId::MidiIn,
-			ButtonId::MidiFile,
-			ButtonId::FileStart,
-			ButtonId::FileStop,
-			ButtonId::EngineSynth
-		]
+		stops[..4],
+		[ButtonId::MidiFile, ButtonId::FileStart, ButtonId::FileStop, ButtonId::EngineSynth]
 	);
 	assert_eq!(click(&mut buttons, &buf, "[Старт] [Пауза]"), Touch::Pressed(ButtonId::FileStart));
 }
@@ -1089,7 +1097,7 @@ fn a_running_take_shows_its_time_size_and_file_and_offers_a_red_cancel() {
 		name: "2026-11-13_12-03-41.flac".into(),
 		size: Size::of(1_300_000),
 	};
-	let mut buttons = Buttons::new();
+	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &app, &recording, &mut buttons);
 	assert!(is_shown(&buf, "[Отмена]  ● ЗАП 00:42 · 1.2 МБ · 2026-11-13_12-03-41.flac"));
@@ -1180,7 +1188,7 @@ fn a_text_cut_at_the_front_keeps_its_end() {
 fn the_midi_format_is_chosen_like_the_others_and_says_what_it_records() {
 	let mut midi = view();
 	midi.record_format = RecordFormat::Midi;
-	let mut buttons = Buttons::new();
+	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &App::new("ru"), &midi, &mut buttons);
 	assert!(is_shown(&buf, "[FLAC] [OGG] [MIDI]  запись MIDI-событий"));
@@ -1207,7 +1215,7 @@ fn the_midi_format_is_chosen_like_the_others_and_says_what_it_records() {
 	// Under a running MIDI take the format is locked like the others.
 	let mut app = App::new("ru");
 	app.recording = Some(Duration::from_secs(3));
-	let mut buttons = Buttons::new();
+	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &app, &midi, &mut buttons);
 	let (row, col) = find(&buf, "[MIDI]");

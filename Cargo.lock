@@ -1147,7 +1147,7 @@ dependencies = [
 [[package]]
 name = "gterm"
 version = "0.1.0"
-source = "git+https://github.com/atminatana/gterm?rev=c3eb60bfaf11138b783e663f94f5aaab530b3f94#c3eb60bfaf11138b783e663f94f5aaab530b3f94"
+source = "git+https://github.com/atminatana/gterm?rev=106d1ce1c2714639ee0486707b800849cef615a4#106d1ce1c2714639ee0486707b800849cef615a4"
 dependencies = [
  "bitflags 2.13.2",
  "fontdb",
@@ -1166,7 +1166,7 @@ dependencies = [
 [[package]]
 name = "gterm-widgets"
 version = "0.1.0"
-source = "git+https://github.com/atminatana/gterm?rev=c3eb60bfaf11138b783e663f94f5aaab530b3f94#c3eb60bfaf11138b783e663f94f5aaab530b3f94"
+source = "git+https://github.com/atminatana/gterm?rev=106d1ce1c2714639ee0486707b800849cef615a4#106d1ce1c2714639ee0486707b800849cef615a4"
 dependencies = [
  "arboard",
  "bitflags 2.13.2",

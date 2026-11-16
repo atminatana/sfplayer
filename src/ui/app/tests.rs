@@ -60,16 +60,14 @@ fn unbound_keys_do_nothing_and_need_no_redraw() {
 #[test]
 fn function_keys_request_dialogs_and_rescan() {
 	let mut app = App::new("en");
-	assert_eq!(
-		app.handle_key(plain(KeyCode::F(2))),
-		Some(Request::OpenDialog(DialogKind::MidiInput))
-	);
-	assert_eq!(
-		app.handle_key(plain(KeyCode::F(3))),
-		Some(Request::OpenDialog(DialogKind::AudioOutput))
-	);
+	// The devices are chosen from dropdowns of the screen: their keys ask the window to open one.
+	assert_eq!(app.handle_key(plain(KeyCode::F(2))), None);
+	assert_eq!(app.dropdown_request.take(), Some(Dropdown::MidiIn));
+	assert_eq!(app.handle_key(plain(KeyCode::F(3))), None);
+	assert_eq!(app.dropdown_request.take(), Some(Dropdown::AudioOut));
+	assert!(app.modal.is_none() && app.take_dirty());
 	assert_eq!(app.handle_key(plain(KeyCode::F(4))), Some(Request::OpenSf2Dialog));
-	assert_eq!(app.handle_key(plain(KeyCode::F(5))), Some(Request::OpenDialog(DialogKind::Preset)));
+	assert_eq!(app.handle_key(plain(KeyCode::F(5))), Some(Request::OpenPresetDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(6))), Some(Request::OpenEffectsDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(7))), Some(Request::OpenRecordDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(8))), Some(Request::Rescan));
@@ -402,11 +400,9 @@ fn commands_without_a_default_key_run_from_a_configured_one() {
 #[test]
 fn every_available_button_gives_the_command_of_its_hotkey() {
 	let cases = [
-		(ButtonId::MidiIn, Request::OpenDialog(DialogKind::MidiInput)),
 		(ButtonId::Sf2File, Request::OpenSf2Dialog),
-		(ButtonId::Preset, Request::OpenDialog(DialogKind::Preset)),
+		(ButtonId::Preset, Request::OpenPresetDialog),
 		(ButtonId::Effects, Request::OpenEffectsDialog),
-		(ButtonId::AudioOut, Request::OpenDialog(DialogKind::AudioOutput)),
 		(ButtonId::MasterDown, Request::Mixer(MixerAction::MasterDownFast)),
 		(ButtonId::MasterUp, Request::Mixer(MixerAction::MasterUpFast)),
 		(ButtonId::Folder, Request::OpenRecordDialog),

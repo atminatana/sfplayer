@@ -1,6 +1,6 @@
 //! What `fulfil` does with each request, on a session that has opened no device. The requests that
-//! enumerate or open real devices (the MIDI and audio selectors, a rescan, a switch of the audio
-//! output) cannot be reached from a test.
+//! enumerate or open real devices (a rescan, a switch of the audio output) cannot be reached from a
+//! test.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -11,6 +11,7 @@ use crate::midi::MidiEvent;
 use crate::session::{EffectsSettings, MixerAction};
 use crate::synth::{AdsrPreset, Wave};
 use crate::ui::app::KEYBOARD_CHANNEL;
+use crate::ui::dialog::DialogKind;
 
 static CONFIG_COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -61,11 +62,11 @@ fn the_preset_dialog_opens_only_when_a_bank_is_loaded() {
 	let file = ConfigFile::new();
 	let mut session = session_with(Config::default(), &file);
 	let mut app = App::new("en");
-	fulfil(Request::OpenDialog(DialogKind::Preset), &mut app, &mut session);
+	fulfil(Request::OpenPresetDialog, &mut app, &mut session);
 	assert_eq!(app.modal, None);
 
 	session.load_bank(&sine_bank()).expect("the test bank loads");
-	fulfil(Request::OpenDialog(DialogKind::Preset), &mut app, &mut session);
+	fulfil(Request::OpenPresetDialog, &mut app, &mut session);
 	let Some(Modal::Select(dialog)) = &app.modal else {
 		panic!("the preset dialog is open");
 	};

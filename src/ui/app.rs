@@ -6,7 +6,7 @@
 use std::time::{Duration, Instant};
 
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use super::dialog::{Choice, Dialog, DialogKind};
+use super::dialog::{Choice, Dialog};
 use super::effects_dialog::{EffectsDialog, EffectsOutcome};
 use super::keys::{Action, Bindings};
 use super::meter::ClipHold;
@@ -28,7 +28,8 @@ pub const KEYBOARD_CHANNEL: u8 = 0;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
 	Mixer(MixerAction),
-	OpenDialog(DialogKind),
+	/// F5 and the Preset button: the list of presets of the loaded bank.
+	OpenPresetDialog,
 	OpenSf2Dialog,
 	/// The MIDI file (spec v1.2, F-21): the dialog that chooses one, and the transport.
 	OpenMidiFileDialog,
@@ -90,7 +91,6 @@ pub enum Question {
 /// left to right.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ButtonId {
-	MidiIn,
 	MidiFile,
 	FileStart,
 	FilePause,
@@ -115,7 +115,6 @@ pub enum ButtonId {
 	Sf2File,
 	Preset,
 	Effects,
-	AudioOut,
 	MasterDown,
 	MasterUp,
 	Folder,
@@ -128,8 +127,7 @@ pub enum ButtonId {
 }
 
 impl ButtonId {
-	pub const ALL: [Self; 35] = [
-		Self::MidiIn,
+	pub const ALL: [Self; 33] = [
 		Self::MidiFile,
 		Self::FileStart,
 		Self::FilePause,
@@ -154,7 +152,6 @@ impl ButtonId {
 		Self::Sf2File,
 		Self::Preset,
 		Self::Effects,
-		Self::AudioOut,
 		Self::MasterDown,
 		Self::MasterUp,
 		Self::Folder,
@@ -167,6 +164,17 @@ impl ButtonId {
 	];
 }
 
+/// The device dropdowns of the main screen (spec v1.3, F-26.1), in the order of the screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dropdown {
+	MidiIn,
+	AudioOut,
+}
+
+impl Dropdown {
+	pub const ALL: [Self; 2] = [Self::MidiIn, Self::AudioOut];
+}
+
 pub struct App {
 	pub locale: &'static str,
 	pub should_quit: bool,
@@ -176,6 +184,9 @@ pub struct App {
 	pub confirm: Option<Question>,
 	/// A path the user is to be asked for; the window takes it and shows the input dialog.
 	pub path_request: Option<PathRequest>,
+	/// A dropdown of the main screen asked for by its key; the window takes it and drops the list
+	/// down.
+	pub dropdown_request: Option<Dropdown>,
 	pub keyboard: TextKeyboard,
 	pub bindings: Bindings,
 	/// Elapsed time of the running recording, refreshed every frame; `None` when not recording.
@@ -198,6 +209,7 @@ impl App {
 			modal: None,
 			confirm: None,
 			path_request: None,
+			dropdown_request: None,
 			keyboard,
 			bindings: Bindings::default(),
 			recording: None,
@@ -275,11 +287,9 @@ impl App {
 	/// A button of the main screen pressed with the mouse or with Enter: the same commands the hotkeys give.
 	pub fn press_button(&mut self, button: ButtonId) -> Option<Request> {
 		match button {
-			ButtonId::MidiIn => self.perform(Action::MidiDialog),
 			ButtonId::Sf2File => self.perform(Action::Sf2Dialog),
 			ButtonId::Preset => self.perform(Action::PresetDialog),
 			ButtonId::Effects => self.perform(Action::EffectsDialog),
-			ButtonId::AudioOut => self.perform(Action::AudioDialog),
 			// The master buttons step by 5 % (spec v1.2, F-10).
 			ButtonId::MasterDown => self.perform(Action::MasterDownFast),
 			ButtonId::MasterUp => self.perform(Action::MasterUpFast),
@@ -348,10 +358,18 @@ impl App {
 				self.modal = Some(Modal::Help(0));
 				None
 			}
-			Action::MidiDialog => Some(Request::OpenDialog(DialogKind::MidiInput)),
-			Action::AudioDialog => Some(Request::OpenDialog(DialogKind::AudioOutput)),
+			// The devices are chosen from dropdowns of the screen: their keys ask the window to drop
+			// the list down.
+			Action::MidiDialog => {
+				self.dropdown_request = Some(Dropdown::MidiIn);
+				None
+			}
+			Action::AudioDialog => {
+				self.dropdown_request = Some(Dropdown::AudioOut);
+				None
+			}
 			Action::Sf2Dialog => Some(Request::OpenSf2Dialog),
-			Action::PresetDialog => Some(Request::OpenDialog(DialogKind::Preset)),
+			Action::PresetDialog => Some(Request::OpenPresetDialog),
 			Action::EffectsDialog => Some(Request::OpenEffectsDialog),
 			Action::RecordDialog => Some(Request::OpenRecordDialog),
 			Action::Rescan => Some(Request::Rescan),

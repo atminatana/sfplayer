@@ -1,6 +1,7 @@
 //! The main screen of the window (spec v1.2 §3): the signal path top to bottom — MIDI sources, the
 //! processor, the output, the audio file — and the status line pinned to the bottom row. Buttons are text
-//! in square brackets: the screen says where each one goes, `Buttons` draws them and takes their input.
+//! in square brackets and the two devices are chosen from dropdowns: the screen says where each control
+//! goes, `Controls` draws them and takes their input.
 //! An error is shown red in the line of the setting it belongs to.
 //!
 //! The layout, the helpers shared by the sections and the status line are here; the sections are drawn
@@ -21,7 +22,7 @@ use self::handler::handler;
 use self::output::{audio_file, output};
 use self::sources::sources;
 use super::app::{App, ButtonId};
-use super::buttons::{Buttons, Look};
+use super::controls::{Controls, Look};
 use super::paint::Pen;
 pub use super::paint::{BACKGROUND, DISABLED, ERROR, GOOD, HINT, LABEL, MESSAGE, METER_TRACK, RULE, TEXT, VALUE};
 use super::piano;
@@ -37,6 +38,8 @@ pub const MIN_ROWS: u16 = 31;
 const LABEL_X: u16 = 1;
 const SUB_LABEL_X: u16 = 3;
 const VALUE_X: u16 = 19;
+/// Cells of the field of a device dropdown: the name of the device and the marker at its end.
+const DEVICE_CELLS: u16 = 40;
 /// Column of the octave / velocity read-out in the keyboard row.
 const KEYBOARD_STATE_X: u16 = 69;
 /// The position bar of the MIDI file: its cells and the mark of the part not played yet.
@@ -71,30 +74,30 @@ const RECORD_DOT: &str = "●";
 /// Half of the blink period of the recording dot (spec v1.1 §4.3: period 1 s).
 const RECORD_BLINK_HALF_PERIOD_MS: u128 = 500;
 
-pub fn render(buf: &mut ScreenBuffer, app: &App, view: &View, buttons: &mut Buttons) {
+pub fn render(buf: &mut ScreenBuffer, app: &App, view: &View, controls: &mut Controls) {
 	let locale = app.locale;
 	buf.clear_all();
-	buttons.begin_frame();
+	controls.begin_frame();
 	let area = buf.area();
 	if area.width < MIN_COLS || area.height < MIN_ROWS {
 		let hint = t!("notice.window_too_small", locale = locale, width = MIN_COLS, height = MIN_ROWS);
 		Pen::at(buf, 0, 0).text(&hint, ERROR);
 		// No button is placed, so none reacts while the screen is not shown.
-		buttons.finish_frame(buf);
+		controls.finish_frame(buf);
 		return;
 	}
 
 	title(buf, locale);
-	sources(buf, SOURCES_Y, app, locale, view, buttons);
+	sources(buf, SOURCES_Y, app, locale, view, controls);
 	let extra = match view.engine {
 		EngineKind::Sf2 => 0,
 		EngineKind::Builtin => SYNTH_EXTRA_ROWS,
 	};
-	handler(buf, HANDLER_Y, locale, view, buttons);
-	output(buf, OUTPUT_Y + extra, app, locale, view, buttons);
-	audio_file(buf, AUDIO_FILE_Y + extra, app, locale, view, buttons);
+	handler(buf, HANDLER_Y, locale, view, controls);
+	output(buf, OUTPUT_Y + extra, app, locale, view, controls);
+	audio_file(buf, AUDIO_FILE_Y + extra, app, locale, view, controls);
 	status(buf, area.height - 1, locale, view);
-	buttons.finish_frame(buf);
+	controls.finish_frame(buf);
 }
 
 /// The top-left cell of the piano on a grid of `area`: centred, whatever the width (spec v1.2 §3).
@@ -105,8 +108,8 @@ pub fn piano_origin(area: Rect) -> Option<(u16, u16)> {
 }
 
 /// Gives a button its place at the pen and moves the pen past it; the button is drawn when the frame is finished.
-fn put(pen: &mut Pen<'_>, buttons: &mut Buttons, id: ButtonId, label: &str, look: Look) {
-	let width = buttons.place(id, pen.x, pen.y, label, look);
+fn put(pen: &mut Pen<'_>, controls: &mut Controls, id: ButtonId, label: &str, look: Look) {
+	let width = controls.place(id, pen.x, pen.y, label, look);
 	pen.gap(width);
 }
 

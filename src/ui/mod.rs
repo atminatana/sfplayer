@@ -1,9 +1,10 @@
 //! The window UI on gterm (ADR 0012): state, drawing, key handling. Hotkey policy: ADR 0004; localization: ADR 0008.
 
 pub mod app;
-pub mod buttons;
 pub mod chord;
 pub mod confirm_dialog;
+pub mod controls;
+pub mod devices;
 pub mod dialog;
 pub mod dialog_screen;
 pub mod effects_dialog;

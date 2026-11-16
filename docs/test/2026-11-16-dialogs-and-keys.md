@@ -111,3 +111,27 @@
 Изменён `every_available_button_gives_the_command_of_its_hotkey`: кнопка `[Отмена]` убрана из списка кнопок, сразу дающих запрос.
 
 Прогон: 393 passed, 0 failed (`target/step13/gates-5.2.log`). Вручную, по снимкам живого окна, мышью: вопрос по клику, отказ, удаление, сообщение, исчезновение файла.
+
+## Шаг 6.1 (2026-11-16) — выпадающие списки устройств
+
+`src/ui/controls/tests.rs` — 23 теста: 10 прежних тестов кнопок, переведённых на новый тип (ожидания прежние; первой кнопкой экрана стала `[MIDI-файл]`), и 13 новых или дополненных:
+
+| Тест | Что проверяет |
+| --- | --- |
+| `a_dropdown_field_shows_the_device_in_use_or_says_in_red_that_there_is_none` | текст поля, значок в последней ячейке, красный цвет без устройства |
+| `the_ring_passes_through_the_dropdowns_in_the_order_of_the_screen` | место списков в кольце Tab, подчёркивание поля под фокусом |
+| `a_click_on_the_field_or_enter_under_the_focus_drops_the_list_down` | раскрытие кликом и Enter, сообщение окну, значок, место и размер слоя, выделение действующего устройства |
+| `the_key_of_a_dropdown_opens_its_list_and_takes_the_focus` | раскрытие по клавише списка; открыт только один список |
+| `the_arrows_walk_an_open_list_and_enter_chooses_another_device` | ↓ ↑ Home End и выбор по Enter |
+| `choosing_the_device_in_use_closes_the_list_and_asks_for_nothing` | выбор действующего устройства ничего не просит |
+| `esc_and_a_click_outside_close_the_list_and_the_next_click_is_an_ordinary_one` | закрытие двумя способами; после закрытия клик нажимает кнопку, а не раскрывает список |
+| `a_click_on_a_row_of_the_list_chooses_it` | выбор строки кликом |
+| `the_wheel_walks_an_open_list` | колесо двигает выделение |
+| `while_a_list_is_open_the_screen_under_it_gets_nothing` | буквы, пробел, F5 и ← не доходят до экрана; клик по кнопке под списком закрывает список и ничего не нажимает |
+| `a_dropdown_that_left_the_screen_closes_its_list` | список закрывается, если поле ушло с экрана |
+| `a_device_that_is_not_in_the_list_is_still_named_by_the_field` | поле называет устройство, которого ещё нет в списке |
+| `before_the_first_frame_and_without_placed_controls_nothing_reacts` (дополнен) | список, которого нет на экране, не раскрывается |
+
+`src/ui/devices.rs` — 3 теста: строки и запросы для MIDI-портов и аудиоустройств, пустой список. `src/ui/main_screen/tests.rs`: снимки двух строк на русском и английском, обход кольца мимо списков, фокус первого кадра на поле MIDI-входа. `src/ui/app/tests.rs`: F2 и F3 просят раскрыть список. `src/ui/fulfil/tests.rs`: запрос окна пресета под новым именем.
+
+Прогон: 408 passed, 0 failed (`target/step13/gates-6.1.log`). Вручную, по снимкам: вид полей, раскрытие по F3 и кликом, закрытие по Esc, клик после закрытия. Не проверено вживую: выбор другого устройства, F2 при наличии MIDI-портов, колесо.

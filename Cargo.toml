@@ -15,8 +15,8 @@ flacenc = "0.5"
 # Window with a cell grid and immediate-mode widgets (spec v1.2, ADR 0012). Both crates must
 # point at the same revision; it carries the application tick, the Meter widget, the double click and the Slider control
 # (gterm ADR-0033 to ADR-0036).
-gterm = { git = "https://github.com/atminatana/gterm", rev = "c3eb60bfaf11138b783e663f94f5aaab530b3f94" }
-gterm-widgets = { git = "https://github.com/atminatana/gterm", rev = "c3eb60bfaf11138b783e663f94f5aaab530b3f94" }
+gterm = { git = "https://github.com/atminatana/gterm", rev = "106d1ce1c2714639ee0486707b800849cef615a4" }
+gterm-widgets = { git = "https://github.com/atminatana/gterm", rev = "106d1ce1c2714639ee0486707b800849cef615a4" }
 midir = "0.11"
 ringbuf = "0.5"
 rust-i18n = "4"

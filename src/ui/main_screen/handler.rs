@@ -11,19 +11,19 @@ use super::{
 use crate::config::EngineKind;
 use crate::synth::{AdsrPreset, Wave};
 use crate::ui::app::ButtonId;
-use crate::ui::buttons::{Buttons, Look};
+use crate::ui::controls::{Controls, Look};
 use crate::ui::paint::Pen;
 use crate::ui::view::{NoticeTarget, View};
 
 /// "PROCESSOR  [Synth] [Sound Font] ──" and, under it, the rows of the chosen processor; both end
 /// with the effects row, which the two share.
-pub(super) fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &mut Buttons) {
+pub(super) fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, controls: &mut Controls) {
 	let after_title = section(buf, y, &t!("main.section_handler", locale = locale));
 	let chosen = |kind: EngineKind| if view.engine == kind { Look::Active } else { Look::Normal };
 	let mut pen = Pen::at(buf, after_title + 1, y);
 	put(
 		&mut pen,
-		buttons,
+		controls,
 		ButtonId::EngineSynth,
 		&t!("main.engine_synth", locale = locale),
 		chosen(EngineKind::Builtin),
@@ -31,7 +31,7 @@ pub(super) fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View,
 	pen.gap(1);
 	put(
 		&mut pen,
-		buttons,
+		controls,
 		ButtonId::EngineSf2,
 		&t!("main.engine_sf2", locale = locale),
 		chosen(EngineKind::Sf2),
@@ -42,11 +42,11 @@ pub(super) fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View,
 
 	let effects_y = match view.engine {
 		EngineKind::Sf2 => {
-			sound_font(buf, y + 1, locale, view, buttons);
+			sound_font(buf, y + 1, locale, view, controls);
 			y + 3
 		}
 		EngineKind::Builtin => {
-			synth(buf, y + 1, locale, view, buttons);
+			synth(buf, y + 1, locale, view, controls);
 			y + 3 + SYNTH_EXTRA_ROWS
 		}
 	};
@@ -62,12 +62,12 @@ pub(super) fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View,
 		level(view.chorus)
 	);
 	let mut pen = Pen::at(buf, VALUE_X, effects_y);
-	put(&mut pen, buttons, ButtonId::Effects, &effects, Look::Normal);
+	put(&mut pen, controls, ButtonId::Effects, &effects, Look::Normal);
 	pen.gap(2).text(&sends, TEXT);
 }
 
 /// The four rows of the built-in synthesizer: the wave, the ready-made envelopes, the envelope's values.
-fn synth(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &mut Buttons) {
+fn synth(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, controls: &mut Controls) {
 	let timbre = &view.builtin;
 	label(buf, y, &t!("main.wave", locale = locale));
 	let mut pen = Pen::at(buf, VALUE_X, y);
@@ -77,7 +77,7 @@ fn synth(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &mu
 		(ButtonId::WaveTriangle, Wave::Triangle, "main.wave_triangle"),
 	] {
 		let look = if timbre.wave == wave { Look::Active } else { Look::Normal };
-		put(&mut pen, buttons, id, &t!(key, locale = locale), look);
+		put(&mut pen, controls, id, &t!(key, locale = locale), look);
 		pen.gap(1);
 	}
 
@@ -91,7 +91,7 @@ fn synth(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &mu
 		(ButtonId::AdsrFlute, AdsrPreset::Flute, "main.adsr_flute"),
 	] {
 		let look = if timbre.adsr_preset == preset { Look::Active } else { Look::Normal };
-		put(&mut pen, buttons, id, &t!(key, locale = locale), look);
+		put(&mut pen, controls, id, &t!(key, locale = locale), look);
 		pen.gap(1);
 	}
 	// Values set by hand belong to no preset (spec v1.2, F-22).
@@ -138,18 +138,18 @@ fn synth(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &mu
 	] {
 		let mut pen = Pen::at(buf, x, row);
 		pen.text(name, LABEL).gap(1);
-		put(&mut pen, buttons, down, MINUS, Look::Normal);
+		put(&mut pen, controls, down, MINUS, Look::Normal);
 		pen.gap(1).text(&value, VALUE).gap(1);
-		put(&mut pen, buttons, up, PLUS, Look::Normal);
+		put(&mut pen, controls, up, PLUS, Look::Normal);
 	}
 }
 
 /// The two rows of a SoundFont: the bank file and the preset.
-fn sound_font(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons: &mut Buttons) {
+fn sound_font(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, controls: &mut Controls) {
 	let sf2_file = t!("main.sf2_file", locale = locale);
 	label(buf, y, &sf2_file);
 	let mut pen = Pen::at(buf, VALUE_X, y);
-	put(&mut pen, buttons, ButtonId::Sf2File, &sf2_file, Look::Normal);
+	put(&mut pen, controls, ButtonId::Sf2File, &sf2_file, Look::Normal);
 	pen.gap(2);
 	let sf2_error = view.line_error(NoticeTarget::Sf2);
 	match (&view.bank, sf2_error) {
@@ -174,11 +174,11 @@ fn sound_font(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, buttons
 	let mut pen = Pen::at(buf, VALUE_X, y + 1);
 	match &view.bank {
 		Some(bank) => {
-			put(&mut pen, buttons, ButtonId::Preset, &preset, Look::Normal);
+			put(&mut pen, controls, ButtonId::Preset, &preset, Look::Normal);
 			pen.gap(2).text(&bank.preset_label, TEXT);
 		}
 		None => {
-			put(&mut pen, buttons, ButtonId::Preset, &preset, Look::Disabled);
+			put(&mut pen, controls, ButtonId::Preset, &preset, Look::Disabled);
 			pen.gap(2).text(NOTHING, DISABLED);
 		}
 	}
