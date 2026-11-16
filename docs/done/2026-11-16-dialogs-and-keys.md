@@ -92,3 +92,21 @@
 **EVIDENCE** — `cargo fmt --check` ok; `cargo clippy --all-targets -- -D warnings` чисто; `cargo test`: 378 passed, 0 failed (`target/step13/gates-2.2b.log`). LOC (`wc -l`): `ui/app.rs` 457, `ui/fulfil.rs` 122, `ui/window.rs` 416.
 
 **⚠ WARNINGS** — нет новых; ограничения страховки — в шаге 2.2а.
+
+## Шаг 2.3 — деление `main_screen.rs` (2026-11-16)
+
+- `src/ui/main_screen/sources.rs` (новый, 155 строк): `sources`, `midi_file` и их помощники `notes`, `file_name`.
+- `src/ui/main_screen/handler.rs` (новый, 185 строк): `handler`, `synth`, `sound_font`.
+- `src/ui/main_screen/output.rs` (новый, 220 строк): `output`, `audio_file` и их помощники `level_meter`, `fitted_end`, `record_dot`.
+- `src/ui/main_screen.rs`: 722 → 220 строк; остались константы раскладки, `render`, `piano_origin`, общие помощники (`put`, `rule`, `title`, `section`, `label`, `sub_label`, `fitted`, `buf_width`) и `status`.
+- Перенос сделан скриптом `target/step13/split_main_screen.py`: функции вырезаны по границам вместе с комментариями.
+
+**COMPLETENESS** — план, шаг 2.3 / ТЗ §6: три подмодуля выделены. Страховка — существующие снимки экрана (`main_screen/tests.rs`), новых тестов перенос не требует. Этап 2 выполнен: самый большой нетестовый файл `src/` — `ui/app.rs`, 457 строк.
+
+**CORRECTNESS** — сверка строк (`target/step13/compare_lines.py`): в коде различаются только импорты, объявления `mod`, заголовки файлов и видимость шести функций (`pub(super)`: четыре раздела вызывает `render`, `fitted_end` и `record_dot` — тесты экрана); в файле тестов — только строки импорта. Утверждения тестов и снимки не менялись.
+
+**EVIDENCE** — `cargo fmt --check` ok; `cargo clippy --all-targets -- -D warnings` чисто; `cargo test`: 378 passed, 0 failed (`target/step13/gates-2.3.log`). LOC (`wc -l`): `main_screen.rs` 220, `sources.rs` 155, `handler.rs` 185, `output.rs` 220.
+
+**⚠ WARNINGS**
+
+- **Строка сообщений рисуется разделом «Аудиофайл»** (`output.rs`), а не строкой состояния: так было в исходном файле, перенос этого не меняет.

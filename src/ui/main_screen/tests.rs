@@ -7,15 +7,18 @@ use gterm_widgets::{MouseKind, MouseMsg};
 use winit::event::MouseButton;
 use winit::keyboard::ModifiersState;
 
+use super::output::{fitted_end, record_dot};
 use super::*;
 use crate::audio::{Levels, Mixer};
-use crate::config::{AdsrField, BuiltinConfig};
+use crate::config::{AdsrField, BuiltinConfig, RecordFormat};
+use crate::midi::MidiStatus;
 use crate::midi::player::Transport;
 use crate::session::MidiFile;
 use crate::session::Notice;
+use crate::synth::AdsrPreset;
 use crate::ui::buttons::Touch;
 use crate::ui::chord::{KeyCode, KeyEvent, KeyModifiers};
-use crate::ui::view::{AudioView, BankView};
+use crate::ui::view::{AudioView, BankView, FileView, Size, TakeView};
 
 fn view() -> View {
 	View {
