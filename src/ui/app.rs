@@ -41,7 +41,7 @@ pub enum Request {
 	Apply(Choice),
 	/// A format button of the main screen.
 	SetRecordFormat(RecordFormat),
-	/// The processor buttons and F12 (spec v1.2, F-22).
+	/// The processor buttons and the `engine_toggle` command (spec v1.2, F-22).
 	SetEngine(EngineKind),
 	ToggleEngine,
 	/// The timbre of the built-in synthesizer: the wave, a ready-made envelope, one value a step
@@ -51,7 +51,7 @@ pub enum Request {
 	AdjustAdsr(AdsrField, i8),
 	Rescan,
 	Panic,
-	/// Home / End (spec v1.1 §4.3).
+	/// The Start and Stop buttons of a take (spec v1.1 §4.3).
 	StartRecord,
 	StopRecord,
 	/// The Cancel button: the take is thrown away (spec v1.2, F-23).
@@ -74,7 +74,7 @@ pub enum Modal {
 	Effects(EffectsDialog),
 	/// F1: scroll offset in rows.
 	Help(usize),
-	/// F10 / Ctrl+C while recording (spec §6): Enter stops and quits, Esc stays.
+	/// The quit command while recording (spec §6): Enter stops and quits, Esc stays.
 	ConfirmQuit,
 }
 

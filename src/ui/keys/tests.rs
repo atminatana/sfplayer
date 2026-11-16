@@ -11,7 +11,7 @@ fn action_for(key: &KeyEvent) -> Option<Action> {
 }
 
 #[test]
-fn function_keys_and_ctrl_c_map_to_actions() {
+fn function_keys_map_to_actions() {
 	assert_eq!(action_for(&press(KeyCode::F(1), KeyModifiers::NONE)), Some(Action::Help));
 	assert_eq!(action_for(&press(KeyCode::F(10), KeyModifiers::NONE)), Some(Action::Quit));
 	assert_eq!(action_for(&press(KeyCode::F(2), KeyModifiers::NONE)), Some(Action::MidiDialog));
@@ -20,18 +20,8 @@ fn function_keys_and_ctrl_c_map_to_actions() {
 	assert_eq!(action_for(&press(KeyCode::F(5), KeyModifiers::NONE)), Some(Action::PresetDialog));
 	assert_eq!(action_for(&press(KeyCode::F(6), KeyModifiers::NONE)), Some(Action::EffectsDialog));
 	assert_eq!(action_for(&press(KeyCode::F(7), KeyModifiers::NONE)), Some(Action::RecordDialog));
-	assert_eq!(action_for(&press(KeyCode::Home, KeyModifiers::NONE)), Some(Action::RecordStart));
-	assert_eq!(action_for(&press(KeyCode::End, KeyModifiers::NONE)), Some(Action::RecordStop));
 	assert_eq!(action_for(&press(KeyCode::F(8), KeyModifiers::NONE)), Some(Action::Rescan));
 	assert_eq!(action_for(&press(KeyCode::F(9), KeyModifiers::NONE)), Some(Action::Panic));
-	assert_eq!(
-		action_for(&press(KeyCode::Char(' '), KeyModifiers::NONE)),
-		Some(Action::FilePlayPause),
-		"Space plays and pauses the MIDI file; panic is F9 alone (spec v1.2)"
-	);
-	assert_eq!(action_for(&press(KeyCode::Backspace, KeyModifiers::NONE)), Some(Action::FileStop));
-	assert_eq!(action_for(&press(KeyCode::F(11), KeyModifiers::NONE)), Some(Action::MidiFileDialog));
-	assert_eq!(action_for(&press(KeyCode::F(12), KeyModifiers::NONE)), Some(Action::EngineToggle));
 	assert_eq!(action_for(&press(KeyCode::Up, KeyModifiers::CONTROL)), Some(Action::OctaveUp));
 	assert_eq!(action_for(&press(KeyCode::Left, KeyModifiers::CONTROL)), Some(Action::VelocityDown));
 	assert_eq!(action_for(&press(KeyCode::Esc, KeyModifiers::NONE)), Some(Action::NotesOff));
@@ -51,7 +41,55 @@ fn function_keys_and_ctrl_c_map_to_actions() {
 		action_for(&press(KeyCode::Char('c'), KeyModifiers::ALT)),
 		Some(Action::ToggleChorus)
 	);
-	assert_eq!(action_for(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
+}
+
+/// Spec v1.3, F-28: the keys that clashed with old configs or were unusual are bound to nothing.
+#[test]
+fn the_keys_removed_in_v1_3_are_free_by_default() {
+	for key in [
+		press(KeyCode::F(11), KeyModifiers::NONE),
+		press(KeyCode::F(12), KeyModifiers::NONE),
+		press(KeyCode::Char(' '), KeyModifiers::NONE),
+		press(KeyCode::Backspace, KeyModifiers::NONE),
+		press(KeyCode::Home, KeyModifiers::NONE),
+		press(KeyCode::End, KeyModifiers::NONE),
+		press(KeyCode::Char('c'), KeyModifiers::CONTROL),
+	] {
+		assert_eq!(action_for(&key), None, "{key:?}");
+	}
+}
+
+/// Their commands keep their names: the config can give each one a key, the old one included.
+#[test]
+fn a_command_without_a_default_key_takes_one_from_the_config() {
+	for (name, chord, code, action) in [
+		("midi_file_dialog", "F11", KeyCode::F(11), Action::MidiFileDialog),
+		("engine_toggle", "F12", KeyCode::F(12), Action::EngineToggle),
+		("file_play_pause", "Space", KeyCode::Char(' '), Action::FilePlayPause),
+		("file_stop", "Backspace", KeyCode::Backspace, Action::FileStop),
+		("record_start", "Home", KeyCode::Home, Action::RecordStart),
+		("record_stop", "End", KeyCode::End, Action::RecordStop),
+	] {
+		let keys = BTreeMap::from([(name.to_owned(), chord.to_owned())]);
+		let bindings = Bindings::from_config(&keys, &KeyboardConfig::default()).unwrap_or_else(|error| panic!("{name}: {error}"));
+		assert_eq!(bindings.action_for(&press(code, KeyModifiers::NONE)), Some(action), "{name}");
+	}
+	// Quit keeps F10; Ctrl+C can be put next to it.
+	let keys = BTreeMap::from([("quit".to_owned(), "F10, Ctrl+C".to_owned())]);
+	let bindings = Bindings::from_config(&keys, &KeyboardConfig::default()).expect("valid");
+	assert_eq!(
+		bindings.action_for(&press(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+		Some(Action::Quit)
+	);
+	assert_eq!(bindings.action_for(&press(KeyCode::F(10), KeyModifiers::NONE)), Some(Action::Quit));
+}
+
+#[test]
+fn an_empty_keys_section_gives_the_defaults() {
+	assert_eq!(
+		Bindings::from_config(&BTreeMap::new(), &KeyboardConfig::default()),
+		Ok(Bindings::default())
+	);
 }
 
 #[test]
@@ -136,7 +174,9 @@ fn help_lists_every_bound_action_with_its_chords() {
 		);
 	}
 	let quit = rows.iter().find(|(keys, _)| keys.contains("F10")).expect("quit row");
-	assert_eq!(quit.0, "F10 / Ctrl+C");
+	assert_eq!(quit.0, "F10");
+	let volume_up = rows.iter().find(|(keys, _)| keys.contains('=')).expect("master volume row");
+	assert_eq!(volume_up.0, "+ / =", "the chords of one command share a row");
 	assert!(
 		!quit.1.is_empty() && !quit.1.starts_with("help."),
 		"description must be translated: {}",

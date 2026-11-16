@@ -61,3 +61,18 @@
 ## Шаг 2.3 (2026-11-16) — деление `main_screen.rs`
 
 Тесты не добавлялись; в `src/ui/main_screen/tests.rs` изменились только строки импорта (имена, раньше приходившие через импорты родительского модуля, и два помощника из `output.rs`). Прогон: 378 passed, 0 failed (`target/step13/gates-2.3.log`).
+
+## Шаг 3.1 (2026-11-16) — раскладка по умолчанию
+
+Новые тесты:
+
+| Тест | Файл | Что проверяет |
+| --- | --- | --- |
+| `the_keys_removed_in_v1_3_are_free_by_default` | `src/ui/keys/tests.rs` | семь убранных клавиш по умолчанию не привязаны ни к чему |
+| `a_command_without_a_default_key_takes_one_from_the_config` | там же | шесть команд без клавиши получают её из `[keys]`; выход можно назначить на F10 и Ctrl+C |
+| `an_empty_keys_section_gives_the_defaults` | там же | пустой `[keys]` даёт таблицу умолчаний |
+| `commands_without_a_default_key_run_from_a_configured_one` | `src/ui/app/tests.rs` | назначенная клавиша даёт запрос своей команды |
+
+Изменённые тесты (ожидания приведены к F-28): `function_keys_map_to_actions`, `help_lists_every_bound_action_with_its_chords` (`keys/tests.rs`); `the_quit_key_sets_the_flag_even_inside_a_dialog`, `f9_requests_panic_and_the_midi_file_has_no_keys_of_its_own`, `quit_asks_for_confirmation_while_recording` и набор команд F-клавиш (`app/tests.rs`); `hotkeys_work_in_a_russian_layout`, `in_a_text_field_only_non_character_quit_keys_quit` (`keymap/tests.rs`); `the_help_lists_the_bindings_and_scrolls` (`dialog_screen/tests.rs`).
+
+Прогон: 382 passed, 0 failed (`target/step13/gates-3.1.log`). `readme_keys` подтверждает, что таблицы обоих README совпадают с раскладкой.

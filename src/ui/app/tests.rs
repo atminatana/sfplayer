@@ -35,13 +35,13 @@ fn midi_dialog() -> Dialog {
 }
 
 #[test]
-fn quit_keys_set_the_flag_even_inside_a_dialog() {
+fn the_quit_key_sets_the_flag_even_inside_a_dialog() {
 	let mut app = App::new("en");
 	app.handle_key(plain(KeyCode::F(10)));
 	assert!(app.should_quit);
 	let mut app = App::new("en");
 	app.open_dialog(midi_dialog());
-	app.handle_key(press(KeyCode::Char('c'), KeyModifiers::CONTROL));
+	app.handle_key(plain(KeyCode::F(10)));
 	assert!(app.should_quit);
 }
 
@@ -73,7 +73,6 @@ fn function_keys_request_dialogs_and_rescan() {
 	assert_eq!(app.handle_key(plain(KeyCode::F(6))), Some(Request::OpenEffectsDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(7))), Some(Request::OpenRecordDialog));
 	assert_eq!(app.handle_key(plain(KeyCode::F(8))), Some(Request::Rescan));
-	assert_eq!(app.handle_key(plain(KeyCode::F(12))), Some(Request::ToggleEngine));
 }
 
 #[test]
@@ -125,14 +124,14 @@ fn master_keys_work_everywhere() {
 }
 
 #[test]
-fn f9_requests_panic_and_the_midi_file_has_its_own_keys() {
+fn f9_requests_panic_and_the_midi_file_has_no_keys_of_its_own() {
 	let mut app = App::new("en");
 	assert_eq!(app.handle_key(plain(KeyCode::F(9))), Some(Request::Panic));
-	// Space no longer silences everything: it plays and pauses the file (spec v1.2, decision ОР-3).
-	assert_eq!(app.handle_key(plain(KeyCode::Char(' '))), Some(Request::FilePlayPause));
-	assert_eq!(app.handle_key(plain(KeyCode::Backspace)), Some(Request::FileStop));
-	assert_eq!(app.handle_key(plain(KeyCode::F(11))), Some(Request::OpenMidiFileDialog));
-	// In a dialog these keys belong to the dialog: nothing is asked of the file.
+	// The file is driven by its buttons: the keys it had in v1.2 are free (spec v1.3, F-28).
+	assert_eq!(app.handle_key(plain(KeyCode::Char(' '))), None);
+	assert_eq!(app.handle_key(plain(KeyCode::Backspace)), None);
+	assert_eq!(app.handle_key(plain(KeyCode::F(11))), None);
+	// In a dialog they belong to the dialog, as any key does.
 	app.open_dialog(midi_dialog());
 	assert_eq!(app.handle_key(plain(KeyCode::Char(' '))), None);
 	assert_eq!(app.handle_key(plain(KeyCode::Backspace)), None);
@@ -285,22 +284,47 @@ fn f6_dialog_applies_changes_live_saves_on_enter_and_rolls_back_on_esc() {
 }
 
 #[test]
-fn home_and_end_drive_recording_and_quit_asks_for_confirmation_while_recording() {
+fn quit_asks_for_confirmation_while_recording() {
 	let mut app = App::new("en");
-	assert_eq!(app.handle_key(plain(KeyCode::Home)), Some(Request::StartRecord));
-	assert_eq!(app.handle_key(plain(KeyCode::End)), Some(Request::StopRecord));
+	// A take is started and stopped by its buttons; Home and End are free (spec v1.3, F-28).
+	assert_eq!(app.handle_key(plain(KeyCode::Home)), None);
+	assert_eq!(app.handle_key(plain(KeyCode::End)), None);
 	app.recording = Some(Duration::from_secs(12));
 	assert_eq!(app.handle_key(plain(KeyCode::F(10))), None);
 	assert_eq!(app.modal, Some(Modal::ConfirmQuit));
 	assert!(!app.should_quit);
 	assert_eq!(app.handle_key(plain(KeyCode::Esc)), None, "Esc keeps recording");
 	assert!(app.modal.is_none() && !app.should_quit);
-	app.handle_key(press(KeyCode::Char('c'), KeyModifiers::CONTROL));
+	app.handle_key(plain(KeyCode::F(10)));
 	assert_eq!(app.handle_key(plain(KeyCode::Enter)), Some(Request::StopRecordingAndQuit));
 	assert!(app.should_quit);
 	let mut idle = App::new("en");
 	idle.handle_key(plain(KeyCode::F(10)));
 	assert!(idle.should_quit, "no confirmation when not recording");
+}
+
+/// Spec v1.3, F-28: a command that lost its default key runs from the key the config gives it.
+#[test]
+fn commands_without_a_default_key_run_from_a_configured_one() {
+	let keys = [
+		("midi_file_dialog", "F11"),
+		("engine_toggle", "F12"),
+		("file_play_pause", "Space"),
+		("file_stop", "Backspace"),
+		("record_start", "Home"),
+		("record_stop", "End"),
+	]
+	.into_iter()
+	.map(|(name, chord)| (name.to_owned(), chord.to_owned()))
+	.collect();
+	let mut app = App::new("en");
+	app.bindings = Bindings::from_config(&keys, &KeyboardConfig::default()).expect("valid");
+	assert_eq!(app.handle_key(plain(KeyCode::F(11))), Some(Request::OpenMidiFileDialog));
+	assert_eq!(app.handle_key(plain(KeyCode::F(12))), Some(Request::ToggleEngine));
+	assert_eq!(app.handle_key(plain(KeyCode::Char(' '))), Some(Request::FilePlayPause));
+	assert_eq!(app.handle_key(plain(KeyCode::Backspace)), Some(Request::FileStop));
+	assert_eq!(app.handle_key(plain(KeyCode::Home)), Some(Request::StartRecord));
+	assert_eq!(app.handle_key(plain(KeyCode::End)), Some(Request::StopRecord));
 }
 
 #[test]

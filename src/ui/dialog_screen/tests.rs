@@ -243,7 +243,7 @@ fn the_help_lists_the_bindings_and_scrolls() {
 	let (first_row, col) = find(&buf, "F1 ");
 	assert!(lines_of(&buf)[first_row].contains("Эта справка"));
 	assert!(buf.cell(col, first_row).flags.contains(CellFlags::BOLD), "the key column is bold");
-	assert!(is_shown(&buf, "F10 / Ctrl+C"));
+	assert!(is_shown(&buf, "+ / ="), "the chords of one command share a row");
 	assert!(is_shown(&buf, "│↑↓ PgUp PgDn — прокрутка · Esc или F1 — закрыть"));
 	assert!(!is_shown(&buf, "Z X C V B N M"), "the last rows are below the fold");
 

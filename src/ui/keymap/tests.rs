@@ -203,7 +203,6 @@ fn text_is_read_as_the_layout_produced_it() {
 fn hotkeys_work_in_a_russian_layout() {
 	let bindings = Bindings::default();
 	let action = |code, logical: &str, held| command(code, &character(logical), held).and_then(|key| bindings.action_for(&key));
-	assert_eq!(action(PhysicalCode::KeyC, "с", ModifiersState::CONTROL), Some(Action::Quit));
 	assert_eq!(action(PhysicalCode::KeyU, "г", ModifiersState::CONTROL), Some(Action::MasterMute));
 	assert_eq!(action(PhysicalCode::KeyR, "к", ModifiersState::ALT), Some(Action::ToggleReverb));
 	assert_eq!(action(PhysicalCode::KeyC, "с", ModifiersState::ALT), Some(Action::ToggleChorus));
@@ -225,8 +224,8 @@ fn hotkeys_work_in_a_russian_layout() {
 	let named = |named, physical| command(physical, &Key::Named(named), NONE).and_then(|key| bindings.action_for(&key));
 	assert_eq!(named(NamedKey::F1, PhysicalCode::F1), Some(Action::Help));
 	assert_eq!(named(NamedKey::F10, PhysicalCode::F10), Some(Action::Quit));
-	assert_eq!(named(NamedKey::Space, PhysicalCode::Space), Some(Action::FilePlayPause));
-	assert_eq!(named(NamedKey::Home, PhysicalCode::Home), Some(Action::RecordStart));
+	assert_eq!(named(NamedKey::F9, PhysicalCode::F9), Some(Action::Panic));
+	assert_eq!(named(NamedKey::Escape, PhysicalCode::Escape), Some(Action::NotesOff));
 }
 
 #[test]
@@ -266,9 +265,11 @@ fn in_a_dialog_plain_characters_are_text_and_chords_stay_commands() {
 
 #[test]
 fn in_a_text_field_only_non_character_quit_keys_quit() {
-	let bindings = Bindings::default();
+	// Quit is on F10; a config may put it on Ctrl+C as well (a default before spec v1.3).
+	let keys = std::collections::BTreeMap::from([("quit".to_owned(), "F10, Ctrl+C".to_owned())]);
+	let bindings = Bindings::from_config(&keys, &KeyboardConfig::default()).expect("valid");
 	assert!(quits_from_a_field(&bindings, &KeyEvent::new(KeyCode::F(10), KeyModifiers::NONE)));
-	// Ctrl+C is the other quit chord, but in a field it copies.
+	// Ctrl+C is a quit chord then, but in a field it copies.
 	assert!(!quits_from_a_field(
 		&bindings,
 		&KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)

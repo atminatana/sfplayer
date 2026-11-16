@@ -1,4 +1,4 @@
-//! Command hotkeys (spec §6 / v1.1 §3, ADR 0004, 0010): one table drives key handling, the F1 help and the README.
+//! Command hotkeys (spec §6 / v1.1 §3 / v1.3 F-28, ADR 0004, 0010): one table drives key handling, the F1 help and the README.
 //! No plain letters here — the two bottom rows belong to the text keyboard (F-16).
 //! Defaults live in `BINDINGS`; `[keys]` and `[keyboard]` in the config override them (ADR 0007).
 
@@ -57,7 +57,9 @@ const fn bind(action: Action, code: KeyCode, modifiers: KeyModifiers) -> Binding
 	Binding { action, code, modifiers }
 }
 
-/// Default bindings in display order (spec §6 table).
+/// Default bindings in display order (spec §6 table as spec v1.3, F-28 cut it). Recording, the MIDI
+/// file and the choice of the processor are driven by the buttons of the screen and have no default
+/// key; their commands keep their `[keys]` names.
 pub const BINDINGS: &[Binding] = &[
 	bind(Action::Help, KeyCode::F(1), KeyModifiers::NONE),
 	bind(Action::MidiDialog, KeyCode::F(2), KeyModifiers::NONE),
@@ -66,16 +68,9 @@ pub const BINDINGS: &[Binding] = &[
 	bind(Action::PresetDialog, KeyCode::F(5), KeyModifiers::NONE),
 	bind(Action::EffectsDialog, KeyCode::F(6), KeyModifiers::NONE),
 	bind(Action::RecordDialog, KeyCode::F(7), KeyModifiers::NONE),
-	bind(Action::RecordStart, KeyCode::Home, KeyModifiers::NONE),
-	bind(Action::RecordStop, KeyCode::End, KeyModifiers::NONE),
 	bind(Action::Rescan, KeyCode::F(8), KeyModifiers::NONE),
 	bind(Action::Panic, KeyCode::F(9), KeyModifiers::NONE),
 	bind(Action::Quit, KeyCode::F(10), KeyModifiers::NONE),
-	bind(Action::MidiFileDialog, KeyCode::F(11), KeyModifiers::NONE),
-	bind(Action::FilePlayPause, KeyCode::Char(' '), KeyModifiers::NONE),
-	bind(Action::FileStop, KeyCode::Backspace, KeyModifiers::NONE),
-	bind(Action::EngineToggle, KeyCode::F(12), KeyModifiers::NONE),
-	bind(Action::Quit, KeyCode::Char('c'), KeyModifiers::CONTROL),
 	bind(Action::OctaveDown, KeyCode::Down, KeyModifiers::CONTROL),
 	bind(Action::OctaveUp, KeyCode::Up, KeyModifiers::CONTROL),
 	bind(Action::VelocityDown, KeyCode::Left, KeyModifiers::CONTROL),

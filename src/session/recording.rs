@@ -7,7 +7,7 @@ use crate::audio::RecordMode;
 use crate::record::{RecordParams, Recorder, file_name};
 
 impl Session {
-	/// Home: starts a recording in the configured format (F-20, F-23); a running take is left alone.
+	/// Starts a recording in the configured format (F-20, F-23); a running take is left alone.
 	/// Whatever goes wrong, the recording rings stay with the session for the next attempt.
 	pub fn start_recording(&mut self) {
 		if self.recorder.is_some() {
@@ -40,7 +40,7 @@ impl Session {
 		}
 	}
 
-	/// End (and quit): stops the recording if one is running; the file name or the error goes to the status line.
+	/// Stops the recording if one is running (the Stop button, and the way out of the program); the file name or the error goes to the status line.
 	pub fn stop_recording(&mut self) {
 		let Some(recorder) = self.recorder.take() else {
 			return;

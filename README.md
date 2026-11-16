@@ -41,7 +41,7 @@ sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
 - Command-line values take precedence over the config file.
 - `--backend auto|gl|gles|soft` chooses how the window is drawn; by default — the `TERM_BACKEND` environment variable, otherwise automatically: OpenGL 3.3, then OpenGL ES 3.0, then software rendering.
 
-Without `--sf2` the program starts silent: a bank is chosen with F4. You can also do without a bank — switch to the built-in synthesizer with F12.
+Without `--sf2` the program starts silent: a bank is chosen with F4. You can also do without a bank — switch to the built-in synthesizer with the `[Synth]` button.
 
 ## Hotkeys
 
@@ -57,15 +57,9 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | F5 | Choose the preset for all channels except 10 |
 | F6 | Effects: reverb / chorus on, off and send levels |
 | F7 | Folder for takes |
-| Home | Start recording |
-| End | Stop recording |
 | F8 | Rescan MIDI ports |
 | F9 | Panic: all notes off + all sound off |
-| F10 / Ctrl+C | Quit |
-| F11 | Open a MIDI file |
-| Space | MIDI file: play / pause |
-| Backspace | MIDI file: stop |
-| F12 | Switch the processor: Synth / Sound Font |
+| F10 | Quit |
 | Ctrl+↓ | Text keyboard octave −1 |
 | Ctrl+↑ | Text keyboard octave +1 |
 | Ctrl+← | Text keyboard velocity −10 |
@@ -86,7 +80,7 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 | S D G H J L ; | Black keys C# D# F# G# A# C# D# (text keyboard) |
 <!-- keys:end -->
 
-While a dialog is open, input goes to the dialog: ↑↓, PgUp/PgDn, Home/End move through lists and fields there, Enter applies, Esc cancels. On the main screen Home and End start and stop recording.
+While a dialog is open, input goes to the dialog: ↑↓, PgUp/PgDn, Home/End move through lists and fields there, Enter applies, Esc cancels.
 
 Labels in square brackets on the main screen are buttons. Press them with the mouse or from the keyboard: Tab and Shift+Tab move the focus from button to button (the button under the focus is underlined), Enter presses it. The `[−]` and `[+]` buttons in the "Master" line change the volume by 5 %. A click outside an open dialog closes it, like Esc.
 
@@ -109,7 +103,7 @@ Notes and hotkeys go by the position of the key, not by its character: the input
 
 ## Processor: Sound Font or Synth
 
-Notes are turned into sound by one of two processors, chosen with the `[Synth]` `[Sound Font]` buttons in the heading of the "Processor" section or with F12. The switch happens on the fly; the notes that were sounding end. The choice is remembered: the next time the program plays with the same processor.
+Notes are turned into sound by one of two processors, chosen with the `[Synth]` `[Sound Font]` buttons in the heading of the "Processor" section. The switch happens on the fly; the notes that were sounding end. The choice is remembered: the next time the program plays with the same processor.
 
 **Sound Font** plays an `.sf2` bank — with all its instruments, the F5 preset and percussion on channel 10.
 
@@ -122,9 +116,9 @@ New values are taken by the next note; the sounding ones finish with the old. Po
 
 ## MIDI file
 
-The third source of notes is a Standard MIDI File (`.mid`, `.midi`, formats 0 and 1). A file is chosen with F11 or the `[MIDI file]` button: the path dialog is the one used for a bank — as you type it offers folders and MIDI files; with an empty field, the recent files. A file that cannot be read or is not a MIDI file is not accepted, and the dialog says why.
+The third source of notes is a Standard MIDI File (`.mid`, `.midi`, formats 0 and 1). A file is chosen with the `[MIDI file]` button: the path dialog is the one used for a bank — as you type it offers folders and MIDI files; with an empty field, the recent files. A file that cannot be read or is not a MIDI file is not accepted, and the dialog says why.
 
-Space or the `[Start]` and `[Pause]` buttons start and pause playback, Backspace or `[Stop]` returns the file to its beginning; at its end the file stops by itself. The "position" line shows a bar, the time and the state. There is no seeking.
+The `[Start]` and `[Pause]` buttons start and pause playback, `[Stop]` returns the file to its beginning; at its end the file stops by itself. The "position" line shows a bar, the time and the state. There is no seeking.
 
 The file plays together with the keyboard and the MIDI input; transposition and omni apply to it as they do to the MIDI input. Program changes in the file switch the presets of their channels. When the file is stopped or has played to its end, the program ends its notes, resets the controllers, puts back the volume and pan of the channels and applies the F5 preset again — the file leaves nothing behind. The chosen file is remembered and chosen again at the next start, but does not play by itself.
 
@@ -200,11 +194,11 @@ vorbis_quality = 0.5       # 0.0–1.0
 recent_dirs = ["D:/Music/sf2"]  # folders chosen before, up to 10; kept by the program
 ```
 
-Command names for `[keys]`: `help`, `quit`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `effects_dialog`, `record_dialog`, `rescan`, `record_start`, `record_stop`, `panic`, `engine_toggle`, `midi_file_dialog`, `file_play_pause`, `file_stop`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`. Chords: `Ctrl`, `Alt`, `Shift`, then `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` or a single character. A bare letter is rejected (letters belong to the notes); two commands on the same key is a startup error that names the key. Tab, Shift+Tab and Enter on the main screen are not commands and have no `[keys]` names; if a command is bound to one of these keys, the key runs that command and does not act on the buttons. The new default keys are F11, F12, Space and Backspace: if your `[keys]` or `[keyboard]` already binds another command to one of them, after the update the program reports a conflict (with `midi_file_dialog`, `engine_toggle`, `file_play_pause` or `file_stop`) — move one of the chords. Panic is on F9 alone now: the space bar starts and pauses the MIDI file.
+Command names for `[keys]`: `help`, `quit`, `midi_dialog`, `audio_dialog`, `sf2_dialog`, `preset_dialog`, `effects_dialog`, `record_dialog`, `rescan`, `record_start`, `record_stop`, `panic`, `engine_toggle`, `midi_file_dialog`, `file_play_pause`, `file_stop`, `octave_up`, `octave_down`, `velocity_up`, `velocity_down`, `notes_off`, `transpose_up`, `transpose_down`, `toggle_reverb`, `toggle_chorus`, `master_up`, `master_down`, `master_up_fast`, `master_down_fast`, `master_mute`. Chords: `Ctrl`, `Alt`, `Shift`, then `F1`–`F24`, `Space`, `Tab`, `Esc`, `Enter`, `Up`/`↑`, `PgUp`, `Home` or a single character. A bare letter is rejected (letters belong to the notes); two commands on the same key is a startup error that names the key. Tab, Shift+Tab and Enter on the main screen are not commands and have no `[keys]` names; if a command is bound to one of these keys, the key runs that command and does not act on the buttons. Recording, the MIDI file and the choice of the processor are driven by the buttons on the screen and have no default key: `record_start`, `record_stop`, `midi_file_dialog`, `file_play_pause`, `file_stop` and `engine_toggle` get a key only if you assign one here — for example `file_play_pause = "Space"`. Quit is on F10 alone; Ctrl+C can be added with `quit = "F10, Ctrl+C"`.
 
 ## Recording
 
-The folder of takes is chosen with F7 or the `[Folder for files]` button, the format with the `[FLAC]`, `[OGG]` and `[MIDI]` buttons in the "Format" line; the format cannot be changed while a take runs. Home or the `[Start]` button starts and End or `[Stop]` stops recording. The `[Cancel]` button — red while a take runs, without a hotkey — stops the take and deletes its file; there is no confirmation. While a take runs, the red indicator `● REC mm:ss · size · file name` is shown, its dot blinking once a second; after a take is saved, the line shows a green `saved: path · size` (a path too long for the line loses its beginning). The file `YYYY-MM-DD_HH-MM-SS.flac`, `.ogg` or `.mid` appears in `record.dir` (by default the Music folder/sf2_player). FLAC is lossless 24-bit; Ogg Vorbis uses the `record.vorbis_quality` setting. Encoding runs in a separate thread; the audio callback only copies samples into a ring buffer, and an overflow is shown in the status line as `rec lost N`. With the MIDI format no sound is recorded: the file (Standard MIDI File, format 0) gets the events the synthesizer was fed — the notes of the MIDI input, of the window and of a MIDI file being played, after transposition and omni, and what the program itself sends (Panic, a preset change). Notes still sounding when the take stops are ended in the file. Such a file can be chosen as the MIDI file source and played back. Quitting while recording asks for confirmation.
+The folder of takes is chosen with F7 or the `[Folder for files]` button, the format with the `[FLAC]`, `[OGG]` and `[MIDI]` buttons in the "Format" line; the format cannot be changed while a take runs. The `[Start]` button starts and `[Stop]` stops recording. The `[Cancel]` button — red while a take runs, without a hotkey — stops the take and deletes its file; there is no confirmation. While a take runs, the red indicator `● REC mm:ss · size · file name` is shown, its dot blinking once a second; after a take is saved, the line shows a green `saved: path · size` (a path too long for the line loses its beginning). The file `YYYY-MM-DD_HH-MM-SS.flac`, `.ogg` or `.mid` appears in `record.dir` (by default the Music folder/sf2_player). FLAC is lossless 24-bit; Ogg Vorbis uses the `record.vorbis_quality` setting. Encoding runs in a separate thread; the audio callback only copies samples into a ring buffer, and an overflow is shown in the status line as `rec lost N`. With the MIDI format no sound is recorded: the file (Standard MIDI File, format 0) gets the events the synthesizer was fed — the notes of the MIDI input, of the window and of a MIDI file being played, after transposition and omni, and what the program itself sends (Panic, a preset change). Notes still sounding when the take stops are ended in the file. Such a file can be chosen as the MIDI file source and played back. Quitting while recording asks for confirmation.
 
 ## Indicators
 
