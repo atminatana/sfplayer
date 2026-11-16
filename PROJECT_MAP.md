@@ -8,7 +8,7 @@ SoundFont-синтезатор на Rust в окне с сеткой симво�
 |------|-----------|--------|
 | `src/lib.rs` | Корень библиотеки: объявляет модули для бинарника и тестов | шаг 1.2 |
 | `src/main.rs` | Запуск: CLI → конфиг → `Settings` → локаль → `Session` → окно (`ui::window::run`); паника — в лог; `--list-devices` | v1.2 шаг 1.4 |
-| `src/session.rs` | `Session`: аудиопоток и его смена, кольца, MIDI, hot-plug, банк, движок выбранного обработчика и общий с ним тембр (ADR 0013), MIDI-файл и его проигрыватель (ADR 0014), глобальный пресет (ADR 0011), запись (`start_recording`/`stop_recording`/`cancel_recording`, `last_take`, `record_dir`; старт с возвратом колец — `control::begin_take`, режим записи по формату — `control::record_mode`), `save_config`, `Notice`; применение запросов (мастер → гейн, эффекты `EffectsSettings`, пресет на все каналы кроме 10, panic, ноты, транспонирование, настройки записи) — `session/control.rs` | v1.1 шаг 4 |
+| `src/session.rs` | `Session`: аудиопоток и его смена, кольца, MIDI, hot-plug, банк, движок выбранного обработчика и общий с ним тембр (ADR 0013), MIDI-файл и его проигрыватель (ADR 0014), глобальный пресет (ADR 0011), запись (`start_recording`/`stop_recording`/`cancel_recording`, `last_take`, `record_dir`; старт с возвратом колец — `control::begin_take`, режим записи по формату — `control::record_mode`), `save_config`, `Notice`; применение запросов (мастер → гейн, эффекты `EffectsSettings`, пресет на все каналы кроме 10, panic, ноты, транспонирование, настройки записи) — `session/control.rs`; аудиопоток и MIDI-порт (открытие, смена, пересканирование, подключение) — `session/devices.rs`, запись — `session/recording.rs` (схема деления — ADR 0017); тесты сессии без устройств — `session/tests.rs` | v1.3 шаг 2.1 |
 | `src/cli.rs` | Аргументы командной строки (ТЗ §5), `DeviceSelector` имя/индекс + `find` | шаг 1.1, 1.5 |
 | `src/logging.rs` | `tracing` в файл в локальном каталоге данных ОС (N-07) | шаг 1.1 |
 | `src/synth/` | Трейт `SynthEngine` (mod.rs), `SoundFontBank` + `PresetInfo` (bank.rs), `RustySynthEngine` с флагом эффектов (rusty.rs), встроенный `BuiltinSynth` — 64 голоса, синусоида / пила / треугольник, ADSR, посылы CC 91 / CC 93 (builtin.rs, тесты в builtin/tests.rs); его тембр — форма `Wave`, огибающая `Adsr` с готовыми наборами `AdsrPreset` и общий с интерфейсом `Timbre` на атомиках (timbre.rs); реверб и хорус для него, перенесённые из RustySynth (effects.rs, effects/reverb.rs, effects/chorus.rs, тесты в effects/tests.rs; лицензия — `LICENSE-RUSTYSYNTH`) (ADR 0001, 0013) | v1.2 шаг 4.3 |
@@ -83,6 +83,7 @@ SoundFont-синтезатор на Rust в окне с сеткой симво�
 - v1.2, шаг 7.1: версия 0.2.0; `AGENTS.md` и оба README описывают программу после v1.2.
 - v1.2, шаг 7.2: верификация — `docs/verify/2026-11-13-gterm-ui.md` (критерии ТЗ §10, лицензии, размер 5,7 МБ, расхождения, ручные проверки). План v1.2 выполнен, кроме шага 1.5.
 - v1.3, шаг 1.1: лицензии зависимостей — MPL-2.0 у зависимостей без правок и Unicode-3.0 приняты (ADR 0016); список в `AGENTS.md` и обоих README.
+- v1.3, шаг 2.1: `session.rs` разделён — устройства в `session/devices.rs`, запись в `session/recording.rs` (ADR 0017); перед переносом добавлены тесты сессии без устройств.
 
 ## Дальше (открытые пункты для владельца)
 

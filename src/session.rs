@@ -1,28 +1,30 @@
 //! Runtime wiring of audio, MIDI, bank and config: owns the device handles, the ring producers and the
 //! thread that plays MIDI files.
-//! Request handling (mixer, effects, presets, panic, notes) lives in `control.rs`.
+//! Request handling (mixer, effects, presets, panic, notes) lives in `control.rs`, the audio stream and
+//! the MIDI port in `devices.rs`, takes in `recording.rs`.
 //!
 //! The UI reads state through `Session` and never touches cpal/midir directly. Threading: ADR 0002.
 
 mod control;
+mod devices;
+mod recording;
 
 pub use control::{EffectsAction, EffectsSettings, MixerAction};
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use ringbuf::traits::{Consumer, Producer};
 use ringbuf::{HeapCons, HeapProd};
 
-use crate::audio::{self, AudioLinks, AudioShared, AudioStream, Command, Mixer, RecordMode, RecordSource, StreamParams};
-use crate::cli::DeviceSelector;
+use crate::audio::{self, AudioShared, AudioStream, Command, Mixer, RecordSource, StreamParams};
 use crate::config::{Config, EngineKind, Settings};
 use crate::midi::player::Player;
 use crate::midi::smf::Song;
-use crate::midi::{self, DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus};
-use crate::record::{RecordParams, Recorder, Take, file_name};
+use crate::midi::{DEFAULT_POLL_INTERVAL, HotplugWatcher, MidiEvent, MidiInputHandle, MidiPortInfo, MidiStatus};
+use crate::record::{Recorder, Take};
 use crate::synth::{SoundFontBank, SynthEngine, SynthError, Timbre};
 
 /// Something the status line should tell the user (translated by the UI, spec N-07).
@@ -213,143 +215,6 @@ impl Session {
 		session
 	}
 
-	fn open_audio(&mut self, device: &cpal::Device) {
-		match audio::open_output_stream(device, self.params, &self.shared) {
-			Ok((
-				stream,
-				AudioLinks {
-					events,
-					file_events,
-					commands,
-					retired,
-					recording,
-				},
-			)) => {
-				self.audio = Some(stream);
-				self.commands = Some(commands);
-				self.retired = Some(retired);
-				self.record_rx = Some(recording);
-				self.spare_events = Some(events);
-				// A file that is playing goes on into the ring of the new stream.
-				match &self.player {
-					Some(player) => player.set_output(file_events),
-					None => {
-						let player = Player::spawn(file_events);
-						if let Some(song) = &self.song {
-							player.load(Arc::clone(song));
-						}
-						self.player = Some(player);
-					}
-				}
-			}
-			Err(error) => self.notice = Some(Notice::NoAudioDevice(error.to_string())),
-		}
-	}
-
-	/// Switches to another output device (F-03): new stream and rings, engine re-created for the new rate,
-	/// MIDI reconnected to the new ring, the preset re-applied.
-	pub fn reopen_audio(&mut self, index: usize) {
-		let device = match audio::output_device_by_index(index) {
-			Ok(device) => device,
-			Err(error) => {
-				self.notice = Some(Notice::AudioError(error.to_string()));
-				return;
-			}
-		};
-		let midi_index = self.midi_port_index;
-		self.stop_recording();
-		self.disconnect_midi();
-		self.audio = None;
-		self.commands = None;
-		self.retired = None;
-		self.record_rx = None;
-		self.spare_events = None;
-		self.open_audio(&device);
-		let Some(stream) = &self.audio else {
-			return;
-		};
-		let device_name = stream.device_name.clone();
-		self.config.audio.output = Some(device_name.clone());
-		self.notice = Some(Notice::AudioReopened(device_name));
-		if let Err(error) = self.install_engine() {
-			self.notice = Some(Notice::Sf2Error(error.to_string()));
-		}
-		if let Some(index) = midi_index {
-			self.connect_midi(index);
-		}
-	}
-
-	/// Resolves the selector against the known ports: no match → first port with a notice; no ports → `None`.
-	fn pick_midi_port(&mut self, selector: Option<&DeviceSelector>) -> Option<usize> {
-		let first = self.midi_ports.first().map(|port| port.index);
-		let selector = selector?;
-		match selector.find(self.midi_ports.iter().map(|port| port.name.as_str())) {
-			Some(index) => Some(index),
-			None => {
-				tracing::warn!(?selector, "MIDI input not found, using the first available port");
-				self.notice = Some(Notice::MidiFallback);
-				first
-			}
-		}
-	}
-
-	/// Re-enumerates MIDI ports (F8) and refreshes the connection status.
-	pub fn rescan(&mut self) {
-		match midi::list_input_ports() {
-			Ok(ports) => {
-				self.midi_ports = ports;
-				self.refresh_midi_status();
-			}
-			Err(error) => self.notice = Some(Notice::MidiError(error.to_string())),
-		}
-	}
-
-	fn refresh_midi_status(&mut self) {
-		let connected = self.midi.as_ref().map(|handle| handle.port_name.clone());
-		self.midi_status = MidiStatus::from_ports(connected.as_deref(), &self.midi_ports);
-	}
-
-	/// Connects to the MIDI port, moving the event producer into the midir callback.
-	pub fn connect_midi(&mut self, index: usize) {
-		self.disconnect_midi();
-		let Some(events) = self.spare_events.take() else {
-			return;
-		};
-		let sink = MidiSink {
-			events,
-			dropped: Arc::clone(&self.midi_dropped),
-		};
-		match midi::connect_input(index, sink, |event, sink| {
-			if sink.events.try_push(event).is_err() {
-				sink.dropped.fetch_add(1, Ordering::Relaxed);
-			}
-		}) {
-			Ok(handle) => {
-				self.midi_status = MidiStatus::Connected(handle.port_name.clone());
-				self.config.midi.input = Some(handle.port_name.clone());
-				self.midi = Some(handle);
-				self.midi_port_index = Some(index);
-			}
-			Err(error) => {
-				tracing::warn!(%error, index, "MIDI connect failed");
-				self.notice = Some(Notice::MidiError(error.to_string()));
-			}
-		}
-	}
-
-	pub fn disconnect_midi(&mut self) {
-		if let Some(handle) = self.midi.take() {
-			let sink = handle.close();
-			self.spare_events = Some(sink.events);
-		}
-		self.midi_port_index = None;
-		self.midi_status = MidiStatus::NoPort;
-	}
-
-	pub fn connected_midi_port(&self) -> Option<&str> {
-		self.midi.as_ref().map(|handle| handle.port_name.as_str())
-	}
-
 	/// Loads a bank and installs a matching engine on the audio thread (F-05).
 	/// Failures are returned for the dialog and also become a status notice.
 	pub fn load_bank(&mut self, path: &Path) -> Result<(), SynthError> {
@@ -405,102 +270,6 @@ impl Session {
 		}
 		control::push_effect_sends(commands, &self.config.synth);
 		Ok(())
-	}
-
-	/// Home: starts a recording in the configured format (F-20, F-23); a running take is left alone.
-	/// Whatever goes wrong, the recording rings stay with the session for the next attempt.
-	pub fn start_recording(&mut self) {
-		if self.recorder.is_some() {
-			return;
-		}
-		let Some(sample_rate) = self.audio.as_ref().map(|stream| stream.sample_rate) else {
-			return;
-		};
-		let dir = self.record_dir();
-		if let Err(error) = std::fs::create_dir_all(&dir) {
-			self.notice = Some(Notice::RecordError(error.to_string()));
-			return;
-		}
-		let format = self.config.record.format;
-		let path = file_name(&dir, format, chrono::Local::now());
-		let params = RecordParams {
-			sample_rate,
-			vorbis_quality: self.config.record.vorbis_quality,
-		};
-		match control::begin_take(&mut self.record_rx, format, path, params) {
-			Some(Ok(recorder)) => {
-				self.shared.set_recording(control::record_mode(format));
-				self.recorder = Some(recorder);
-			}
-			Some(Err(error)) => {
-				tracing::warn!(%error, "recording start failed");
-				self.notice = Some(Notice::RecordError(error.to_string()));
-			}
-			None => {}
-		}
-	}
-
-	/// End (and quit): stops the recording if one is running; the file name or the error goes to the status line.
-	pub fn stop_recording(&mut self) {
-		let Some(recorder) = self.recorder.take() else {
-			return;
-		};
-		self.shared.set_recording(RecordMode::Off);
-		let (rings, result) = recorder.stop();
-		self.record_rx = rings;
-		self.notice = Some(match result {
-			Ok(take) => {
-				let name = take
-					.path
-					.file_name()
-					.map(|name| name.to_string_lossy().into_owned())
-					.unwrap_or_default();
-				self.last_take = Some(take);
-				Notice::RecordSaved(name)
-			}
-			Err(error) => Notice::RecordError(error.to_string()),
-		});
-	}
-
-	/// The Cancel button (spec v1.2, F-23): the take is stopped and its file removed.
-	pub fn cancel_recording(&mut self) {
-		let Some(recorder) = self.recorder.take() else {
-			return;
-		};
-		self.shared.set_recording(RecordMode::Off);
-		let (rings, removed) = recorder.cancel();
-		self.record_rx = rings;
-		self.notice = Some(match removed {
-			Ok(()) => Notice::RecordCancelled,
-			Err(error) => Notice::RecordError(error.to_string()),
-		});
-	}
-
-	/// The file of the running take: its name and its size so far.
-	pub fn recording_file(&self) -> Option<(String, u64)> {
-		let recorder = self.recorder.as_ref()?;
-		let name = recorder
-			.path()
-			.file_name()
-			.map(|name| name.to_string_lossy().into_owned())
-			.unwrap_or_default();
-		Some((name, recorder.bytes()))
-	}
-
-	/// Elapsed time of the running recording, if any.
-	pub fn recording_elapsed(&self) -> Option<std::time::Duration> {
-		self.recorder.as_ref().map(Recorder::elapsed)
-	}
-
-	/// `record.dir` from the config, else the user's Music directory, else the app data directory.
-	pub fn record_dir(&self) -> PathBuf {
-		if let Some(dir) = &self.config.record.dir {
-			return dir.clone();
-		}
-		directories::UserDirs::new()
-			.and_then(|dirs| dirs.audio_dir().map(|dir| dir.join("sf2_player")))
-			.or_else(|| crate::config::project_dirs().map(|dirs| dirs.data_dir().join("recordings")))
-			.unwrap_or_else(|| PathBuf::from("recordings"))
 	}
 
 	/// F-14: writes devices, bank, volumes, effects and format to the config file; failures become a notice.

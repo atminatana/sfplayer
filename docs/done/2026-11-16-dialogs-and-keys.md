@@ -40,3 +40,22 @@
 **⚠ WARNINGS**
 
 - **Страховка неполная.** Пути, которым нужно настоящее устройство, из теста недостижимы: `open_audio`, `reopen_audio`, `rescan`, успешное подключение MIDI-порта, запись при открытом аудиопотоке. Для них защита при переносе — компилятор и сверка текста перенесённых методов с исходным (шаг 2.1б).
+
+## Шаг 2.1б — деление `session.rs` (2026-11-16)
+
+- `src/session/devices.rs` (новый, 152 строки): `open_audio`, `reopen_audio`, `pick_midi_port`, `rescan`, `refresh_midi_status`, `connect_midi`, `disconnect_midi`, `connected_midi_port`.
+- `src/session/recording.rs` (новый, 105 строк): `start_recording`, `stop_recording`, `cancel_recording`, `recording_file`, `recording_elapsed`, `record_dir`.
+- `src/session.rs`: 557 → 325 строк; остались состав сессии, `idle`, `start`, `load_bank`, `install_engine`, `save_config`, `audio`, `poll`, `clean_up_after_playback`.
+- `docs/adr/0017-split-large-files.md` (новый) — схема для всех трёх файлов; строка в индексе ADR.
+- Перенос сделан скриптом `target/step13/split_session.py`: текст методов вырезан и вставлен без правок.
+
+**COMPLETENESS** — план, шаг 2.1 / ТЗ §6: оба подмодуля выделены, схема записана в ADR 0017. Новых тестов перенос не требует: поведение не меняется, страховка — шаг 2.1а.
+
+**CORRECTNESS** — сверка строк до и после (`target/step13/compare_lines.py`): различаются только импорты, объявления `mod`, заголовки файлов, обёртки `impl Session { }` и видимость трёх помощников (`open_audio`, `pick_midi_port`, `refresh_midi_status` — `pub(super)`: их вызывают `start` и `poll`). Утверждения тестов не менялись.
+
+**EVIDENCE** — `cargo fmt --check` ok; `cargo clippy --all-targets -- -D warnings` чисто; `cargo test`: 364 passed, 0 failed (`target/step13/gates-2.1b.log`). LOC (`wc -l`): `session.rs` 325, `session/devices.rs` 152, `session/recording.rs` 105, `session/control.rs` 408.
+
+**⚠ WARNINGS**
+
+- **Пути с настоящими устройствами тестами не покрыты** (см. шаг 2.1а); нужен взгляд владельца при первом запуске: звук есть, MIDI-порт подключается, смена аудиовыхода и запись работают.
+- **Комментарии методов записи называют клавиши Home и End** — они уйдут из раскладки на шаге 3.1 и там же будут исправлены: перенос текст не правит.
