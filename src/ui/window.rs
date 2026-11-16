@@ -2,9 +2,11 @@
 //!
 //! All behaviour stays in `App` (key handling) and `fulfil` (requests applied to the `Session`); this
 //! module only hands window events over (keys are translated by `keymap`), drives the periodic work
-//! from the tick, and redraws when what the screen shows has changed.
+//! from the tick, and redraws when what the screen shows has changed. Handing events over to the
+//! windows built on widget controls is in the submodule `layers`.
 
-use std::path::{Path, PathBuf};
+mod layers;
+
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -14,20 +16,18 @@ use gterm::config::{BACKEND_ENV, Config as GridConfig};
 use gterm::font::{FONT_SCALE, FontFamily, glyph_px_for};
 use gterm::rasterizer::Rasterizer;
 use gterm_widgets::{MouseMsg, Rect, SystemClipboard};
-use rust_i18n::t;
-use winit::event::ElementState;
 
 use super::app::{App, FRAME_INTERVAL, KEYBOARD_CHANNEL, Request};
 use super::buttons::{Buttons, Touch};
 use super::chord::{KeyCode, KeyEvent, KeyEventKind};
-use super::confirm_dialog::{ConfirmDialog, ConfirmOutcome};
+use super::confirm_dialog::ConfirmDialog;
 use super::dialog_screen;
 use super::fulfil::fulfil;
-use super::input_dialog::{InputDialog, InputOutcome};
+use super::input_dialog::InputDialog;
 use super::keymap::{Reading, WindowKey, key_from_window, quits_from_a_field, reading_in_a_dialog};
 use super::keys::Action;
 use super::main_screen::{self, BACKGROUND, MIN_COLS, MIN_ROWS, TEXT};
-use super::path_input::{self, InputKind};
+use super::path_input;
 use super::piano::Piano;
 use super::view::View;
 use crate::session::{Notice, Session};
@@ -171,18 +171,6 @@ impl Window {
 		ctx.redraw();
 	}
 
-	/// Shows the input dialog for the path `App` wants asked.
-	fn adopt_path_request(&mut self) {
-		if let Some(request) = self.app.path_request.take() {
-			self.input = Some(InputDialog::new(
-				request.kind,
-				&request.initial,
-				&request.history,
-				path_input::list_dir,
-			));
-		}
-	}
-
 	/// A key press on the main screen. A command key goes to `App`; of the rest, Tab and Enter belong
 	/// to the buttons, and what is left may be a note. The flag tells that the picture changed without
 	/// `App` knowing (the focus moved).
@@ -195,22 +183,6 @@ impl Window {
 			Touch::Changed => (None, true),
 			Touch::Pressed(button) => (self.app.press_button(button), true),
 		}
-	}
-
-	/// A key press or release for the open input dialog.
-	fn key_to_input(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
-		let Self { input, clipboard, app, .. } = self;
-		let Some(dialog) = input else {
-			return;
-		};
-		// The dialog sees releases too (the library tracks held keys by them); only presses act.
-		let routed = dialog.ui(app.locale, clipboard).key(event, ctx);
-		if event.state != ElementState::Pressed {
-			return;
-		}
-		let outcome = dialog.settle(routed, Some(&event.logical_key), path_input::list_dir);
-		self.conclude_input(outcome);
-		self.refresh(ctx, true);
 	}
 
 	/// Offers a mouse event to the on-screen piano; `true` when the piano took it. The notes go the way
@@ -226,111 +198,6 @@ impl Window {
 		}
 		true
 	}
-
-	/// A mouse event for the open input dialog.
-	fn pointer_to_input(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
-		let Self { input, clipboard, app, .. } = self;
-		let Some(dialog) = input else {
-			return;
-		};
-		let routed = dialog.ui(app.locale, clipboard).pointer(event, ctx);
-		let outcome = dialog.settle(routed, None, path_input::list_dir);
-		self.conclude_input(outcome);
-		self.refresh(ctx, true);
-	}
-
-	/// Acts on what the input dialog decided. A submitted path is applied, and the dialog closes only
-	/// when that worked — otherwise it stays open and shows why not.
-	fn conclude_input(&mut self, outcome: InputOutcome) {
-		let path = match outcome {
-			InputOutcome::Pending => return,
-			InputOutcome::Cancelled => {
-				self.input = None;
-				return;
-			}
-			InputOutcome::Submit(path) => path,
-		};
-		let Some(dialog) = &mut self.input else {
-			return;
-		};
-		let applied = match dialog.kind() {
-			InputKind::Sf2File => self.session.load_bank(&path).map_err(|error| error.to_string()),
-			InputKind::MidiFile => self.session.load_midi_file(&path).map_err(|error| error.to_string()),
-			InputKind::RecordDir => match record_dir_from(&path) {
-				Some(dir) => {
-					self.session.set_record_dir(dir);
-					Ok(())
-				}
-				None => Err(t!("dialog.not_a_folder", locale = self.app.locale).into_owned()),
-			},
-		};
-		match applied {
-			Ok(()) => {
-				self.input = None;
-				self.session.save_config();
-			}
-			Err(message) => dialog.set_error(message),
-		}
-	}
-
-	/// Keeps the confirmation window in step with the question `App` has open.
-	fn sync_confirm(&mut self) {
-		match (self.app.confirm, &self.confirm) {
-			(Some(question), Some(dialog)) if dialog.question() == question => {}
-			(Some(question), _) => self.confirm = Some(ConfirmDialog::new(question)),
-			(None, _) => self.confirm = None,
-		}
-	}
-
-	/// A key press or release for the open confirmation window.
-	fn key_to_confirm(&mut self, event: &winit::event::KeyEvent, ctx: &mut Ctx<'_>) {
-		let Some(dialog) = &mut self.confirm else {
-			return;
-		};
-		// The window sees releases too (the library tracks held keys by them); only presses act.
-		let routed = dialog.ui(self.app.locale).key(event, ctx);
-		if event.state != ElementState::Pressed {
-			return;
-		}
-		let outcome = dialog.settle(routed);
-		self.conclude_confirm(outcome, ctx);
-	}
-
-	/// A mouse event for the open confirmation window.
-	fn pointer_to_confirm(&mut self, event: &PointerEvent<'_>, ctx: &mut Ctx<'_>) {
-		let Some(dialog) = &mut self.confirm else {
-			return;
-		};
-		let routed = dialog.ui(self.app.locale).pointer(event, ctx);
-		let outcome = dialog.settle(routed);
-		self.conclude_confirm(outcome, ctx);
-	}
-
-	/// Passes the answer of the confirmation window on to `App` and does what it asks for.
-	fn conclude_confirm(&mut self, outcome: ConfirmOutcome, ctx: &mut Ctx<'_>) {
-		let request = match outcome {
-			ConfirmOutcome::Pending => None,
-			ConfirmOutcome::Confirmed => self.app.answer(true),
-			ConfirmOutcome::Refused => self.app.answer(false),
-		};
-		self.apply(request);
-		if self.app.should_quit {
-			ctx.exit();
-			return;
-		}
-		self.sync_confirm();
-		self.refresh(ctx, true);
-	}
-}
-
-/// What a path entered in the folder dialog means: an empty one is the default folder (`Some(None)`),
-/// an existing file is not a folder (`None`), anything else is the folder — the recorder creates it
-/// when a take starts.
-fn record_dir_from(path: &Path) -> Option<Option<PathBuf>> {
-	if path.as_os_str().is_empty() {
-		return Some(None);
-	}
-	(!path.is_file()).then(|| Some(path.to_owned()))
 }
 
 impl AppHandler for Window {

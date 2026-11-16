@@ -176,3 +176,16 @@
 - **Интервал двойного клика — 500 мс, из настроек ОС не берётся** (gterm ADR-0035).
 - **Новое поле `click_count` ломает код, собирающий `MouseMsg` литералом**: в sfplayer это были только тесты; конструктора в gterm нет.
 - Linux не проверялся.
+
+## Вынос связки окон на контролах из `window.rs` (2026-11-16, между шагами 5.1 и 5.2)
+
+Вне плана, по ориентиру размера: после шага 5.1 `window.rs` вырос до 494 строк, а шаги 5.2–9.1 добавляют в него связку ещё четырёх окон. Перенос механический, по схеме ADR 0017.
+
+- `src/ui/window/layers.rs` (новый, 149 строк): `adopt_path_request`, `key_to_input`, `pointer_to_input`, `conclude_input`, `sync_confirm`, `key_to_confirm`, `pointer_to_confirm`, `conclude_confirm`, `record_dir_from`.
+- `src/ui/window.rs`: 494 → 361 строка.
+
+**CORRECTNESS** — сверка строк (`target/step13/compare_lines.py`): различаются только импорты, объявление `mod`, заголовки файлов и видимость (`pub(super)` у восьми функций — их вызывают обработчики событий окна и тест); в файле тестов — две строки импорта.
+
+**EVIDENCE** — `cargo fmt --check` ok; `cargo clippy --all-targets -- -D warnings` чисто; `cargo test`: 388 passed, 0 failed (`target/step13/gates-window-split.log`).
+
+**⚠ WARNINGS** — переносимые методы юнит-тестами не покрыты (им нужен контекст окна gterm) и страховку построить нечем; защита — компилятор, сверка строк и живая проверка следующего шага.

@@ -1,5 +1,8 @@
 //! Tests of the window glue that need no window: the "what the frame shows" key.
 
+use std::path::Path;
+
+use super::layers::record_dir_from;
 use super::*;
 use crate::audio::{Levels, Mixer};
 use crate::config::{BuiltinConfig, EngineKind, RecordFormat};
