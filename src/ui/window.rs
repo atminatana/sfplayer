@@ -17,7 +17,7 @@ use gterm::font::{FONT_SCALE, FontFamily, glyph_px_for};
 use gterm::rasterizer::Rasterizer;
 use gterm_widgets::{MouseMsg, Rect, SystemClipboard};
 
-use super::app::{App, Dropdown, FRAME_INTERVAL, KEYBOARD_CHANNEL, Request};
+use super::app::{App, FRAME_INTERVAL, KEYBOARD_CHANNEL, Request};
 use super::chord::{KeyCode, KeyEvent, KeyEventKind};
 use super::confirm_dialog::ConfirmDialog;
 use super::controls::{Controls, Touch};
@@ -88,7 +88,7 @@ pub fn run(app: App, mut session: Session, options: &WindowOptions) -> anyhow::R
 		session,
 		shown: None,
 		controls: Controls::new(),
-		device_rows: Dropdown::ALL.map(|_| DeviceRows::default()),
+		device_rows: [DeviceRows::default(), DeviceRows::default()],
 		piano: Piano::new(KEYBOARD_CHANNEL),
 		clipboard: SystemClipboard::new(),
 		input: None,
@@ -138,11 +138,11 @@ struct Window {
 	session: Session,
 	/// What the last drawn frame showed; `None` before the first frame.
 	shown: Option<FrameState>,
-	/// The buttons and the device dropdowns of the main screen: where the last frame put them, the
-	/// focus, the button held down, the list that is open.
+	/// The buttons and the dropdowns of the main screen: where the last frame put them, the focus,
+	/// the button held down, the list that is open.
 	controls: Controls,
-	/// What the rows of each device dropdown mean, in the order of `Dropdown::ALL`: taken from the
-	/// system when the list was last opened.
+	/// What the rows of the two device dropdowns mean — the MIDI input, then the audio output: taken
+	/// from the system when the list was last opened.
 	device_rows: [DeviceRows; 2],
 	/// The on-screen piano: the note the mouse holds on it.
 	piano: Piano,

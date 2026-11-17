@@ -1,7 +1,7 @@
 //! The program window and what is built on widget controls (ADR 0018): the path dialog, the
 //! confirmation, the preset window, the effects window, the help and the controls of the main screen. The
 //! program window holds the open window, hands it keys and the mouse, and acts on what it decides;
-//! it fills the list of a device dropdown when the list drops down.
+//! it fills the list of a dropdown of the main screen when the list drops down.
 
 use std::path::{Path, PathBuf};
 
@@ -13,7 +13,7 @@ use winit::event::ElementState;
 use super::Window;
 use crate::audio;
 use crate::session::{EffectsAction, Notice};
-use crate::ui::app::{Dropdown, Request};
+use crate::ui::app::{Dropdown, RECORD_FORMATS, Request};
 use crate::ui::confirm_dialog::{ConfirmDialog, ConfirmOutcome};
 use crate::ui::controls::Touch;
 use crate::ui::devices::DeviceRows;
@@ -258,7 +258,7 @@ impl Window {
 	}
 
 	/// Does what a touched control of the main screen asks for: a pressed button gives its command, a
-	/// dropdown that has just opened gets its list, a chosen row connects its device.
+	/// dropdown that has just opened gets its list, a chosen row connects its device or sets the format.
 	pub(super) fn touched(&mut self, touch: Touch) -> Option<Request> {
 		match touch {
 			Touch::Missed | Touch::Changed => None,
@@ -267,31 +267,39 @@ impl Window {
 				self.load_dropdown(which);
 				None
 			}
-			Touch::Chosen(which, row) => self.device_rows[which as usize].choice(row).map(Request::Apply),
+			Touch::Chosen(Dropdown::Format, row) => self.app.choose_format(row),
+			Touch::Chosen(Dropdown::MidiIn, row) => self.device_rows[0].choice(row).map(Request::Apply),
+			Touch::Chosen(Dropdown::AudioOut, row) => self.device_rows[1].choice(row).map(Request::Apply),
 		}
 	}
 
-	/// Fills the list of a dropdown that has just been opened with the devices the system has now.
-	/// With nothing to choose from the list closes again: the field already says there is no device.
+	/// Fills the list of a dropdown that has just been opened: a device list with the devices the
+	/// system has now, the format list with the formats of a take. With no device to choose from the
+	/// list closes again: the field already says there is no device.
 	fn load_dropdown(&mut self, which: Dropdown) {
-		let rows = match which {
+		let (slot, rows) = match which {
 			Dropdown::MidiIn => {
 				self.session.rescan();
-				DeviceRows::midi(&self.session.midi_ports)
+				(0, DeviceRows::midi(&self.session.midi_ports))
 			}
 			Dropdown::AudioOut => match audio::list_output_devices() {
-				Ok(devices) => DeviceRows::audio(&devices),
+				Ok(devices) => (1, DeviceRows::audio(&devices)),
 				Err(error) => {
 					self.session.notice = Some(Notice::AudioError(error.to_string()));
-					DeviceRows::default()
+					(1, DeviceRows::default())
 				}
 			},
+			Dropdown::Format => {
+				let names = RECORD_FORMATS.iter().map(|(_, name)| (*name).to_owned()).collect();
+				self.controls.set_items(which, names);
+				return;
+			}
 		};
 		if rows.names().is_empty() {
 			self.controls.close_dropdowns();
 		}
 		self.controls.set_items(which, rows.names().to_vec());
-		self.device_rows[which as usize] = rows;
+		self.device_rows[slot] = rows;
 	}
 
 	/// Drops down the list of the dropdown `App` was asked for by its key.

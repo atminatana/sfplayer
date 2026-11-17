@@ -27,8 +27,8 @@ fn frame(controls: &mut Controls, buf: &mut ScreenBuffer) {
 	let mut x = 0;
 	for (id, label, look) in [
 		(ButtonId::MidiFile, "In", Look::Normal),
-		(ButtonId::FormatFlac, "Flac", Look::Active),
-		(ButtonId::FormatMidi, "Midi", Look::Disabled),
+		(ButtonId::EngineSf2, "Flac", Look::Active),
+		(ButtonId::Preset, "Midi", Look::Disabled),
 		(ButtonId::RecordStop, "Stop", Look::Normal),
 	] {
 		x += controls.place(id, x, 1, label, look) + 1;
@@ -89,15 +89,6 @@ fn looks_are_drawn_as_the_spec_describes_them() {
 	assert_eq!((buf.cell(12, 1).fg, buf.cell(12, 1).bg), (DISABLED, BACKGROUND));
 	// The last one: normal without the focus.
 	assert!(!buf.cell(19, 1).flags.contains(CellFlags::UNDERLINE));
-
-	// The selected one that cannot be changed looks active.
-	let mut controls = Controls::new();
-	controls.begin_frame();
-	controls.place(ButtonId::FormatFlac, 0, 0, "Flac", Look::ActiveLocked);
-	let mut buf = screen();
-	controls.finish_frame(&mut buf);
-	assert_eq!((buf.cell(0, 0).fg, buf.cell(0, 0).bg), (BACKGROUND, VALUE));
-	assert_eq!(controls.focused(), None, "it does not take the focus");
 }
 
 #[test]
@@ -128,7 +119,7 @@ fn tab_walks_the_buttons_that_react_in_a_ring_and_shift_tab_walks_back() {
 	}
 	assert_eq!(
 		walked,
-		[ButtonId::FormatFlac, ButtonId::RecordStop, ButtonId::MidiFile, ButtonId::FormatFlac],
+		[ButtonId::EngineSf2, ButtonId::RecordStop, ButtonId::MidiFile, ButtonId::EngineSf2],
 		"the unavailable button is skipped"
 	);
 	assert_eq!(controls.handle_key(&key(KeyCode::BackTab)), Touch::Changed);
@@ -147,7 +138,7 @@ fn enter_presses_the_button_under_the_focus_and_other_keys_are_not_for_buttons()
 	let (mut controls, _) = drawn();
 	assert_eq!(controls.handle_key(&key(KeyCode::Enter)), Touch::Pressed(ButtonId::MidiFile));
 	controls.handle_key(&key(KeyCode::Tab));
-	assert_eq!(controls.handle_key(&key(KeyCode::Enter)), Touch::Pressed(ButtonId::FormatFlac));
+	assert_eq!(controls.handle_key(&key(KeyCode::Enter)), Touch::Pressed(ButtonId::EngineSf2));
 
 	for code in [
 		KeyCode::Char(' '),
@@ -169,7 +160,7 @@ fn enter_presses_the_button_under_the_focus_and_other_keys_are_not_for_buttons()
 		let chord = KeyEvent::new(KeyCode::Tab, modifiers);
 		assert_eq!(controls.handle_key(&chord), Touch::Missed, "{modifiers:?}+Tab");
 	}
-	assert_eq!(controls.focused(), Some(ButtonId::FormatFlac), "none of that moved the focus");
+	assert_eq!(controls.focused(), Some(ButtonId::EngineSf2), "none of that moved the focus");
 }
 
 #[test]
@@ -530,4 +521,86 @@ fn a_device_that_is_not_in_the_list_is_still_named_by_the_field() {
 	// With the device in the list the field shows the row of the list.
 	device_frame(&mut controls, &mut buf, Some("Roland"), Some("Speakers"));
 	assert_eq!(text_at(&buf, 0, 0, 6), "Roland");
+}
+
+// --- the format dropdown -------------------------------------------------------------------------
+
+const FORMATS: [&str; 3] = ["FLAC", "OGG", "MIDI"];
+
+/// A frame with the format dropdown and the button that follows it on the screen. Row 0: the field,
+/// columns 0..8. Row 1: `[Stop]` at 0..6.
+fn format_frame(controls: &mut Controls, buf: &mut ScreenBuffer, is_locked: bool) {
+	buf.clear_all();
+	controls.begin_frame();
+	controls.place_dropdown(Dropdown::Format, 0, 0, 8, Some("FLAC"), "");
+	if is_locked {
+		controls.lock_dropdown(Dropdown::Format);
+	}
+	controls.place(ButtonId::RecordStop, 0, 1, "Stop", Look::Normal);
+	controls.finish_frame(buf);
+}
+
+fn formats() -> Vec<String> {
+	FORMATS.iter().map(|format| (*format).to_owned()).collect()
+}
+
+#[test]
+fn the_format_dropdown_opens_like_a_device_one_and_a_row_chooses_the_format() {
+	let mut controls = Controls::new();
+	let mut buf = screen();
+	format_frame(&mut controls, &mut buf, false);
+	assert_eq!(text_at(&buf, 0, 0, 8), "FLAC\0\0\0▾", "the format in use and the mark");
+	assert_eq!((buf.cell(0, 0).fg, buf.cell(0, 0).bg), (TEXT, BACKGROUND));
+	assert_eq!(
+		controls.focused_dropdown(),
+		Some(Dropdown::Format),
+		"it stands in the ring before the buttons of the take"
+	);
+
+	let (press, _) = click(&mut controls, 1, 0);
+	assert_eq!(press, Touch::Opened(Dropdown::Format));
+	controls.set_items(Dropdown::Format, formats());
+	format_frame(&mut controls, &mut buf, false);
+	let (_, list) = controls.layer(GRID).expect("the list is open");
+	let lines = lines_of(&list);
+	assert!(lines[1].contains("FLAC") && lines[2].contains("OGG") && lines[3].contains("MIDI"));
+	assert_eq!(
+		colours_of(&list, "FLAC"),
+		(BACKGROUND, TEXT),
+		"the list starts on the format in use"
+	);
+
+	assert_eq!(controls.handle_key(&key(KeyCode::End)), Touch::Changed);
+	assert_eq!(controls.handle_key(&key(KeyCode::Enter)), Touch::Chosen(Dropdown::Format, 2));
+	assert_eq!(controls.open_dropdown(), None);
+}
+
+#[test]
+fn a_locked_dropdown_shows_its_value_dark_and_neither_opens_nor_takes_the_focus() {
+	let mut controls = Controls::new();
+	let mut buf = screen();
+	format_frame(&mut controls, &mut buf, false);
+	assert!(controls.open(Dropdown::Format));
+	controls.set_items(Dropdown::Format, formats());
+
+	// A take started while the list was open: the list goes, the field stays and says what is recorded.
+	format_frame(&mut controls, &mut buf, true);
+	assert_eq!(controls.open_dropdown(), None, "a locked dropdown cannot keep its list open");
+	assert!(controls.layer(GRID).is_none());
+	assert_eq!(text_at(&buf, 0, 0, 4), "FLAC");
+	assert_eq!((buf.cell(0, 0).fg, buf.cell(0, 0).bg), (DISABLED, BACKGROUND));
+	assert!(!buf.cell(0, 0).flags.contains(CellFlags::UNDERLINE));
+	assert_eq!(controls.focused_dropdown(), None);
+	assert_eq!(controls.focused(), Some(ButtonId::RecordStop), "the focus went on to what reacts");
+
+	assert_eq!(click(&mut controls, 1, 0), (Touch::Missed, Touch::Missed));
+	assert!(!controls.open(Dropdown::Format), "its key does not open it either");
+	controls.handle_key(&key(KeyCode::Tab));
+	assert_eq!(controls.focused(), Some(ButtonId::RecordStop), "Tab does not stop at it");
+
+	// The take ended: the field reacts again.
+	format_frame(&mut controls, &mut buf, false);
+	assert_eq!(buf.cell(0, 0).fg, TEXT);
+	let (press, _) = click(&mut controls, 1, 0);
+	assert_eq!(press, Touch::Opened(Dropdown::Format));
 }

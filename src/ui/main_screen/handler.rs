@@ -1,12 +1,12 @@
-//! The "Processor" section of the main screen: the choice between the built-in synthesizer and a
+//! The "Engine" section of the main screen: the choice between the built-in synthesizer and a
 //! SoundFont, and the rows of the chosen one.
 
 use gterm::buffer::ScreenBuffer;
 use rust_i18n::t;
 
 use super::{
-	DISABLED, ERROR, GOOD, LABEL, MINUS, NOTHING, PLUS, SECOND_VALUE_X, SYNTH_EXTRA_ROWS, TEXT, VALUE, VALUE_X, label, put, rule, section,
-	sub_label,
+	DISABLED, ERROR, GOOD, LABEL, MINUS, NOTHING, PLUS, SECOND_VALUE_X, SECTION_HEAD_ROWS, SYNTH_EXTRA_ROWS, TEXT, VALUE, VALUE_X, label,
+	put, rule, section, sub_label,
 };
 use crate::config::EngineKind;
 use crate::synth::{AdsrPreset, Wave};
@@ -15,7 +15,7 @@ use crate::ui::controls::{Controls, Look};
 use crate::ui::paint::Pen;
 use crate::ui::view::{NoticeTarget, View};
 
-/// "PROCESSOR  [Synth] [Sound Font] ──" and, under it, the rows of the chosen processor; both end
+/// "─ ENGINE  [Synth] [Sound Font] ──" and, under it, the rows of the chosen engine; both end
 /// with the effects row, which the two share.
 pub(super) fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View, controls: &mut Controls) {
 	let after_title = section(buf, y, &t!("main.section_handler", locale = locale));
@@ -40,14 +40,15 @@ pub(super) fn handler(buf: &mut ScreenBuffer, y: u16, locale: &str, view: &View,
 	let after_buttons = pen.x;
 	rule(buf, after_buttons, y);
 
+	let rows_y = y + SECTION_HEAD_ROWS;
 	let effects_y = match view.engine {
 		EngineKind::Sf2 => {
-			sound_font(buf, y + 1, locale, view, controls);
-			y + 3
+			sound_font(buf, rows_y, locale, view, controls);
+			rows_y + 2
 		}
 		EngineKind::Builtin => {
-			synth(buf, y + 1, locale, view, controls);
-			y + 3 + SYNTH_EXTRA_ROWS
+			synth(buf, rows_y, locale, view, controls);
+			rows_y + 2 + SYNTH_EXTRA_ROWS
 		}
 	};
 	let effects = t!("main.effects", locale = locale);

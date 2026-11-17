@@ -288,9 +288,6 @@ fn every_available_button_gives_the_command_of_its_hotkey() {
 		(ButtonId::MasterDown, Request::Mixer(MixerAction::MasterDownFast)),
 		(ButtonId::MasterUp, Request::Mixer(MixerAction::MasterUpFast)),
 		(ButtonId::Folder, Request::OpenRecordDialog),
-		(ButtonId::FormatFlac, Request::SetRecordFormat(RecordFormat::Flac)),
-		(ButtonId::FormatOgg, Request::SetRecordFormat(RecordFormat::OggVorbis)),
-		(ButtonId::FormatMidi, Request::SetRecordFormat(RecordFormat::Midi)),
 		(ButtonId::RecordStart, Request::StartRecord),
 		(ButtonId::RecordStop, Request::StopRecord),
 		(ButtonId::MidiFile, Request::OpenMidiFileDialog),
@@ -333,15 +330,32 @@ fn every_available_button_gives_the_command_of_its_hotkey() {
 }
 
 #[test]
+fn a_row_of_the_format_dropdown_sets_its_format() {
+	let rows = [
+		(0, "FLAC", RecordFormat::Flac),
+		(1, "OGG", RecordFormat::OggVorbis),
+		(2, "MIDI", RecordFormat::Midi),
+	];
+	for (row, name, format) in rows {
+		assert_eq!(RECORD_FORMATS[row], (format, name), "row {row} of the list");
+		let mut app = App::new("en");
+		app.take_dirty();
+		assert_eq!(app.choose_format(row), Some(Request::SetRecordFormat(format)), "{name}");
+		assert!(app.take_dirty(), "{name} asks for a redraw");
+	}
+	let mut app = App::new("en");
+	app.take_dirty();
+	assert_eq!(app.choose_format(RECORD_FORMATS.len()), None, "a row the list does not have");
+	assert!(!app.take_dirty());
+}
+
+#[test]
 fn the_format_cannot_be_changed_under_a_running_take() {
 	let mut app = App::new("en");
 	app.recording = Some(Duration::from_secs(1));
-	assert_eq!(app.press_button(ButtonId::FormatOgg), None);
-	assert_eq!(app.press_button(ButtonId::FormatFlac), None);
-	assert_eq!(app.press_button(ButtonId::FormatMidi), None);
+	for row in 0..RECORD_FORMATS.len() {
+		assert_eq!(app.choose_format(row), None, "row {row}");
+	}
 	app.recording = None;
-	assert_eq!(
-		app.press_button(ButtonId::FormatOgg),
-		Some(Request::SetRecordFormat(RecordFormat::OggVorbis))
-	);
+	assert_eq!(app.choose_format(1), Some(Request::SetRecordFormat(RecordFormat::OggVorbis)));
 }

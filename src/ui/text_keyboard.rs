@@ -58,6 +58,16 @@ impl TextKeyboard {
 		(self.octave + 1) * 12
 	}
 
+	/// The characters of the white keys, lowest first: what the on-screen piano writes on them.
+	pub fn white_keys(&self) -> &[char] {
+		&self.white
+	}
+
+	/// The characters of the black keys, lowest first.
+	pub fn black_keys(&self) -> &[char] {
+		&self.black
+	}
+
 	pub fn held_count(&self) -> usize {
 		self.held.len()
 	}

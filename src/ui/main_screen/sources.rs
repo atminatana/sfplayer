@@ -8,7 +8,7 @@ use rust_i18n::t;
 
 use super::{
 	DEVICE_CELLS, DISABLED, ERROR, GOOD, HINT, KEYBOARD_STATE_X, LABEL, MESSAGE, METER_TRACK, NOTHING, POSITION_CELLS, POSITION_TRACK,
-	TEXT, VALUE, VALUE_X, buf_width, fitted, label, piano_origin, put, rule, section, sub_label,
+	SECTION_HEAD_ROWS, TEXT, VALUE, VALUE_X, content_end, fitted, label, piano_origin, put, rule, section, sub_label,
 };
 use crate::midi::MidiStatus;
 use crate::midi::player::Transport;
@@ -31,42 +31,49 @@ fn notes(buf: &mut ScreenBuffer, y: u16, keys: u128, end: u16) {
 pub(super) fn sources(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, view: &View, controls: &mut Controls) {
 	let after_title = section(buf, y, &t!("main.section_sources", locale = locale));
 	rule(buf, after_title, y);
+	// The keyboard row, the piano under it, then the MIDI input with its notes and the MIDI file.
+	let keyboard_y = y + SECTION_HEAD_ROWS;
+	let midi_y = keyboard_y + 1 + piano::HEIGHT;
 
-	label(buf, y + 1, &t!("main.keyboard", locale = locale));
+	label(buf, keyboard_y, &t!("main.keyboard", locale = locale));
 	// The names stop two cells short of the octave and velocity read-out.
-	notes(buf, y + 1, view.keyboard_notes, KEYBOARD_STATE_X - 2);
+	notes(buf, keyboard_y, view.keyboard_notes, KEYBOARD_STATE_X - 2);
 	let keyboard_state = t!(
 		"status.octave",
 		locale = locale,
 		octave = app.keyboard.octave(),
 		velocity = format!("{:>3}", app.keyboard.velocity())
 	);
-	Pen::at(buf, KEYBOARD_STATE_X, y + 1).text(&keyboard_state, HINT);
+	Pen::at(buf, KEYBOARD_STATE_X, keyboard_y).text(&keyboard_state, HINT);
 	if let Some((piano_x, piano_y)) = piano_origin(buf.area()) {
 		let sounding = view.keyboard_notes | view.midi_notes;
-		piano::draw(buf, piano_x, piano_y, app.keyboard.base_key(), sounding);
+		let labels = piano::KeyLabels {
+			white: app.keyboard.white_keys(),
+			black: app.keyboard.black_keys(),
+		};
+		piano::draw(buf, piano_x, piano_y, app.keyboard.base_key(), labels, sounding);
 	}
 
-	label(buf, y + 4, &t!("main.midi_in", locale = locale));
+	label(buf, midi_y, &t!("main.midi_in", locale = locale));
 	// The port is chosen in place: the field shows the one in use, or says that there is none.
 	let (port, absent) = match &view.midi {
 		MidiStatus::Connected(port) => (Some(port.as_str()), String::new()),
 		MidiStatus::Disconnected(port) => (None, t!("header.disconnected", locale = locale, port = port).into_owned()),
 		MidiStatus::NoPort => (None, t!("header.no_device", locale = locale).into_owned()),
 	};
-	let field = controls.place_dropdown(Dropdown::MidiIn, VALUE_X, y + 4, DEVICE_CELLS, port, &absent);
-	let mut pen = Pen::at(buf, VALUE_X + field + 2, y + 4);
+	let field = controls.place_dropdown(Dropdown::MidiIn, VALUE_X, midi_y, DEVICE_CELLS, port, &absent);
+	let mut pen = Pen::at(buf, VALUE_X + field + 2, midi_y);
 	if port.is_some() {
 		pen.text(&t!("main.opened", locale = locale), GOOD).gap(2);
 	}
 	if let Some(error) = view.line_error(NoticeTarget::Midi) {
 		pen.text(error, ERROR);
 	}
-	sub_label(buf, y + 5, &t!("main.notes", locale = locale));
-	let right_edge = buf.area().width.saturating_sub(1);
-	notes(buf, y + 5, view.midi_notes, right_edge);
+	sub_label(buf, midi_y + 1, &t!("main.notes", locale = locale));
+	let right_edge = content_end(buf.area().width);
+	notes(buf, midi_y + 1, view.midi_notes, right_edge);
 
-	midi_file(buf, y + 6, locale, &view.file, controls);
+	midi_file(buf, midi_y + 2, locale, &view.file, controls);
 }
 
 /// The MIDI file row — the file, or why there is none to play, and the transport buttons at the right
@@ -84,8 +91,8 @@ fn midi_file(buf: &mut ScreenBuffer, y: u16, locale: &str, file: &FileView, cont
 	let mut pen = Pen::at(buf, VALUE_X, y);
 	put(&mut pen, controls, ButtonId::MidiFile, &title, Look::Normal);
 	pen.gap(2);
-	// What is said about the file ends where the buttons begin, one cell short of the right edge.
-	let room = usize::from(buf_width(&pen)).saturating_sub(usize::from(pen.x) + transport_width + 2);
+	// What is said about the file ends a cell before the buttons, and the buttons end where the content does.
+	let room = usize::from(content_end(pen.clip_width())).saturating_sub(usize::from(pen.x) + transport_width + 1);
 	let is_loaded = matches!(file.file, MidiFile::Loaded(_));
 	match &file.file {
 		MidiFile::None => pen.text(&t!("main.no_file", locale = locale), HINT),

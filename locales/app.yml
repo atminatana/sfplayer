@@ -1,9 +1,5 @@
 _version: 2
 
-app.title:
-  en: "sf2_player %{version}"
-  ru: "sf2_player %{version}"
-
 header.no_device:
   en: "no device"
   ru: "нет устройства"
@@ -277,14 +273,14 @@ main.section_sources:
   en: "MIDI SOURCES"
   ru: "ИСТОЧНИКИ MIDI"
 main.section_handler:
-  en: "PROCESSOR"
-  ru: "ОБРАБОТЧИК"
+  en: "ENGINE"
+  ru: "ДВИЖОК"
 main.section_output:
   en: "OUTPUT"
   ru: "ВЫХОД"
 main.section_record:
-  en: "AUDIO FILE"
-  ru: "АУДИО-ФАЙЛ"
+  en: "RECORDING"
+  ru: "ЗАПИСЬ"
 main.keyboard:
   en: "Keyboard"
   ru: "Клавиатура"
@@ -312,9 +308,6 @@ main.audio_out:
 main.master:
   en: "Master"
   ru: "Мастер"
-main.folder:
-  en: "Folder"
-  ru: "Папка"
 main.folder_button:
   en: "Folder for files"
   ru: "Папка для файлов"

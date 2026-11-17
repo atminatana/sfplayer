@@ -19,6 +19,7 @@ use crate::synth::AdsrPreset;
 use crate::ui::app::Dropdown;
 use crate::ui::chord::{KeyCode, KeyEvent, KeyModifiers};
 use crate::ui::controls::Touch;
+use crate::ui::testkit::cell_of;
 use crate::ui::view::{AudioView, BankView, FileView, Size, TakeView};
 
 /// The grid the screen is drawn on in these tests: the smallest one it fits in.
@@ -114,6 +115,70 @@ fn colour_of(buf: &ScreenBuffer, text: &str) -> Color {
 	buf.cell(col, row).fg
 }
 
+/// The cells of a screen row between the borders of the frame, trailing spaces dropped.
+fn inside(line: &str) -> String {
+	let cells: Vec<char> = line.chars().collect();
+	assert_eq!((cells[0], cells[cells.len() - 1]), ('│', '│'), "{line:?} is a row inside the frame");
+	let inner: String = cells[1..cells.len() - 1].iter().collect();
+	inner.trim_end().to_owned()
+}
+
+/// The top border of a grid `cols` cells wide: the name and the version a cell away from the corners.
+fn top_border(cols: usize) -> String {
+	let version = env!("CARGO_PKG_VERSION");
+	let rule = cols - " sf2_player ".len() - version.len() - 4;
+	format!("┌ sf2_player {} {version} ┐", "─".repeat(rule))
+}
+
+/// The bottom border of the smallest grid: the counters at its left end, the engine at its right one.
+fn bottom_border(counters: &str, engine: &str) -> String {
+	let rule = usize::from(MIN_COLS) - counters.chars().count() - engine.chars().count() - 6;
+	format!("└ {counters} {} {engine} ┘", "─".repeat(rule))
+}
+
+/// The rule of a section as it stands inside the frame of the smallest grid: two cells of inset,
+/// `─ `, what the section puts on its rule, and the rule up to the inset on the right.
+fn rule_row(head: &str) -> String {
+	let cells = usize::from(MIN_COLS) - 6;
+	format!("  ─ {head} {}", "─".repeat(cells - head.chars().count() - 3))
+}
+
+/// The four rows of the piano with the characters of the default text keyboard.
+const PIANO: [&str; 4] = [
+	"│  │s│ │d│  │  │g│ │h│ │j│  │  │l│ │;│  │",
+	"│  └┬┘ └┬┘  │  └┬┘ └┬┘ └┬┘  │  └┬┘ └┬┘  │",
+	"│ z │ x │ c │ v │ b │ n │ m │ , │ . │ / │",
+	"└───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘",
+];
+
+/// The rows of the screen inside the frame from the rule of "Output" down: they stand on the bottom
+/// of the frame and are the same whichever engine is chosen.
+fn lower_rows() -> Vec<String> {
+	vec![
+		rule_row("ВЫХОД"),
+		String::new(),
+		"  Аудио выход       Speakers                               ▾  48000 Hz / 256 кадров  OK".to_owned(),
+		"  L                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS".to_owned(),
+		"  R                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS".to_owned(),
+		"  Мастер            [−] ████████████████░░░░  80% [+]".to_owned(),
+		String::new(),
+		rule_row("ЗАПИСЬ"),
+		String::new(),
+		"  Папка для файлов: [D:/Music/sf2_player]".to_owned(),
+		"            Формат: FLAC   ▾  запись аудиопотока".to_owned(),
+		"            Запись: [Старт] [Стоп] [Отмена]  записей ещё не было".to_owned(),
+		String::new(),
+	]
+}
+
+/// The white keys of the piano that are lit, by their place from the left.
+fn lit_white_keys(buf: &ScreenBuffer) -> Vec<usize> {
+	let (x, y) = piano_origin(buf.area()).expect("the piano is shown");
+	(0..10)
+		.filter(|key| buf.cell(usize::from(x) + key * 4 + 2, usize::from(y) + 2).bg == VALUE)
+		.collect()
+}
+
 /// Foreground colours of the `cells` cells that follow the label column in the row labelled `label`.
 fn meter_colours(buf: &ScreenBuffer, label: &str, cells: usize) -> Vec<Color> {
 	let (row, _) = find(buf, label);
@@ -122,69 +187,128 @@ fn meter_colours(buf: &ScreenBuffer, label: &str, cells: usize) -> Vec<Color> {
 
 #[test]
 fn full_frame_matches_the_layout_mockup() {
-	let expected = [
-		"─────────────────────────────────────── sf2_player 0.1.0 ───────────────────────────────────────",
-		"",
-		"ИСТОЧНИКИ MIDI ─────────────────────────────────────────────────────────────────────────────────",
-		" Клавиатура        —                                                 окт 4 vel 100",
-		"                                │ ██ ██  │ ██ ██ ██  │ ██ ██  │",
-		"                                │  │  │  │  │  │  │  │  │  │  │",
-		" MIDI-вход         Arturia KeyStep 37                     ▾  открыто",
-		"   → ноты          —",
-		" MIDI-файл         [MIDI-файл]  файл не выбран  [Старт] [Пауза] [Стоп]",
-		"",
-		"ОБРАБОТЧИК  [Synth] [Sound Font] ───────────────────────────────────────────────────────────────",
-		" Файл Sound Font   [Файл Sound Font]  GeneralUser GS.sf2  OK",
-		" Пресет            [Пресет]  000:000 Grand Piano",
-		" Эффекты           [Эффекты]  рев 40  хор выкл",
-		"",
-		"ВЫХОД ──────────────────────────────────────────────────────────────────────────────────────────",
-		" Аудио выход       Speakers                               ▾  48000 Hz / 256 кадров  OK",
-		" L                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS",
-		" R                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS",
-		" Мастер            [−] ████████████████░░░░  80% [+]",
-		"",
-		"АУДИО-ФАЙЛ ─────────────────────────────────────────────────────────────────────────────────────",
-		" Папка             [Папка для файлов]  D:/Music/sf2_player",
-		" Формат            [FLAC] [OGG] [MIDI]  запись аудиопотока",
-		" Запись            [Старт] [Стоп] [Отмена]  записей ещё не было",
-		"",
-		"",
-		"",
-		"",
-		"",
-		" голоса   7/64   cpu   3%  xrun     0                          движок: SF2 · GeneralUser GS.sf2",
+	let mut expected = vec![
+		String::new(),
+		rule_row("ИСТОЧНИКИ MIDI"),
+		String::new(),
+		"  Клавиатура        —                                                 окт 4 vel 100".to_owned(),
+		format!("{}{}", " ".repeat(26), PIANO[0]),
+		format!("{}{}", " ".repeat(26), PIANO[1]),
+		format!("{}{}", " ".repeat(26), PIANO[2]),
+		format!("{}{}", " ".repeat(26), PIANO[3]),
+		"  MIDI-вход         Arturia KeyStep 37                     ▾  открыто".to_owned(),
+		"    → ноты          —".to_owned(),
+		"  MIDI-файл         [MIDI-файл]  файл не выбран  [Старт] [Пауза] [Стоп]".to_owned(),
+		String::new(),
+		String::new(),
+		rule_row("ДВИЖОК  [Synth] [Sound Font]"),
+		String::new(),
+		"  Файл Sound Font   [Файл Sound Font]  GeneralUser GS.sf2  OK".to_owned(),
+		"  Пресет            [Пресет]  000:000 Grand Piano".to_owned(),
+		"  Эффекты           [Эффекты]  рев 40  хор выкл".to_owned(),
+		String::new(),
+		String::new(),
+		String::new(),
 	];
+	expected.extend(lower_rows());
 	let lines = lines_of(&rendered_ru(&view()));
-	// The title carries the package version; everything else is literal.
-	let title = expected[0].replace("0.1.0", env!("CARGO_PKG_VERSION"));
+	let last = lines.len() - 1;
+	assert_eq!(lines.len(), usize::from(MIN_ROWS));
+	assert_eq!(lines[0], top_border(usize::from(MIN_COLS)));
 	assert_eq!(lines[0].chars().count(), usize::from(MIN_COLS));
-	assert_eq!(lines[0], title);
-	assert_eq!(lines[1..], expected[1..], "\n{}", lines.join("\n"));
+	let inner: Vec<String> = lines[1..last].iter().map(|line| inside(line)).collect();
+	assert_eq!(inner, expected, "\n{}", lines.join("\n"));
+	assert_eq!(
+		lines[last],
+		bottom_border("голоса   7/64   cpu   3%  xrun     0", "движок: SF2 · GeneralUser GS.sf2")
+	);
+	assert_eq!(lines[last].chars().count(), usize::from(MIN_COLS));
+}
+
+#[test]
+fn everything_inside_the_frame_keeps_two_cells_from_its_sides_and_a_row_from_its_top_and_bottom() {
+	let mut crowded = synth_view();
+	crowded.keyboard_notes = sounding(&(0..128).collect::<Vec<u8>>());
+	crowded.midi_notes = crowded.keyboard_notes;
+	crowded.file = file_view(Transport::Playing).file;
+	crowded.file.file = MidiFile::Loaded(format!("D:/midi/{}.mid", "x".repeat(120)).into());
+	crowded.record_dir = format!("D:/{}", "папка/".repeat(30));
+	crowded.notice = Some(Notice::FontFallback("Comic Mono".repeat(12)));
+	crowded.take = TakeView::Recording {
+		name: "x".repeat(120),
+		size: Size::of(0),
+	};
+	let mut app = App::new("ru");
+	app.recording = Some(Duration::from_secs(5));
+	app.clipping = true;
+	for (cols, rows) in [(MIN_COLS, MIN_ROWS), (130, 50)] {
+		let mut buf = screen(usize::from(cols), usize::from(rows));
+		render(&mut buf, &app, &crowded, &mut Controls::new());
+		let (cols, rows) = (buf.cols(), buf.rows());
+		let is_blank = |col: usize, row: usize| matches!(buf.cell(col, row).ch, '\0' | ' ');
+		for row in 1..rows - 1 {
+			assert_eq!(
+				(buf.cell(0, row).ch, buf.cell(cols - 1, row).ch),
+				('│', '│'),
+				"the frame in row {row}"
+			);
+			for col in [1, 2, cols - 3, cols - 2] {
+				assert!(is_blank(col, row), "cell {col},{row} of the inset at {cols}×{rows}");
+			}
+		}
+		for col in 1..cols - 1 {
+			assert!(is_blank(col, 1), "cell {col},1 of the inset at {cols}×{rows}");
+		}
+		// The inset row at the bottom is where a message that belongs to no row goes, and nothing else.
+		let message = inside(&lines_of(&buf)[rows - 2]);
+		assert!(message.starts_with("  Шрифт Comic Mono"), "{message}");
+		assert_eq!((buf.cell(0, 0).ch, buf.cell(cols - 1, 0).ch), ('┌', '┐'));
+		assert_eq!((buf.cell(0, rows - 1).ch, buf.cell(cols - 1, rows - 1).ch), ('└', '┘'));
+	}
+}
+
+#[test]
+fn a_rule_has_a_blank_row_above_and_below_and_the_last_two_sections_stand_on_the_bottom() {
+	for rows in [MIN_ROWS, 50] {
+		for engine in [view(), synth_view()] {
+			let mut buf = screen(usize::from(MIN_COLS), usize::from(rows));
+			render(&mut buf, &App::new("ru"), &engine, &mut Controls::new());
+			let lines = lines_of(&buf);
+			let rule_of = |title: &str| find(&buf, &format!("─ {title} ")).0;
+			let rules = [rule_of("ИСТОЧНИКИ MIDI"), rule_of("ДВИЖОК"), rule_of("ВЫХОД"), rule_of("ЗАПИСЬ")];
+			for row in rules {
+				assert_eq!(inside(&lines[row - 1]), "", "the row above the rule in row {row}");
+				assert_eq!(inside(&lines[row + 1]), "", "the row below the rule in row {row}");
+			}
+			// The first two hang from the top of the frame, the last two stand on its bottom.
+			let bottom = usize::from(rows) - 1;
+			assert_eq!(rules, [2, 14, bottom - 13, bottom - 6], "at {rows} rows");
+		}
+	}
 }
 
 #[test]
 fn english_screen_uses_the_dictionary_for_every_label() {
 	let buf = rendered(&App::new("en"), &view());
 	for text in [
-		"MIDI SOURCES ──",
+		"─ MIDI SOURCES ──",
 		" Keyboard ",
 		" MIDI input        Arturia KeyStep 37                     ▾  open",
 		"   → notes ",
 		" MIDI file         [MIDI file]  no file selected  [Start] [Pause] [Stop]",
-		"PROCESSOR  [Synth] [Sound Font] ──",
+		"─ ENGINE  [Synth] [Sound Font] ──",
 		" Sound Font file   [Sound Font file]  GeneralUser GS.sf2  OK",
 		" Preset            [Preset]  000:000 Grand Piano",
 		" Effects           [Effects]  rev 40  cho off",
-		"OUTPUT ──",
+		"─ OUTPUT ──",
 		" Audio output      Speakers                               ▾  48000 Hz / 256 frames  OK",
 		" Master            [−] ",
-		"AUDIO FILE ──",
-		" Folder            [Folder for files]  D:/Music/sf2_player",
-		" Format            [FLAC] [OGG] [MIDI]  records the audio stream",
-		" Recording         [Start] [Stop] [Cancel]  no takes yet",
-		" voices   7/64   cpu   3%  xrun     0",
-		"engine: SF2 · GeneralUser GS.sf2",
+		"─ RECORDING ──",
+		"  Folder for files: [D:/Music/sf2_player]",
+		"            Format: FLAC   ▾  records the audio stream",
+		"         Recording: [Start] [Stop] [Cancel]  no takes yet",
+		"└ voices   7/64   cpu   3%  xrun     0 ──",
+		"── engine: SF2 · GeneralUser GS.sf2 ┘",
 		"oct 4 vel 100",
 	] {
 		assert!(is_shown(&buf, text), "{text:?} is missing:\n{}", lines_of(&buf).join("\n"));
@@ -211,7 +335,11 @@ fn healthy_settings_are_marked_green_and_labels_are_grey() {
 	assert_eq!(colour_of(&buf, "48000 Hz"), HINT);
 	assert_eq!(colour_of(&buf, "Клавиатура"), LABEL);
 	assert_eq!(colour_of(&buf, "ИСТОЧНИКИ MIDI"), LABEL);
-	assert_eq!(colour_of(&buf, "─"), RULE);
+	assert_eq!(colour_of(&buf, "─ ИСТОЧНИКИ MIDI"), RULE);
+	assert_eq!(colour_of(&buf, "┌"), RULE, "the frame is as dark as the rules");
+	assert_eq!(colour_of(&buf, "sf2_player"), LABEL);
+	assert_eq!(colour_of(&buf, env!("CARGO_PKG_VERSION")), LABEL);
+	assert_eq!(colour_of(&buf, "голоса"), LABEL);
 	assert_eq!(colour_of(&buf, "движок:"), VALUE);
 	assert_eq!(buf.cell(0, 1).bg, BACKGROUND);
 }
@@ -246,7 +374,7 @@ fn a_broken_setting_is_red_in_its_own_line_and_recovers() {
 		),
 		(
 			Box::new(|view| view.notice = Some(Notice::RecordError("disk full".into()))),
-			"Запись  ",
+			"Запись: ",
 			"disk full",
 		),
 	];
@@ -287,37 +415,33 @@ fn without_a_bank_the_file_line_is_red_and_the_preset_is_unavailable() {
 #[test]
 fn buttons_show_what_is_chosen_and_what_is_unavailable() {
 	let buf = rendered_ru(&view());
-	let (row, col) = find(&buf, "[FLAC]");
+	assert_eq!(colour_of(&buf, "[Synth]"), TEXT, "the other engine can be chosen");
+	let (row, col) = find(&buf, "[Sound Font]");
 	let chosen = buf.cell(col, row);
 	assert_eq!(
 		(chosen.fg, chosen.bg),
 		(BACKGROUND, VALUE),
-		"the chosen format is inverted on amber"
+		"the chosen engine is inverted on amber"
 	);
 	assert!(chosen.flags.contains(CellFlags::BOLD));
-	let (row, col) = find(&buf, "[OGG]");
-	assert_eq!((buf.cell(col, row).fg, buf.cell(col, row).bg), (TEXT, BACKGROUND));
-	assert_eq!(colour_of(&buf, "[MIDI]"), TEXT, "not chosen, available");
-	assert_eq!(colour_of(&buf, "[Synth]"), TEXT, "the other processor can be chosen");
-	let (row, col) = find(&buf, "[Sound Font]");
-	assert_eq!(buf.cell(col, row).bg, VALUE);
 	assert_eq!(colour_of(&buf, "[MIDI-файл]"), TEXT, "a file can be chosen");
 	assert_eq!(colour_of(&buf, "[Пауза]"), DISABLED);
 	assert_eq!(colour_of(&buf, "Arturia KeyStep 37"), TEXT, "the port in use");
+	// The field of the format dropdown names the format in use.
+	assert!(is_shown(&buf, "Формат: FLAC   ▾"));
+	assert_eq!(colour_of(&buf, "FLAC   ▾"), TEXT);
 
 	let mut vorbis = view();
 	vorbis.record_format = RecordFormat::OggVorbis;
 	let buf = rendered_ru(&vorbis);
-	let (row, col) = find(&buf, "[OGG]");
-	assert_eq!(buf.cell(col, row).bg, VALUE);
-	let (row, col) = find(&buf, "[FLAC]");
-	assert_eq!(buf.cell(col, row).bg, BACKGROUND);
+	assert!(is_shown(&buf, "Формат: OGG    ▾"));
+	assert!(!is_shown(&buf, "FLAC"));
 }
 
 #[test]
 fn recording_shows_a_blinking_red_indicator_and_swaps_the_available_buttons() {
 	let idle = rendered_ru(&view());
-	let (row, _) = find(&idle, " Запись ");
+	let (row, _) = find(&idle, " Запись:");
 	let start_col = usize::from(VALUE_X);
 	assert_eq!(idle.cell(start_col, row).fg, TEXT, "Start is available when idle");
 	assert_eq!(colour_of(&idle, "[Стоп] [Отмена]"), DISABLED, "Stop is unavailable when idle");
@@ -407,7 +531,8 @@ fn status_counters_keep_their_width_and_optional_fields_follow_them() {
 		let buf = rendered_ru(&busy);
 		let (row, _) = find(&buf, "голоса");
 		let line = lines_of(&buf)[row].clone();
-		line.chars().take(38).collect::<String>()
+		// What follows the corner of the bottom border.
+		line.chars().skip(1).take(38).collect::<String>()
 	};
 	assert_eq!(counters(0, 0, 0), " голоса   0/64   cpu   0%  xrun     0 ");
 	assert_eq!(counters(999, 99_999, 100), " голоса 999/64   cpu 100%  xrun 99999 ");
@@ -424,7 +549,7 @@ fn status_counters_keep_their_width_and_optional_fields_follow_them() {
 	busy.record_dropped = 7;
 	let buf = rendered_ru(&busy);
 	assert!(is_shown(&buf, "xrun     0  тр +3  omni к1  потеряно 2  зап. потеряно 7"));
-	// The counters win: the processor summary gives way when the row is full.
+	// The counters win: the engine summary gives way when the border is full.
 	busy.bank = Some(BankView {
 		file_name: "A very long SoundFont bank file name indeed.sf2".into(),
 		preset_label: String::new(),
@@ -440,9 +565,19 @@ fn notices_not_tied_to_a_setting_go_to_the_message_line_in_yellow() {
 	saved.notice = Some(Notice::RecordSaved("2026-11-13_14-02-11.flac".into()));
 	let buf = rendered_ru(&saved);
 	let (row, _) = find(&buf, "2026-11-13_14-02-11.flac");
-	let (record_row, _) = find(&buf, " Запись ");
+	let (record_row, _) = find(&buf, " Запись:");
 	assert_eq!(row, record_row + 1, "the message line sits under the recording row");
+	assert_eq!(row, usize::from(MIN_ROWS) - 2, "in the inset row over the bottom of the frame");
 	assert_eq!(buf.cell(usize::from(LABEL_X), row).fg, MESSAGE);
+
+	// A message too long for the row is cut and marked at the inset of the frame.
+	let mut long = view();
+	long.notice = Some(Notice::FontFallback("Comic Mono ".repeat(12)));
+	let buf = rendered_ru(&long);
+	let (row, _) = find(&buf, "Шрифт Comic Mono");
+	let line = inside(&lines_of(&buf)[row]);
+	assert!(line.ends_with('…'), "{line}");
+	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 4);
 
 	let mut font = view();
 	font.notice = Some(Notice::FontFallback("Comic Mono".into()));
@@ -456,7 +591,7 @@ fn a_grid_below_the_minimum_shows_only_the_hint() {
 		let mut buf = screen(usize::from(cols), usize::from(rows));
 		render(&mut buf, &App::new("ru"), &view(), &mut Controls::new());
 		let lines = lines_of(&buf);
-		let hint: String = "Увеличьте окно до 96×31".chars().take(usize::from(cols)).collect();
+		let hint: String = "Увеличьте окно до 96×36".chars().take(usize::from(cols)).collect();
 		assert_eq!(lines[0], hint);
 		assert_eq!(buf.cell(0, 0).fg, ERROR);
 		assert!(lines[1..].iter().all(String::is_empty), "nothing else is drawn at {cols}×{rows}");
@@ -465,7 +600,7 @@ fn a_grid_below_the_minimum_shows_only_the_hint() {
 	// A larger grid keeps the layout: the piano stays centred, the status goes to the last row.
 	let mut wide = screen(120, 40);
 	render(&mut wide, &App::new("ru"), &view(), &mut Controls::new());
-	let (piano_row, piano_col) = find(&wide, "│ ██ ██  │ ██ ██ ██  │ ██ ██  │");
+	let (piano_row, piano_col) = find(&wide, PIANO[0]);
 	assert_eq!(piano_col, (120 - usize::from(piano::WIDTH)) / 2);
 	assert_eq!(
 		piano_origin(wide.area()),
@@ -474,7 +609,7 @@ fn a_grid_below_the_minimum_shows_only_the_hint() {
 	);
 	let (status_row, _) = find(&wide, "голоса");
 	assert_eq!(status_row, 39);
-	assert_eq!(lines_of(&wide)[0].chars().count(), 120, "the title rule spans the whole width");
+	assert_eq!(lines_of(&wide)[0], top_border(120), "the frame spans the whole width");
 }
 
 #[test]
@@ -546,10 +681,7 @@ fn every_button_of_the_screen_is_pressed_by_a_click_and_by_tab_and_enter() {
 		(ButtonId::Effects, "[Эффекты]"),
 		(ButtonId::MasterDown, "[−]"),
 		(ButtonId::MasterUp, "[+]"),
-		(ButtonId::Folder, "[Папка для файлов]"),
-		(ButtonId::FormatFlac, "[FLAC]"),
-		(ButtonId::FormatOgg, "[OGG]"),
-		(ButtonId::FormatMidi, "[MIDI]"),
+		(ButtonId::Folder, "[D:/Music/sf2_player]"),
 		(ButtonId::RecordStart, "[Старт] [Стоп] [Отмена]"),
 	];
 	for (id, text) in available {
@@ -586,7 +718,7 @@ fn the_control_under_the_focus_is_underlined_from_the_first_frame() {
 		is_underlined("Arturia KeyStep 37"),
 		"the first control of the screen is the MIDI input"
 	);
-	assert!(!is_underlined("[Файл Sound Font]") && !is_underlined("[FLAC]") && !is_underlined("[MIDI-файл]"));
+	assert!(!is_underlined("[Файл Sound Font]") && !is_underlined("FLAC   ▾") && !is_underlined("[MIDI-файл]"));
 }
 
 #[test]
@@ -596,17 +728,87 @@ fn a_running_take_locks_the_format_and_takes_start_away() {
 	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &app, &view(), &mut buttons);
-	// The chosen format stays lit, the other goes dark, and neither reacts.
-	let (row, col) = find(&buf, "[FLAC]");
-	assert_eq!((buf.cell(col, row).fg, buf.cell(col, row).bg), (BACKGROUND, VALUE));
-	assert_eq!(colour_of(&buf, "[OGG]"), DISABLED);
-	for text in ["[FLAC]", "[OGG]", "[MIDI]", "[Старт] [Стоп] [Отмена]"] {
+	// The field still names the format of the take, dark, and does not react.
+	assert_eq!(colour_of(&buf, "FLAC   ▾"), DISABLED);
+	for text in ["FLAC   ▾", "[Старт] [Стоп] [Отмена]"] {
 		assert_eq!(click(&mut buttons, &buf, text), Touch::Missed, "{text}");
 	}
+	assert_eq!(buttons.open_dropdown(), None);
+	assert!(!buttons.open(Dropdown::Format), "nor does anything else open it");
 	assert_eq!(click(&mut buttons, &buf, "[Стоп] [Отмена]"), Touch::Pressed(ButtonId::RecordStop));
 	let stops = ring(&mut buttons);
 	assert!(stops.contains(&ButtonId::RecordStop));
-	assert!(!stops.contains(&ButtonId::RecordStart) && !stops.contains(&ButtonId::FormatFlac) && !stops.contains(&ButtonId::FormatOgg));
+	assert!(!stops.contains(&ButtonId::RecordStart));
+
+	// Without a take the field reacts.
+	render(&mut buf, &App::new("ru"), &view(), &mut buttons);
+	assert_eq!(colour_of(&buf, "FLAC   ▾"), TEXT);
+	assert!(buttons.open(Dropdown::Format));
+}
+
+#[test]
+fn the_format_is_chosen_from_a_dropdown_whose_list_opens_upwards() {
+	let mut buttons = Controls::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &App::new("ru"), &view(), &mut buttons);
+	let (row, col) = find(&buf, "FLAC   ▾");
+	assert_eq!(col, usize::from(VALUE_X), "the field stands in the value column");
+	let at = |kind, col: i32, row: i32| MouseMsg {
+		kind,
+		button: Some(MouseButton::Left),
+		col,
+		row,
+		modifiers: ModifiersState::empty(),
+		click_count: 1,
+	};
+	let (field_col, field_row) = (i32::try_from(col).expect("column"), i32::try_from(row).expect("row"));
+	assert_eq!(
+		buttons.handle_mouse(&at(MouseKind::Down, field_col, field_row), GRID),
+		Touch::Opened(Dropdown::Format)
+	);
+	buttons.handle_mouse(&at(MouseKind::Up, field_col, field_row), GRID);
+	buttons.set_items(Dropdown::Format, ["FLAC", "OGG", "MIDI"].map(str::to_owned).to_vec());
+	render(&mut buf, &App::new("ru"), &view(), &mut buttons);
+	assert!(is_shown(&buf, "Формат: FLAC   ▴"), "the mark of the field turns");
+
+	// Three rows in a frame do not fit between the field and the bottom of the grid: the list goes up.
+	let (area, list) = buttons.layer(GRID).expect("the list is open");
+	let field_row = u16::try_from(row).expect("row");
+	assert_eq!(area, Rect::new(VALUE_X, field_row - 5, FORMAT_CELLS, 5));
+	let rows = lines_of(&list);
+	assert!(rows[1].contains("FLAC") && rows[2].contains("OGG") && rows[3].contains("MIDI"));
+
+	let (midi_col, midi_row) = cell_of(area, &list, "MIDI");
+	assert_eq!(
+		buttons.handle_mouse(&at(MouseKind::Down, midi_col, midi_row), GRID),
+		Touch::Chosen(Dropdown::Format, 2)
+	);
+	assert_eq!(buttons.open_dropdown(), None);
+}
+
+#[test]
+fn the_folder_button_names_the_folder_and_a_long_path_loses_its_beginning() {
+	let mut buttons = Controls::new();
+	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
+	render(&mut buf, &App::new("ru"), &view(), &mut buttons);
+	assert!(is_shown(&buf, "  Папка для файлов: [D:/Music/sf2_player]"));
+	assert_eq!(colour_of(&buf, "Папка для файлов:"), LABEL);
+	assert_eq!(colour_of(&buf, "[D:/Music/sf2_player]"), TEXT);
+	assert_eq!(click(&mut buttons, &buf, "[D:/Music/sf2_player]"), Touch::Pressed(ButtonId::Folder));
+
+	let mut deep = view();
+	deep.record_dir = format!("D:/{}записи", "папка/".repeat(20));
+	render(&mut buf, &App::new("ru"), &deep, &mut buttons);
+	let (row, col) = find(&buf, "[…");
+	let line = inside(&lines_of(&buf)[row]);
+	assert_eq!(col, usize::from(VALUE_X));
+	assert!(line.ends_with("папка/папка/записи]"), "{line}");
+	assert_eq!(
+		line.chars().count(),
+		usize::from(MIN_COLS) - 4,
+		"the button ends where the content does"
+	);
+	assert_eq!(click(&mut buttons, &buf, "[…"), Touch::Pressed(ButtonId::Folder));
 }
 
 #[test]
@@ -644,18 +846,29 @@ fn the_note_rows_name_what_each_source_plays_and_the_piano_lights_both() {
 	assert_eq!(colour_of(&buf, "C#4 D4 E7"), VALUE);
 	assert!(is_shown(&buf, "окт 4 vel 100"), "the read-out of the keyboard row stays in place");
 	// The piano lights the keys of both sources that are in its range: C C# D E G; E7 is outside.
-	assert!(is_shown(&buf, "│██│██│██│  │██│  │  │  │  │  │"));
+	assert_eq!(lit_white_keys(&buf), [0, 1, 2, 4], "C D E G");
 	let (row, col) = piano_origin(buf.area())
 		.map(|(x, y)| (usize::from(y), usize::from(x)))
 		.expect("shown");
-	assert_eq!(buf.cell(col + 2, row).fg, VALUE, "C# is lit");
-	assert_eq!(buf.cell(col + 5, row).fg, HINT, "D# is not");
+	let sharp = buf.cell(col + 4, row);
+	assert_eq!(
+		(sharp.ch, sharp.fg, sharp.bg),
+		('s', BACKGROUND, VALUE),
+		"C# is lit at its character"
+	);
+	let other = buf.cell(col + 8, row);
+	assert_eq!((other.ch, other.fg, other.bg), ('d', LABEL, BACKGROUND), "D# is not");
+	// A lit key keeps its character.
+	for row in PIANO {
+		assert!(is_shown(&buf, row), "{row}");
+	}
 
 	// Silence: a dash in both rows, a grey piano.
 	let buf = rendered_ru(&view());
 	assert!(is_shown(&buf, " Клавиатура        —"));
 	assert!(is_shown(&buf, "   → ноты          —"));
-	assert!(is_shown(&buf, "│  │  │  │  │  │  │  │  │  │  │"));
+	assert!(lit_white_keys(&buf).is_empty());
+	assert_eq!(colour_of(&buf, PIANO[2]), HINT, "the lines of the piano are dark");
 }
 
 #[test]
@@ -663,21 +876,12 @@ fn the_piano_follows_the_base_octave_of_the_text_keyboard() {
 	let mut playing = view();
 	playing.midi_notes = sounding(&[60]);
 	let mut app = App::new("ru");
-	assert!(
-		is_shown(&rendered(&app, &playing), "│██│  │  │  │  │  │  │  │  │  │"),
-		"C4 is the first key"
-	);
+	assert_eq!(lit_white_keys(&rendered(&app, &playing)), [0], "C4 is the first key");
 	app.keyboard.octave_down();
-	assert!(
-		is_shown(&rendered(&app, &playing), "│  │  │  │  │  │  │  │██│  │  │"),
-		"from C3 it is the eighth"
-	);
+	assert_eq!(lit_white_keys(&rendered(&app, &playing)), [7], "from C3 it is the eighth");
 	app.keyboard.octave_up();
 	app.keyboard.octave_up();
-	assert!(
-		is_shown(&rendered(&app, &playing), "│  │  │  │  │  │  │  │  │  │  │"),
-		"from C5 it is out of range"
-	);
+	assert!(lit_white_keys(&rendered(&app, &playing)).is_empty(), "from C5 it is out of range");
 }
 
 #[test]
@@ -698,30 +902,28 @@ fn a_long_list_of_notes_is_cut_at_a_whole_name_and_marked() {
 		lines[keyboard_row].contains("C3 …     окт 4 vel 100"),
 		"the read-out is not overwritten"
 	);
-	// The MIDI row has the whole width to the right edge.
+	// The MIDI row has the whole width up to the inset of the frame: 72 cells.
 	let (midi_row, _) = find(&buf, "   → ноты ");
-	let midi: String = lines[midi_row].chars().skip(usize::from(VALUE_X)).collect();
-	assert_eq!(midi, "C2 C#2 D2 D#2 E2 F2 F#2 G2 G#2 A2 A#2 B2 C3 C#3 D3 D#3 E3 F3 F#3 G3 G#3 A3 …");
-	assert!(
-		lines[midi_row].chars().count() < usize::from(MIN_COLS),
-		"one cell is left at the edge"
+	let names_of = |buf: &ScreenBuffer| -> String { inside(&lines_of(buf)[midi_row]).chars().skip(usize::from(VALUE_X) - 1).collect() };
+	assert_eq!(
+		names_of(&buf),
+		"C2 C#2 D2 D#2 E2 F2 F#2 G2 G#2 A2 A#2 B2 C3 C#3 D3 D#3 E3 F3 F#3 G3 …"
 	);
 
-	// Twenty-six natural notes from C2 take exactly 77 cells — one more than the row has: the last cell
-	// of the screen stays free, so the list is cut.
+	// Twenty-five natural notes from C2 take 74 cells — two more than the row has: the list is cut.
 	let naturals: Vec<u8> = (36..128)
 		.filter(|key| [0, 2, 4, 5, 7, 9, 11].contains(&(key % 12)))
-		.take(26)
+		.take(25)
 		.collect();
 	playing.midi_notes = sounding(&naturals);
-	let buf = rendered_ru(&playing);
-	let midi: String = lines_of(&buf)[midi_row].chars().skip(usize::from(VALUE_X)).collect();
-	assert!(midi.ends_with("F5 …") && !midi.contains("G5"), "{midi}");
-	assert!(midi.chars().count() <= 76);
-	// One note fewer fits whole.
-	playing.midi_notes = sounding(&naturals[..25]);
-	let buf = rendered_ru(&playing);
-	assert!(lines_of(&buf)[midi_row].ends_with("E5 F5"));
+	let midi = names_of(&rendered_ru(&playing));
+	assert!(midi.ends_with("D5 …") && !midi.contains("E5"), "{midi}");
+	assert!(midi.chars().count() <= 72);
+	// One note fewer takes 71 cells and fits whole.
+	playing.midi_notes = sounding(&naturals[..24]);
+	let midi = names_of(&rendered_ru(&playing));
+	assert!(midi.ends_with("D5 E5"), "{midi}");
+	assert_eq!(midi.chars().count(), 71);
 }
 
 /// The view with the built-in synthesizer chosen.
@@ -733,35 +935,29 @@ fn synth_view() -> View {
 
 #[test]
 fn the_synth_screen_matches_the_layout_mockup() {
-	let expected = [
-		"ОБРАБОТЧИК  [Synth] [Sound Font] ───────────────────────────────────────────────────────────────",
-		" Форма сигнала     [Синусоида] [Пила] [Треугольник]",
-		" ADSR              пресет: [Пианино] [Клавесин] [Орган] [Флейта]",
-		"   значения        Attack: [−] 0.003 с [+]   Decay: [−] 0.500 с [+]",
-		"                   Sustain: [−]  35% [+]     Release: [−] 0.350 с [+]",
-		" Эффекты           [Эффекты]  рев 40  хор выкл",
-		"",
-		"ВЫХОД ──────────────────────────────────────────────────────────────────────────────────────────",
-		" Аудио выход       Speakers                               ▾  48000 Hz / 256 кадров  OK",
-		" L                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS",
-		" R                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS",
-		" Мастер            [−] ████████████████░░░░  80% [+]",
-		"",
-		"АУДИО-ФАЙЛ ─────────────────────────────────────────────────────────────────────────────────────",
-		" Папка             [Папка для файлов]  D:/Music/sf2_player",
-		" Формат            [FLAC] [OGG] [MIDI]  запись аудиопотока",
-		" Запись            [Старт] [Стоп] [Отмена]  записей ещё не было",
-		"",
-		"",
-		"",
-		" голоса   7/64   cpu   3%  xrun     0                                 движок: Synth · Синусоида",
+	let mut expected = vec![
+		rule_row("ДВИЖОК  [Synth] [Sound Font]"),
+		String::new(),
+		"  Форма сигнала     [Синусоида] [Пила] [Треугольник]".to_owned(),
+		"  ADSR              пресет: [Пианино] [Клавесин] [Орган] [Флейта]".to_owned(),
+		"    значения        Attack: [−] 0.003 с [+]   Decay: [−] 0.500 с [+]".to_owned(),
+		"                    Sustain: [−]  35% [+]     Release: [−] 0.350 с [+]".to_owned(),
+		"  Эффекты           [Эффекты]  рев 40  хор выкл".to_owned(),
+		String::new(),
 	];
+	expected.extend(lower_rows());
 	let buf = rendered_ru(&synth_view());
 	let lines = lines_of(&buf);
-	// The sections above the processor are the same for both; the synthesizer takes two rows more,
-	// and the screen still fits the smallest grid.
-	assert_eq!(lines[..10], lines_of(&rendered_ru(&view()))[..10]);
-	assert_eq!(lines[10..], expected, "{}", lines[10..].join("|"));
+	let last = lines.len() - 1;
+	// The sections above the engine are the same for both; the synthesizer takes two rows more, the
+	// sections under it stay where they are, and the screen still fits the smallest grid.
+	assert_eq!(lines[..14], lines_of(&rendered_ru(&view()))[..14]);
+	let inner: Vec<String> = lines[14..last].iter().map(|line| inside(line)).collect();
+	assert_eq!(inner, expected, "{}", lines[14..].join("|"));
+	assert_eq!(
+		lines[last],
+		bottom_border("голоса   7/64   cpu   3%  xrun     0", "движок: Synth · Синусоида")
+	);
 	assert_eq!(lines.len(), usize::from(MIN_ROWS));
 }
 
@@ -1038,7 +1234,7 @@ fn a_file_that_cannot_be_played_says_why_in_red_and_offers_no_transport() {
 	let buf = rendered_ru(&broken);
 	assert!(is_shown(
 		&buf,
-		"[MIDI-файл]  MIDI file format 2 is not supported (o…  [Старт] [Пауза] [Стоп]"
+		"[MIDI-файл]  MIDI file format 2 is not supporte…  [Старт] [Пауза] [Стоп]"
 	));
 	assert_eq!(colour_of(&buf, "MIDI file format 2"), ERROR);
 	assert_eq!(
@@ -1055,12 +1251,12 @@ fn a_long_file_name_is_cut_so_that_the_transport_buttons_stay_on_the_screen() {
 		MidiFile::Loaded("D:/midi/Johann Sebastian Bach - Das Wohltemperierte Klavier - Praeludium und Fuge C-Dur BWV 846.mid".into());
 	let buf = rendered_ru(&long);
 	let (row, _) = find(&buf, " MIDI-файл ");
-	let line = lines_of(&buf)[row].clone();
+	let line = inside(&lines_of(&buf)[row]);
 	assert_eq!(
 		line,
-		" MIDI-файл         [MIDI-файл]  Johann Sebastian Bach - Das Wohltemper…  [Старт] [Пауза] [Стоп]"
+		"  MIDI-файл         [MIDI-файл]  Johann Sebastian Bach - Das Wohlte…  [Старт] [Пауза] [Стоп]"
 	);
-	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 1, "up to one cell short of the edge");
+	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 4, "up to the inset of the frame");
 	// The buttons are still where a click finds them.
 	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
@@ -1115,9 +1311,9 @@ fn a_running_take_shows_its_time_size_and_file_and_offers_a_red_cancel() {
 	};
 	let buf = rendered(&app, &recording);
 	let (row, _) = find(&buf, "● ЗАП 00:42 · 0 КБ · xxx");
-	let line = &lines_of(&buf)[row];
+	let line = inside(&lines_of(&buf)[row]);
 	assert!(line.ends_with("xx…"));
-	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 1);
+	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 4, "up to the inset of the frame");
 
 	// Without a take there is nothing to cancel.
 	let idle = rendered_ru(&view());
@@ -1128,35 +1324,29 @@ fn a_running_take_shows_its_time_size_and_file_and_offers_a_red_cancel() {
 fn the_last_saved_take_is_shown_in_green_with_its_path_and_size() {
 	let mut saved = view();
 	saved.take = TakeView::Saved {
-		path: "D:/rec/2026-11-13_12-03-41.flac".into(),
+		path: "D:/2026-11-13_12-03-41.flac".into(),
 		size: Size::of(5 * 1024 * 1024 + 300 * 1024),
 	};
 	let buf = rendered_ru(&saved);
-	println!(
-		"{}",
-		lines_of(&buf).join(
-			"
-"
-		)
-	);
-	assert!(is_shown(&buf, "[Отмена]  сохранено: D:/rec/2026-11-13_12-03-41.flac · 5.3 МБ"));
+	// The longest that fits whole: it ends where the content does.
+	assert!(is_shown(&buf, "[Отмена]  сохранено: D:/2026-11-13_12-03-41.flac · 5.3 МБ  │"));
 	assert_eq!(colour_of(&buf, "сохранено:"), GOOD);
 	assert!(!is_shown(&buf, "записей ещё не было"));
 	assert!(is_shown(
 		&rendered(&App::new("en"), &saved),
-		"[Cancel]  saved: D:/rec/2026-11-13_12-03-41.flac · 5.3 MB"
+		"[Cancel]  saved: D:/2026-11-13_12-03-41.flac · 5.3 MB"
 	));
 
-	// A long path loses its beginning, not the file name; the row stops one cell short of the edge.
+	// A long path loses its beginning, not the file name; the row stops at the inset of the frame.
 	saved.take = TakeView::Saved {
 		path: format!("D:/{}2026-11-13_12-03-41.flac", "папка/".repeat(20)),
 		size: Size::TenthsOfMegabyte(12),
 	};
 	let buf = rendered_ru(&saved);
 	let (row, _) = find(&buf, "сохранено: …");
-	let line = &lines_of(&buf)[row];
-	assert!(line.ends_with("папка/2026-11-13_12-03-41.flac · 1.2 МБ"), "{line}");
-	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 1);
+	let line = inside(&lines_of(&buf)[row]);
+	assert!(line.ends_with("сохранено: …а/2026-11-13_12-03-41.flac · 1.2 МБ"), "{line}");
+	assert_eq!(line.chars().count(), usize::from(MIN_COLS) - 4);
 
 	// An error of the record line is more urgent than the last take; a new take replaces both.
 	saved.notice = Some(Notice::RecordError("disk full".into()));
@@ -1185,32 +1375,22 @@ fn a_text_cut_at_the_front_keeps_its_end() {
 }
 
 #[test]
-fn the_midi_format_is_chosen_like_the_others_and_says_what_it_records() {
+fn the_format_row_says_what_the_chosen_format_records() {
 	let mut midi = view();
 	midi.record_format = RecordFormat::Midi;
-	let mut buttons = Controls::new();
-	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
-	render(&mut buf, &App::new("ru"), &midi, &mut buttons);
-	assert!(is_shown(&buf, "[FLAC] [OGG] [MIDI]  запись MIDI-событий"));
+	let buf = rendered_ru(&midi);
+	assert!(is_shown(&buf, "Формат: MIDI   ▾  запись MIDI-событий"));
 	assert!(!is_shown(&buf, "запись аудиопотока"));
 	assert_eq!(colour_of(&buf, "запись MIDI-событий"), HINT);
-	let (row, col) = find(&buf, "[MIDI]");
-	assert_eq!(
-		(buf.cell(col, row).fg, buf.cell(col, row).bg),
-		(BACKGROUND, VALUE),
-		"the chosen format is lit"
-	);
-	assert_eq!(colour_of(&buf, "[FLAC]"), TEXT);
-	assert_eq!(click(&mut buttons, &buf, "[MIDI]"), Touch::Pressed(ButtonId::FormatMidi));
-	assert!(is_shown(
-		&rendered(&App::new("en"), &midi),
-		"[FLAC] [OGG] [MIDI]  records MIDI events"
-	));
+	assert_eq!(colour_of(&buf, "MIDI   ▾"), TEXT);
+	assert!(is_shown(&rendered(&App::new("en"), &midi), "Format: MIDI   ▾  records MIDI events"));
 
-	// With another format chosen the button is an ordinary one.
-	let buf = rendered_ru(&view());
-	assert_eq!(colour_of(&buf, "[MIDI]"), TEXT);
-	assert!(is_shown(&buf, "[MIDI]  запись аудиопотока"));
+	// The audio formats record the stream.
+	for format in [RecordFormat::Flac, RecordFormat::OggVorbis] {
+		let mut audio = view();
+		audio.record_format = format;
+		assert!(is_shown(&rendered_ru(&audio), "▾  запись аудиопотока"), "{format:?}");
+	}
 
 	// Under a running MIDI take the format is locked like the others.
 	let mut app = App::new("ru");
@@ -1218,10 +1398,8 @@ fn the_midi_format_is_chosen_like_the_others_and_says_what_it_records() {
 	let mut buttons = Controls::new();
 	let mut buf = screen(usize::from(MIN_COLS), usize::from(MIN_ROWS));
 	render(&mut buf, &app, &midi, &mut buttons);
-	let (row, col) = find(&buf, "[MIDI]");
-	assert_eq!(buf.cell(col, row).bg, VALUE);
-	assert_eq!(click(&mut buttons, &buf, "[MIDI]"), Touch::Missed);
-	assert_eq!(colour_of(&buf, "[FLAC]"), DISABLED);
+	assert_eq!(colour_of(&buf, "MIDI   ▾"), DISABLED);
+	assert_eq!(click(&mut buttons, &buf, "MIDI   ▾"), Touch::Missed);
 }
 
 #[test]

@@ -38,7 +38,7 @@ pub enum Request {
 	OpenEffectsDialog,
 	OpenRecordDialog,
 	Apply(Choice),
-	/// A format button of the main screen.
+	/// A row of the format dropdown of the main screen.
 	SetRecordFormat(RecordFormat),
 	/// The processor buttons and the `engine_toggle` command (spec v1.2, F-22).
 	SetEngine(EngineKind),
@@ -107,16 +107,13 @@ pub enum ButtonId {
 	MasterDown,
 	MasterUp,
 	Folder,
-	FormatFlac,
-	FormatOgg,
-	FormatMidi,
 	RecordStart,
 	RecordStop,
 	RecordCancel,
 }
 
 impl ButtonId {
-	pub const ALL: [Self; 33] = [
+	pub const ALL: [Self; 30] = [
 		Self::MidiFile,
 		Self::FileStart,
 		Self::FilePause,
@@ -144,25 +141,31 @@ impl ButtonId {
 		Self::MasterDown,
 		Self::MasterUp,
 		Self::Folder,
-		Self::FormatFlac,
-		Self::FormatOgg,
-		Self::FormatMidi,
 		Self::RecordStart,
 		Self::RecordStop,
 		Self::RecordCancel,
 	];
 }
 
-/// The device dropdowns of the main screen (spec v1.3, F-26.1), in the order of the screen.
+/// The dropdowns of the main screen, in the order of the screen: the two devices (spec v1.3, F-26.1)
+/// and the format of takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dropdown {
 	MidiIn,
 	AudioOut,
+	Format,
 }
 
 impl Dropdown {
-	pub const ALL: [Self; 2] = [Self::MidiIn, Self::AudioOut];
+	pub const ALL: [Self; 3] = [Self::MidiIn, Self::AudioOut, Self::Format];
 }
+
+/// The formats of a take in the order of their dropdown, and what each is called there.
+pub const RECORD_FORMATS: [(RecordFormat, &str); 3] = [
+	(RecordFormat::Flac, "FLAC"),
+	(RecordFormat::OggVorbis, "OGG"),
+	(RecordFormat::Midi, "MIDI"),
+];
 
 pub struct App {
 	pub locale: &'static str,
@@ -285,8 +288,6 @@ impl App {
 			ButtonId::MasterDown => self.perform(Action::MasterDownFast),
 			ButtonId::MasterUp => self.perform(Action::MasterUpFast),
 			ButtonId::Folder => self.perform(Action::RecordDialog),
-			ButtonId::FormatFlac => self.choose_format(RecordFormat::Flac),
-			ButtonId::FormatOgg => self.choose_format(RecordFormat::OggVorbis),
 			ButtonId::RecordStart => self.perform(Action::RecordStart),
 			ButtonId::RecordStop => self.perform(Action::RecordStop),
 			ButtonId::EngineSynth => self.ask(Request::SetEngine(EngineKind::Builtin)),
@@ -318,7 +319,6 @@ impl App {
 				}
 				None
 			}
-			ButtonId::FormatMidi => self.choose_format(RecordFormat::Midi),
 		}
 	}
 
@@ -328,13 +328,15 @@ impl App {
 		Some(request)
 	}
 
-	/// The format cannot change under a running take (spec v1.2, F-23).
-	fn choose_format(&mut self, format: RecordFormat) -> Option<Request> {
+	/// A row of the format dropdown was chosen. The format cannot change under a running take
+	/// (spec v1.2, F-23).
+	pub fn choose_format(&mut self, row: usize) -> Option<Request> {
 		if self.recording.is_some() {
 			return None;
 		}
+		let (format, _) = RECORD_FORMATS.get(row)?;
 		self.dirty = true;
-		Some(Request::SetRecordFormat(format))
+		Some(Request::SetRecordFormat(*format))
 	}
 
 	/// Carries out a command, whichever way it was given: a hotkey or a button.

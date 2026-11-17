@@ -1,38 +1,53 @@
-//! The on-screen piano (spec v1.2, F-24): 31×2 cells showing the range of the text keyboard — ten white
-//! keys from the base C, seven black ones — with the sounding notes lit, and playable with the mouse.
+//! The on-screen piano (spec v1.2, F-24): 41×4 cells showing the range of the text keyboard — ten white
+//! keys from the base C, seven black ones — each with the character that plays it, the sounding notes
+//! lit, and playable with the mouse.
 //!
 //! ```text
-//! │ ██ ██  │ ██ ██ ██  │ ██ ██  │      the black keys
-//! │  │  │  │  │  │  │  │  │  │  │      the white keys, three cells each
+//! │  │s│ │d│  │  │g│ │h│ │j│  │  │l│ │;│  │      the black keys
+//! │  └┬┘ └┬┘  │  └┬┘ └┬┘ └┬┘  │  └┬┘ └┬┘  │
+//! │ z │ x │ c │ v │ b │ n │ m │ , │ . │ / │      the white keys, four cells each
+//! └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
 //! ```
 //!
 //! A press plays the key under the pointer and a release stops it; dragging over the keys plays each in
 //! turn, and leaving the piano with the button down stops the note until the pointer comes back.
 
 use gterm::buffer::ScreenBuffer;
-use gterm_widgets::{MouseKind, MouseMsg};
+use gterm_widgets::{MouseKind, MouseMsg, Style};
 use winit::event::MouseButton;
 
-use super::paint::{HINT, Pen, VALUE};
+use super::paint::{BACKGROUND, HINT, LABEL, Pen, VALUE};
 use super::text_keyboard::{BLACK_OFFSETS, WHITE_OFFSETS};
 use crate::midi::MidiEvent;
 
-pub const WIDTH: u16 = 31;
-pub const HEIGHT: u16 = 2;
 /// Cells a white key takes, its left border included.
-const WHITE_CELLS: u16 = 3;
-const TOP: &str = "│ ██ ██  │ ██ ██ ██  │ ██ ██  │";
-const BOTTOM: &str = "│  │  │  │  │  │  │  │  │  │  │";
-const LIT: &str = "██";
+const WHITE_CELLS: u16 = 4;
+const WHITE_KEYS: u16 = 10;
+pub const WIDTH: u16 = WHITE_KEYS * WHITE_CELLS + 1;
+pub const HEIGHT: u16 = 4;
+/// The row of the white keys' characters; the rows above it are shared with the black keys, the row
+/// under it is the line that closes the keys.
+const WHITE_ROW: u16 = 2;
+const BOTTOM_ROW: u16 = HEIGHT - 1;
+/// Cells a black key takes: its character between two borders.
+const BLACK_CELLS: u16 = 3;
+const BORDER: &str = "│";
+/// What closes a black key underneath: its middle cell runs on as the border of the white keys.
+const BLACK_FOOT: &str = "└┬┘";
+/// The line under the white keys: its corners, the cell under a border between two keys, the rest.
+const BOTTOM_LEFT: &str = "└";
+const BOTTOM_RIGHT: &str = "┘";
+const BOTTOM_JOINT: &str = "┴";
+const BOTTOM_LINE: &str = "─";
 /// White keys that have a black key to their right, in the order of `BLACK_OFFSETS`.
 const WHITE_BEFORE_BLACK: [u16; 7] = [0, 1, 3, 4, 5, 7, 8];
 
-/// First of the two cells of black key `index`: over the border to the next white key.
+/// First of the three cells of black key `index`: the key sits over the border to the next white key.
 fn black_column(index: usize) -> u16 {
-	WHITE_BEFORE_BLACK[index] * WHITE_CELLS + 2
+	(WHITE_BEFORE_BLACK[index] + 1) * WHITE_CELLS - 1
 }
 
-/// First of the two cells of white key `index` in the bottom row, after its left border.
+/// First of the three cells of white key `index` in the bottom row, after its left border.
 fn white_column(index: usize) -> u16 {
 	u16::try_from(index)
 		.unwrap_or(u16::MAX)
@@ -41,13 +56,14 @@ fn white_column(index: usize) -> u16 {
 }
 
 /// Semitones from the base C of the key drawn at cell (`column`, `row`) of the piano; `None` outside it.
-/// The top row belongs to the black keys where they are and to the white key underneath elsewhere.
+/// The two upper rows belong to the black keys where they are and to the white key underneath
+/// elsewhere; the row of the characters and the line under it belong to the white keys.
 pub fn key_at(column: u16, row: u16) -> Option<u8> {
 	if column >= WIDTH || row >= HEIGHT {
 		return None;
 	}
-	if row == 0 {
-		let black = (0..BLACK_OFFSETS.len()).find(|index| (black_column(*index)..black_column(*index) + 2).contains(&column));
+	if row < WHITE_ROW {
+		let black = (0..BLACK_OFFSETS.len()).find(|index| (black_column(*index)..black_column(*index) + BLACK_CELLS).contains(&column));
 		if let Some(index) = black {
 			return Some(BLACK_OFFSETS[index]);
 		}
@@ -56,24 +72,61 @@ pub fn key_at(column: u16, row: u16) -> Option<u8> {
 	Some(WHITE_OFFSETS[white])
 }
 
+/// The characters written on the keys: those that play them on the text keyboard, lowest key first.
+#[derive(Debug, Clone, Copy)]
+pub struct KeyLabels<'a> {
+	pub white: &'a [char],
+	pub black: &'a [char],
+}
+
+/// The character of key `index`; a key the layout gives no character stays blank.
+fn label(labels: &[char], index: usize) -> char {
+	labels.get(index).copied().unwrap_or(' ')
+}
+
+/// How the character of a key is written: inverted on amber while its note sounds.
+fn label_style(is_lit: bool) -> Style {
+	if is_lit {
+		Style::new().fg(BACKGROUND).bg(VALUE)
+	} else {
+		Style::new().fg(LABEL)
+	}
+}
+
 /// Draws the piano with its top-left cell at (`x`, `y`). `base_key` is the MIDI key of its first C;
 /// `sounding` has a bit per MIDI key, and the keys of the piano that are set in it are lit.
-pub fn draw(buf: &mut ScreenBuffer, x: u16, y: u16, base_key: u8, sounding: u128) {
-	Pen::at(buf, x, y).text(TOP, HINT);
-	Pen::at(buf, x, y + 1).text(BOTTOM, HINT);
+pub fn draw(buf: &mut ScreenBuffer, x: u16, y: u16, base_key: u8, labels: KeyLabels<'_>, sounding: u128) {
 	let is_lit = |offset: u8| {
 		let key = u32::from(base_key) + u32::from(offset);
 		key < 128 && sounding & (1u128 << key) != 0
 	};
-	for (index, offset) in BLACK_OFFSETS.iter().enumerate() {
-		if is_lit(*offset) {
-			Pen::at(buf, x + black_column(index), y).text(LIT, VALUE);
+	// The borders of the white keys run down to the line that closes them; a black key is drawn over
+	// the upper part of the border it sits on.
+	for border in 0..=WHITE_KEYS {
+		for row in 0..BOTTOM_ROW {
+			Pen::at(buf, x + border * WHITE_CELLS, y + row).text(BORDER, HINT);
 		}
 	}
+	for column in 0..WIDTH {
+		let glyph = match column {
+			0 => BOTTOM_LEFT,
+			column if column == WIDTH - 1 => BOTTOM_RIGHT,
+			column if column % WHITE_CELLS == 0 => BOTTOM_JOINT,
+			_ => BOTTOM_LINE,
+		};
+		Pen::at(buf, x + column, y + BOTTOM_ROW).text(glyph, HINT);
+	}
+	for (index, offset) in BLACK_OFFSETS.iter().enumerate() {
+		let column = x + black_column(index);
+		Pen::at(buf, column, y)
+			.text(BORDER, HINT)
+			.styled(&label(labels.black, index).to_string(), label_style(is_lit(*offset)))
+			.text(BORDER, HINT);
+		Pen::at(buf, column, y + 1).text(BLACK_FOOT, HINT);
+	}
 	for (index, offset) in WHITE_OFFSETS.iter().enumerate() {
-		if is_lit(*offset) {
-			Pen::at(buf, x + white_column(index), y + 1).text(LIT, VALUE);
-		}
+		let cap = format!(" {} ", label(labels.white, index));
+		Pen::at(buf, x + white_column(index), y + WHITE_ROW).styled(&cap, label_style(is_lit(*offset)));
 	}
 }
 

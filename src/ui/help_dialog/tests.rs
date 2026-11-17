@@ -8,8 +8,11 @@ use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
 use super::*;
 use crate::ui::keys::Bindings;
-use crate::ui::testkit::{SCREEN, cell_of, colours_of, find, is_shown, is_underlined, left_click, lines_of, wheel};
+use crate::ui::testkit::{SCREEN as SMALLEST_SCREEN, cell_of, colours_of, find, is_shown, is_underlined, left_click, lines_of, wheel};
 
+/// The grid of these tests: too low for the whole table of the default bindings, so the window has to
+/// scroll it.
+const SCREEN: Rect = Rect::new(0, 0, SMALLEST_SCREEN.width, 24);
 /// A grid with room for the whole table of the default bindings.
 const TALL_SCREEN: Rect = Rect::new(0, 0, SCREEN.width, 60);
 
@@ -103,7 +106,7 @@ fn the_window_shows_the_table_of_the_bindings_in_force() {
 	// What is drawn is the table of the bindings, row for row, as far as the window goes.
 	let shown = table_of(&buf);
 	assert_eq!(shown.len(), usize::from(area.height - CHROME_ROWS));
-	assert!(shown.len() < rows.len(), "on the smallest grid the table does not fit");
+	assert!(shown.len() < rows.len(), "on a low grid the table does not fit");
 	assert_eq!(shown, rows[..shown.len()]);
 	assert_ne!(bar_cell(&buf), ' ', "a table that does not fit has a scrollbar");
 

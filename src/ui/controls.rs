@@ -1,5 +1,5 @@
-//! The controls of the main screen (spec v1.2 §3, F-25; v1.3, F-26.1): the `[buttons]` and the two
-//! device dropdowns — a click, or Tab and Enter.
+//! The controls of the main screen (spec v1.2 §3, F-25; v1.3, F-26.1): the `[buttons]` and the
+//! dropdowns — the two devices and the format of takes — a click, or Tab and Enter.
 //!
 //! The screen says where each control goes while it draws a frame; the controls are drawn when the
 //! frame is finished, by the library's `Button` and `ComboBox` over their states. Input goes through
@@ -18,7 +18,7 @@ use super::app::{ButtonId, Dropdown};
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use super::paint::{BACKGROUND, DISABLED, ERROR, SELECTED, TEXT, VALUE};
 
-/// Rows of an open dropdown list, without its frame; fewer when there are fewer devices.
+/// Rows of an open dropdown list, without its frame; fewer when there is less to choose from.
 const LIST_ROWS: u16 = 8;
 
 /// How a button looks (spec v1.2 §3). Under the keyboard focus any of them is underlined; while the
@@ -28,8 +28,6 @@ pub enum Look {
 	Normal,
 	/// The selected one of several: inverted on amber.
 	Active,
-	/// The selected one that cannot be changed now (the format of a running take): looks active, does not react.
-	ActiveLocked,
 	/// Reacts, and what it does cannot be undone (cancelling a take): red.
 	Danger,
 	/// Not available now: dark, does not react.
@@ -40,7 +38,7 @@ impl Look {
 	fn style(self) -> Style {
 		match self {
 			Self::Normal => Style::new().fg(TEXT),
-			Self::Active | Self::ActiveLocked => Style::new().fg(BACKGROUND).bg(VALUE).bold(),
+			Self::Active => Style::new().fg(BACKGROUND).bg(VALUE).bold(),
 			Self::Danger => Style::new().fg(ERROR),
 			Self::Disabled => Style::new().fg(DISABLED),
 		}
@@ -61,10 +59,10 @@ pub enum Touch {
 	Changed,
 	/// A button was pressed: by Enter under the focus, or by a click released over it.
 	Pressed(ButtonId),
-	/// A dropdown has just dropped its list down: the list is to be filled with the devices as they
-	/// are now.
+	/// A dropdown has just dropped its list down: the list is to be filled with what there is to
+	/// choose from now.
 	Opened(Dropdown),
-	/// A row of an open list was chosen — another one than the device in use; the list is closed.
+	/// A row of an open list was chosen — another one than the value in use; the list is closed.
 	Chosen(Dropdown, usize),
 }
 
@@ -87,6 +85,7 @@ fn follower(dropdown: Dropdown) -> ButtonId {
 	match dropdown {
 		Dropdown::MidiIn => ButtonId::MidiFile,
 		Dropdown::AudioOut => ButtonId::MasterDown,
+		Dropdown::Format => ButtonId::RecordStart,
 	}
 }
 
@@ -118,21 +117,23 @@ struct Placed {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Field {
 	area: Rect,
-	/// The device in use; `None` when there is none, and then `absent` says so.
+	/// The value in use; `None` when there is none, and then `absent` says so.
 	current: Option<String>,
 	absent: String,
+	/// The value cannot be changed now (the format of a running take): shown dark, does not react.
+	is_locked: bool,
 }
 
-/// One device dropdown.
+/// One dropdown.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct DeviceList {
+struct DropList {
 	state: ComboBoxState,
-	/// The rows of the list: the devices found when it was last opened.
+	/// The rows of the list: what there was to choose from when it was last opened.
 	items: Vec<String>,
 	field: Option<Field>,
 }
 
-impl DeviceList {
+impl DropList {
 	fn new() -> Self {
 		let mut state = ComboBoxState::new();
 		state.enabled = false;
@@ -143,7 +144,7 @@ impl DeviceList {
 		}
 	}
 
-	/// The row of the device in use, when the list has it.
+	/// The row of the value in use, when the list has it.
 	fn current_row(&self) -> Option<usize> {
 		let current = self.field.as_ref()?.current.as_ref()?;
 		self.items.iter().position(|item| item == current)
@@ -164,8 +165,8 @@ pub struct Controls {
 	/// One state per button, in the order of `ButtonId::ALL`.
 	buttons: Vec<ButtonState>,
 	placed: Vec<Placed>,
-	/// The device dropdowns, in the order of `Dropdown::ALL`.
-	dropdowns: [DeviceList; 2],
+	/// The dropdowns, in the order of `Dropdown::ALL`.
+	dropdowns: [DropList; 3],
 }
 
 impl Default for Controls {
@@ -181,7 +182,7 @@ impl Controls {
 			ring: ring(),
 			buttons: ButtonId::ALL.iter().map(|_| ButtonState::disabled()).collect(),
 			placed: Vec::new(),
-			dropdowns: [DeviceList::new(), DeviceList::new()],
+			dropdowns: [DropList::new(), DropList::new(), DropList::new()],
 		}
 	}
 
@@ -207,14 +208,23 @@ impl Controls {
 	}
 
 	/// Reserves `width` cells at `(x, y)` for the field of a dropdown; returns the width taken. The
-	/// field shows the device in use — `current` — or, when there is none, what `absent` says.
+	/// field shows the value in use — `current` — or, when there is none, what `absent` says.
 	pub fn place_dropdown(&mut self, which: Dropdown, x: u16, y: u16, width: u16, current: Option<&str>, absent: &str) -> u16 {
 		self.dropdowns[which as usize].field = Some(Field {
 			area: Rect::new(x, y, width, 1),
 			current: current.map(str::to_owned),
 			absent: absent.to_owned(),
+			is_locked: false,
 		});
 		width
+	}
+
+	/// Marks a dropdown placed in this frame as one whose value cannot be changed now: its field
+	/// still shows the value, dark, and neither opens nor takes the focus.
+	pub fn lock_dropdown(&mut self, which: Dropdown) {
+		if let Some(field) = &mut self.dropdowns[which as usize].field {
+			field.is_locked = true;
+		}
 	}
 
 	/// Ends a frame: what was placed becomes what reacts, the focus is kept on a control that does, and
@@ -233,9 +243,13 @@ impl Controls {
 			let current_row = list.current_row();
 			match &list.field {
 				Some(field) => {
-					list.state.enabled = true;
+					list.state.enabled = !field.is_locked;
 					list.state.node.area = field.area;
 					list.state.selected = current_row;
+					// A value that got locked cannot keep its list open.
+					if field.is_locked {
+						list.state.close_list();
+					}
 				}
 				// A dropdown that left the screen cannot keep its list open.
 				None => {
@@ -254,13 +268,14 @@ impl Controls {
 				.render(placed.area, buf, &mut self.buttons[placed.id as usize]);
 		}
 		for list in &mut self.dropdowns {
-			let DeviceList { state, items, field } = list;
+			let DropList { state, items, field } = list;
 			let Some(field) = field else {
 				continue;
 			};
 			let rows: Vec<&str> = items.iter().map(String::as_str).collect();
 			// No device is a problem of the setting: its line says so in red.
 			let (shown, text) = match &field.current {
+				Some(current) if field.is_locked => (current.as_str(), DISABLED),
 				Some(current) => (current.as_str(), TEXT),
 				None => (field.absent.as_str(), ERROR),
 			};
@@ -358,8 +373,8 @@ impl Controls {
 		}
 	}
 
-	/// Fills the list of a dropdown: the devices found now. The row of the device in use is the one
-	/// the list starts on.
+	/// Fills the list of a dropdown: what there is to choose from now. The row of the value in use
+	/// is the one the list starts on.
 	pub fn set_items(&mut self, which: Dropdown, items: Vec<String>) {
 		let list = &mut self.dropdowns[which as usize];
 		list.items = items;
@@ -439,9 +454,10 @@ impl Controls {
 		let Self {
 			ring, buttons, dropdowns, ..
 		} = self;
-		let [midi, audio] = dropdowns;
+		let [midi, audio, format] = dropdowns;
 		let midi_rows: Vec<&str> = midi.items.iter().map(String::as_str).collect();
 		let audio_rows: Vec<&str> = audio.items.iter().map(String::as_str).collect();
+		let format_rows: Vec<&str> = format.items.iter().map(String::as_str).collect();
 		let mut nodes: Vec<Ui<'_, Hit>> = buttons
 			.iter_mut()
 			.zip(ButtonId::ALL)
@@ -451,6 +467,7 @@ impl Controls {
 		for (which, state, rows) in [
 			(Dropdown::MidiIn, &mut midi.state, &midi_rows),
 			(Dropdown::AudioOut, &mut audio.state, &audio_rows),
+			(Dropdown::Format, &mut format.state, &format_rows),
 		] {
 			let place = ring.iter().position(|slot| *slot == Slot::Dropdown(which)).unwrap_or(nodes.len());
 			let field = Ui::combo_box(field_widget(rows, TEXT), state, move |row| Hit::Row(which, row));
