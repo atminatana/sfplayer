@@ -1,6 +1,6 @@
 [package]
 name = "sf2_player"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "SoundFont synthesizer in a cell-grid window: MIDI in, SF2 bank, audio out"

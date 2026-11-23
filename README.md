@@ -98,7 +98,7 @@ There are no letter commands: the two bottom keyboard rows play notes. All comma
 
 While a window is open, input goes to it: Tab and Shift+Tab move between its controls, Enter acts on the control under the focus, Esc and a click outside the window close it and change nothing.
 
-The MIDI input and the audio output are chosen from a dropdown in their own line: the field shows the device in use. The list drops down on a click on the field, on Enter while the field has the focus, or on F2 and F3; ↑↓, PgUp/PgDn, Home/End and the wheel move the highlight, Enter or a click on a row connects the device, Esc and a click elsewhere close the list and change nothing. The devices are listed as they are when the list drops down; the rate and the buffer of an audio device are shown in the line once it is chosen.
+The MIDI input and the audio output are chosen from a dropdown in their own line: the field shows the device in use. The list drops down on a click on the field, on Enter while the field has the focus, or on F2 and F3; ↑↓, PgUp/PgDn, Home/End and the wheel move the highlight, Enter or a click on a row connects the device, Esc and a click elsewhere close the list and change nothing. The devices are listed as they are when the list drops down. An audio output is a driver and a device together: a row of the list reads `[WASAPI]: Speakers` or `[WASAPI Exclusive]: Speakers` (how the drivers differ — see "Latency"); a name longer than the field loses its end with `…`. After the field the line shows the rate and the number of frames the stream gets at a time.
 
 F5 or the `[Preset]` button opens the preset window: typed text keeps the lines that have it in the name or the number, ↑↓ and PgUp/PgDn move the highlight, Enter, `[OK]` or a double click on a row apply the preset, Esc, `[Cancel]` and a click outside the window close it and change nothing. The preset in use is marked with `●`.
 
@@ -248,6 +248,8 @@ The third driver, `[ASIO]`, is there only in a build with the `asio` feature (se
 - macOS is not supported: the gterm window library runs on Windows and Linux.
 - A MIDI take holds what was played, not the state of the synthesizer when it began: the preset and the effect levels chosen before the take are not in the file, and it plays with the preset chosen at playback. Time in the file is as fine as the audio buffer (about 5 ms with 256 frames at 48 kHz).
 - SF3 banks are not supported.
+- WASAPI exclusive mode opens a device in plain PCM only — 24 or 16 bits, stereo or mono. A device that takes nothing but multichannel sound or 24 bits in a 32-bit container does not open exclusively: the program says so and moves to another output.
+- If a device is unplugged while playing, the stream stops with no message on the screen (the log has the record); choose the output in the list again.
 - MIDI files of format 2 and files timed in SMPTE frames are not played; there is no seeking in a file.
 - The MIDI monitor and per-channel mixer strips of version 1.0 are not part of this screen; channel volume follows incoming CC 7 only.
 - The F5 preset applies to every channel except 10 (percussion); a Program Change from the MIDI keyboard still switches its own channel until the next F5 choice, and the "Preset" line keeps showing the F5 choice.

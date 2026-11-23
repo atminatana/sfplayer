@@ -1,6 +1,6 @@
 # PROJECT_MAP — sf2_player
 
-SoundFont-синтезатор на Rust в окне с сеткой символов (gterm). ТЗ: `docs/spec/2026-10-20-sf2-player-v1.md` (v1.0) и `docs/spec/2026-10-21-ui-redesign.md` (v1.1 — главный экран, F5/F6/F7, Home/End; меняет §6, F-06, F-20, выводит F-08). Планы: `docs/plans/2026-10-20-sf2-player-v1.md`, `docs/plans/2026-10-21-ui-redesign.md`. v1.2 — оконный интерфейс на gterm, MIDI-файл, встроенный Synth, запись MIDI: ТЗ `docs/spec/2026-11-13-gterm-ui.md`, план `docs/plans/2026-11-13-gterm-ui.md` (выполнен, кроме шага 1.5). v1.3 — управляющие элементы на контролах, подтверждение отмены записи, сокращённая раскладка: ТЗ `docs/spec/2026-11-16-dialogs-and-keys.md`, план `docs/plans/2026-11-16-dialogs-and-keys.md` (выполнен; верификация — `docs/verify/2026-11-16-dialogs-and-keys.md`). v1.4 — драйверы аудиовыхода WASAPI, WASAPI Exclusive, ASIO в одном списке: ТЗ `docs/spec/2026-11-23-audio-drivers.md`, план `docs/plans/2026-11-23-audio-drivers.md` (выполняется). Архитектурные решения и их обоснования: `docs/adr/README.md`.
+SoundFont-синтезатор на Rust в окне с сеткой символов (gterm). ТЗ: `docs/spec/2026-10-20-sf2-player-v1.md` (v1.0) и `docs/spec/2026-10-21-ui-redesign.md` (v1.1 — главный экран, F5/F6/F7, Home/End; меняет §6, F-06, F-20, выводит F-08). Планы: `docs/plans/2026-10-20-sf2-player-v1.md`, `docs/plans/2026-10-21-ui-redesign.md`. v1.2 — оконный интерфейс на gterm, MIDI-файл, встроенный Synth, запись MIDI: ТЗ `docs/spec/2026-11-13-gterm-ui.md`, план `docs/plans/2026-11-13-gterm-ui.md` (выполнен, кроме шага 1.5). v1.3 — управляющие элементы на контролах, подтверждение отмены записи, сокращённая раскладка: ТЗ `docs/spec/2026-11-16-dialogs-and-keys.md`, план `docs/plans/2026-11-16-dialogs-and-keys.md` (выполнен; верификация — `docs/verify/2026-11-16-dialogs-and-keys.md`). v1.4 — драйверы аудиовыхода WASAPI, WASAPI Exclusive, ASIO в одном списке: ТЗ `docs/spec/2026-11-23-audio-drivers.md`, план `docs/plans/2026-11-23-audio-drivers.md` (выполнен; верификация — `docs/verify/2026-11-23-audio-drivers.md`). Архитектурные решения и их обоснования: `docs/adr/README.md`.
 
 ## Структура
 
@@ -107,6 +107,7 @@ SoundFont-синтезатор на Rust в окне с сеткой симво�
 - v1.4, шаг 2.4: замер монопольного режима — на «Динамиках» период 256 кадров (5,33 мс), программная задержка 5,3–10,7 мс против 32–42 мс в общем режиме; таблица по трём выходам и пяти размерам буфера — `docs/test/2026-11-23-audio-drivers.md`. Этап 2 выполнен.
 - v1.4, шаг 3.1: ASIO перенесён из `origin/develop` — возможность сборки `asio` (выключена по умолчанию), строки `[ASIO]: <драйвер>` в списке, поток cpal в формате сэмплов устройства (`BlockRenderer::fill` обобщён по типу сэмпла), запасная частота; живой тест на `Realtek ASIO`.
 - v1.4, шаг 3.2: в CI на Windows — неблокирующий шаг clippy со сборкой `asio`. Этап 3 выполнен.
+- v1.4, шаг 4.1: версия 0.4.0; `AGENTS.md` и оба README описывают программу после v1.4.
 
 ## Дальше (открытые пункты для владельца)
 
