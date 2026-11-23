@@ -6,7 +6,7 @@
 |---|------|--------|
 | [0001](0001-synth-engine-rustysynth.md) | Движок синтеза: rustysynth за трейтом SynthEngine | Accepted |
 | [0002](0002-threading-lock-free.md) | Потоковая модель: аудио-поток без блокировок, SPSC-кольца и атомики | Accepted |
-| [0003](0003-windows-wasapi-shared.md) | Аудио на Windows: только WASAPI shared, без ASIO | Accepted |
+| [0003](0003-windows-wasapi-shared.md) | Аудио на Windows: только WASAPI shared, без ASIO | Superseded by 0019 |
 | [0004](0004-hotkeys-no-letters.md) | Горячие клавиши без букв: F-клавиши и Ctrl/Alt | Accepted |
 | [0005](0005-recording-flac-vorbis.md) | Запись в FLAC / Ogg Vorbis, кодирование в отдельном потоке | Accepted |
 | [0006](0006-package-name-sf2-player.md) | Имя пакета и бинарника: sf2_player | Accepted |
@@ -22,3 +22,4 @@
 | [0016](0016-dependency-licences.md) | Лицензии зависимостей: MPL-2.0 без правок и Unicode-3.0 допустимы (v1.3) | Accepted |
 | [0017](0017-split-large-files.md) | Крупные файлы делятся на подмодули по ответственности (v1.3) | Accepted |
 | [0018](0018-controls-for-every-window.md) | Управляющие элементы — контролы библиотеки; окно на контролах держит окно программы (v1.3) | Accepted |
+| [0019](0019-audio-output-drivers.md) | Драйверы аудиовыхода: драйвер — часть выбора устройства; свой поток WASAPI Exclusive; ASIO — возможность сборки (v1.4) | Accepted |

@@ -76,7 +76,9 @@ fn print_devices() -> anyhow::Result<()> {
 		});
 		println!(
 			"{marker} [{}] {}  {} Hz, {buffer}",
-			device.index, device.name, device.default_sample_rate
+			device.index,
+			device.label(),
+			device.default_sample_rate
 		);
 	}
 	Ok(())

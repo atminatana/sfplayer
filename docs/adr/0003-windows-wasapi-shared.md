@@ -1,7 +1,7 @@
 # 0003. Аудио на Windows: только WASAPI shared, без ASIO
 
 - **Дата:** 2026-10-20
-- **Статус:** Accepted
+- **Статус:** Superseded by [0019](0019-audio-output-drivers.md) (23.11.2026)
 - **Тема:** аудиобэкенд на Windows
 
 ## Контекст

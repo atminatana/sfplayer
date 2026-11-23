@@ -34,7 +34,7 @@ sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
            [--log-level LEVEL] [--backend KIND] [--list-devices]
 ```
 
-- `--list-devices` prints MIDI inputs and audio outputs with their indices and exits.
+- `--list-devices` prints MIDI inputs and audio outputs with their indices and exits. An audio output is named `[Driver]: Device`, for example `[WASAPI]: Speakers`; `--audio-out` and `audio.output` take a part of that name or the index, so a plain device name still works.
 - Devices whose configuration cannot be read (an unsupported ALSA hint, a busy device) are skipped with a warning in the log instead of breaking the whole list.
 - Devices are selected by index or by a case-insensitive substring of the name; if a device is not found, the system default is used (the first port for MIDI) and a warning appears in the message line. If a device is found but cannot be opened (busy, unsupported configuration), the program runs without sound, the audio output line shows the cause in red, and another device is chosen with F3.
 - The default buffer is 256 frames; if the device does not accept it, the device default is used.
@@ -153,7 +153,7 @@ midi_file = "D:/midi/prelude.mid"        # the chosen MIDI file
 recent_midi_files = ["D:/midi/prelude.mid"]  # recent ones, up to 10; kept by the program
 
 [audio]
-output = "Speakers"
+output = "[WASAPI]: Speakers"   # as the output list names it; a part of the name is enough
 buffer_frames = 256
 sample_rate = 48000        # remove — use the device rate
 

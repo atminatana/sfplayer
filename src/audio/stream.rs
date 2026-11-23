@@ -3,11 +3,11 @@
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cpal::{BufferSize, Device, ErrorKind, Stream, StreamConfig};
+use cpal::{BufferSize, ErrorKind, Stream, StreamConfig};
 use ringbuf::traits::Split;
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 
-use super::device::device_name;
+use super::device::OutputDevice;
 use super::render::{Command, RecordSource, record_rings};
 use super::{AudioError, AudioShared, BlockRenderer};
 use crate::midi::MidiEvent;
@@ -33,7 +33,8 @@ pub struct StreamParams {
 /// A running output stream; dropping it stops playback.
 pub struct AudioStream {
 	_stream: Stream,
-	pub device_name: String,
+	/// The output as the list names it: `[Driver]: Device`.
+	pub label: String,
 	pub sample_rate: u32,
 	pub buffer_size: BufferSize,
 }
@@ -57,11 +58,12 @@ pub struct AudioLinks {
 /// The requested fixed buffer is tried first; if the backend refuses it, the device default is used (F-04).
 /// Each attempt owns fresh rings because cpal consumes the callbacks even when it fails.
 pub fn open_output_stream(
-	device: &Device,
+	output: &OutputDevice,
 	params: StreamParams,
 	shared: &Arc<AudioShared>,
 ) -> Result<(AudioStream, AudioLinks), AudioError> {
-	let device_name = device_name(device).unwrap_or_else(|| "unknown".to_owned());
+	let device = &output.device;
+	let device_name = output.label();
 	let default_config = device.default_output_config().map_err(|source| AudioError::DeviceConfig {
 		device: device_name.clone(),
 		source,
@@ -133,7 +135,7 @@ pub fn open_output_stream(
 	Ok((
 		AudioStream {
 			_stream: stream,
-			device_name,
+			label: device_name,
 			sample_rate,
 			buffer_size,
 		},

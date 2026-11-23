@@ -7,13 +7,13 @@ use std::sync::atomic::Ordering;
 use ringbuf::traits::Producer;
 
 use super::{MidiSink, Notice, Session};
-use crate::audio::{self, AudioLinks};
+use crate::audio::{self, AudioLinks, OutputDevice};
 use crate::cli::DeviceSelector;
 use crate::midi::player::Player;
 use crate::midi::{self, MidiStatus};
 
 impl Session {
-	pub(super) fn open_audio(&mut self, device: &cpal::Device) {
+	pub(super) fn open_audio(&mut self, device: &OutputDevice) {
 		match audio::open_output_stream(device, self.params, &self.shared) {
 			Ok((
 				stream,
@@ -68,9 +68,9 @@ impl Session {
 		let Some(stream) = &self.audio else {
 			return;
 		};
-		let device_name = stream.device_name.clone();
-		self.config.audio.output = Some(device_name.clone());
-		self.notice = Some(Notice::AudioReopened(device_name));
+		let label = stream.label.clone();
+		self.config.audio.output = Some(label.clone());
+		self.notice = Some(Notice::AudioReopened(label));
 		if let Err(error) = self.install_engine() {
 			self.notice = Some(Notice::Sf2Error(error.to_string()));
 		}

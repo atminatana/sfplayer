@@ -1,6 +1,7 @@
 //! The rows of the device dropdowns of the main screen (spec v1.3, F-26.1) and what choosing one asks
 //! for. The list is taken from the system when the dropdown is opened; a row is told to the session
-//! by the index the system gave the device, not by its place in the list.
+//! by the index the system gave the device, not by its place in the list. An audio output is named
+//! with its driver: `[Driver]: Device` (spec v1.4, D-01).
 
 use super::dialog::Choice;
 use crate::audio::AudioDeviceInfo;
@@ -22,7 +23,7 @@ impl DeviceRows {
 
 	pub fn audio(devices: &[AudioDeviceInfo]) -> Self {
 		Self {
-			names: devices.iter().map(|device| device.name.clone()).collect(),
+			names: devices.iter().map(AudioDeviceInfo::label).collect(),
 			choices: devices.iter().map(|device| Choice::OpenAudio(device.index)).collect(),
 		}
 	}
@@ -41,6 +42,7 @@ impl DeviceRows {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::audio::{Driver, output_label};
 
 	#[test]
 	fn midi_rows_are_the_port_names_and_choosing_one_connects_the_port_by_its_index() {
@@ -61,10 +63,11 @@ mod tests {
 	}
 
 	#[test]
-	fn audio_rows_are_the_device_names_and_choosing_one_opens_the_device_by_its_index() {
+	fn audio_rows_name_the_driver_and_the_device_and_choosing_one_opens_the_output_by_its_index() {
 		let devices = [
 			AudioDeviceInfo {
 				index: 0,
+				driver: Driver::Host,
 				name: "Speakers".into(),
 				is_default: true,
 				default_sample_rate: 48_000,
@@ -72,6 +75,7 @@ mod tests {
 			},
 			AudioDeviceInfo {
 				index: 4,
+				driver: Driver::WasapiExclusive,
 				name: "HDMI".into(),
 				is_default: false,
 				default_sample_rate: 44_100,
@@ -79,7 +83,10 @@ mod tests {
 			},
 		];
 		let rows = DeviceRows::audio(&devices);
-		assert_eq!(rows.names(), ["Speakers", "HDMI"]);
+		assert_eq!(
+			rows.names(),
+			[output_label(Driver::Host, "Speakers"), "[WASAPI Exclusive]: HDMI".to_owned()]
+		);
 		assert_eq!(rows.choice(0), Some(Choice::OpenAudio(0)));
 		assert_eq!(rows.choice(1), Some(Choice::OpenAudio(4)));
 	}

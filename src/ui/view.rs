@@ -145,7 +145,7 @@ pub struct BankView {
 impl View {
 	pub fn from_session(session: &Session) -> Self {
 		let audio = session.audio().map(|stream| AudioView {
-			device: stream.device_name.clone(),
+			device: stream.label.clone(),
 			sample_rate: stream.sample_rate,
 			buffer: match stream.buffer_size {
 				BufferSize::Fixed(frames) => Some(frames),

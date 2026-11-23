@@ -1,5 +1,5 @@
 //! Audio output: device enumeration, the cpal stream and the real-time render core.
-//! Threading model and lock-free exchange: ADR 0002; Windows backend choice: ADR 0003.
+//! Threading model and lock-free exchange: ADR 0002; the drivers of an output: ADR 0019.
 
 mod device;
 pub mod meter;
@@ -9,7 +9,8 @@ mod shared;
 mod stream;
 
 pub use device::{
-	AudioDeviceInfo, SelectedDevice, default_output_device, list_output_devices, output_device_by_index, select_output_device,
+	AudioDeviceInfo, Driver, OutputDevice, SelectedDevice, default_output_device, list_output_devices, output_device_by_index,
+	output_label, select_output_device,
 };
 pub use meter::Levels;
 pub use mixer::Mixer;
