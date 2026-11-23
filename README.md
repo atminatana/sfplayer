@@ -218,7 +218,12 @@ The folder of takes is chosen with F7 or the button in the "Folder for files" li
 
 ## Latency
 
-Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. How to measure: connect the sound card output to its input (or record both signals with an external recorder), capture the moment the MIDI note is pressed and the first non-zero output sample at the same time; the difference is the latency. On Windows, WASAPI in shared mode is used (ASIO is not supported); if the latency is high, check that the device accepts a 256-frame buffer (`--list-devices` shows the range) and that there is no extra audio processing in the system. On Linux, use the ALSA `hw:` device directly whenever possible.
+Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. On Windows the latency depends on the driver, which is chosen together with the device in the "Audio output" list:
+
+- `[WASAPI]` — shared mode: every program plays through the device. Windows keeps a buffer of about 22 ms and a period of 10 ms here whatever `buffer_frames` says; the latency of the program is 32–42 ms (measured on an on-board codec and on Bluetooth headphones).
+- `[WASAPI Exclusive]` — exclusive mode: the device is given to the program alone. The period is `buffer_frames`, but not shorter than the shortest period of the device (usually 3 ms): 5.3 ms with 256 frames at 48 kHz, and a block sounds one period after it is rendered. What the mode costs: while the output is open, no other program sounds through the device; if the device is in use or exclusive mode is switched off in its properties, the output does not open and the output row says why. Sound is sent as integers — 24 bits if the device takes them, 16 otherwise. The latency of Bluetooth itself is not reduced, and a short period over Bluetooth glitches (`xrun`) — raise `buffer_frames`.
+
+ASIO is not supported. How to measure the latency: connect the sound card output to its input (or record both signals with an external recorder), capture the moment the MIDI note is pressed and the first non-zero output sample at the same time; the difference is the latency. Check also that there is no extra audio processing in the system. On Linux, use the ALSA `hw:` device directly whenever possible.
 
 ## Limitations
 

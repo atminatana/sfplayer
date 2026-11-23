@@ -76,17 +76,31 @@ impl OutputDevice {
 	}
 }
 
-/// Every output of every driver, in the order all indices refer to (D-02, D-04).
+/// Every output of every driver, in the order all indices refer to (D-02, D-04): the devices of the
+/// host driver, then — on Windows — the same devices taken exclusively.
 fn enumerate_outputs() -> Result<Vec<OutputDevice>, AudioError> {
 	let devices = cpal::default_host().output_devices().map_err(AudioError::Devices)?;
-	Ok(devices
+	let mut outputs: Vec<OutputDevice> = devices
 		.enumerate()
 		.map(|(position, device)| OutputDevice {
 			driver: Driver::Host,
 			name: device_name(&device).unwrap_or_else(|| format!("device {position}")),
 			device,
 		})
-		.collect())
+		.collect();
+	if cfg!(windows) {
+		// The exclusive driver opens the very endpoints the host driver lists.
+		let exclusive: Vec<OutputDevice> = outputs
+			.iter()
+			.map(|output| OutputDevice {
+				driver: Driver::WasapiExclusive,
+				name: output.name.clone(),
+				device: output.device.clone(),
+			})
+			.collect();
+		outputs.extend(exclusive);
+	}
+	Ok(outputs)
 }
 
 /// The default mark belongs to the default device of the host driver alone (D-02).
@@ -107,9 +121,11 @@ pub fn list_output_devices() -> Result<Vec<AudioDeviceInfo>, AudioError> {
 				continue;
 			}
 		};
-		let buffer_range = match config.buffer_size() {
-			SupportedBufferSize::Range { min, max } => Some((*min, *max)),
-			SupportedBufferSize::Unknown => None,
+		// What cpal reports is the range of its own stream; an exclusive one has other limits, which
+		// only opening it tells.
+		let buffer_range = match (output.driver, config.buffer_size()) {
+			(Driver::Host | Driver::Asio, SupportedBufferSize::Range { min, max }) => Some((*min, *max)),
+			_ => None,
 		};
 		infos.push(AudioDeviceInfo {
 			index,

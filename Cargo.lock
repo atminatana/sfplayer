@@ -2588,6 +2588,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "vorbis_rs",
+ "windows",
  "winit",
 ]
 

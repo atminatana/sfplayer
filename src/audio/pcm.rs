@@ -2,6 +2,8 @@
 //! Plain rounding, no dither (assumption Д-5 until the owner decides ОР-4); no allocation, so it may
 //! run on the audio thread.
 
+use super::BlockRenderer;
+
 /// Integer formats an exclusive stream can be opened in, best first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PcmFormat {
@@ -43,6 +45,39 @@ pub fn write_pcm(format: PcmFormat, samples: &[f32], out: &mut [u8]) {
 	for (sample, bytes) in samples.iter().zip(out.chunks_exact_mut(format.bytes_per_sample())) {
 		let value = ((sample * scale).round() as i32).clamp(-limit, limit - 1);
 		bytes.copy_from_slice(&value.to_le_bytes()[..bytes.len()]);
+	}
+}
+
+/// A block of the render on its way to an integer device: rendered as f32 into a buffer of its own,
+/// then written as PCM. The buffer is allocated once, for the largest block the device asks for.
+pub struct PcmBlock {
+	format: PcmFormat,
+	channels: usize,
+	samples: Vec<f32>,
+}
+
+impl PcmBlock {
+	pub fn new(format: PcmFormat, channels: usize, max_frames: usize) -> Self {
+		let channels = channels.max(1);
+		Self {
+			format,
+			channels,
+			samples: vec![0.0; max_frames * channels],
+		}
+	}
+
+	/// Bytes one frame takes in the device buffer.
+	pub fn frame_bytes(&self) -> usize {
+		self.channels * self.format.bytes_per_sample()
+	}
+
+	/// Renders as many frames as `out` holds — no more than the block was made for — and writes
+	/// them into it. The meter and the recorder have read the f32 render before this (E-04).
+	pub fn render(&mut self, renderer: &mut BlockRenderer, out: &mut [u8]) {
+		let frames = (out.len() / self.frame_bytes()).min(self.samples.len() / self.channels);
+		let samples = &mut self.samples[..frames * self.channels];
+		renderer.fill(samples, self.channels);
+		write_pcm(self.format, samples, out);
 	}
 }
 

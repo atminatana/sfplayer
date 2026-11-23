@@ -32,6 +32,19 @@ vorbis_rs = "0.5"
 # Key and modifier types of gterm events arrive untranslated; same version and features as gterm uses.
 winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
 
+# WASAPI in exclusive mode (spec v1.4, ADR 0019): cpal opens shared streams only. The same crate and
+# version cpal itself builds on.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+	"Win32_Foundation",
+	"Win32_Media_Audio",
+	"Win32_Security",
+	"Win32_System_Com",
+	"Win32_System_Com_StructuredStorage",
+	"Win32_System_Threading",
+	"Win32_System_Variant",
+] }
+
 [dev-dependencies]
 claxon = "0.4.3"
 lewton = "0.10.2"

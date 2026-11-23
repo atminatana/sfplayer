@@ -2,6 +2,8 @@
 //! Threading model and lock-free exchange: ADR 0002; the drivers of an output: ADR 0019.
 
 mod device;
+#[cfg(windows)]
+mod exclusive;
 pub mod meter;
 pub mod mixer;
 pub mod pcm;
@@ -45,6 +47,8 @@ pub enum AudioError {
 		#[source]
 		source: cpal::Error,
 	},
+	#[error("cannot open {device}: {reason}")]
+	Exclusive { device: String, reason: String },
 	#[error(transparent)]
 	Synth(#[from] SynthError),
 }

@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use ringbuf::traits::{Producer, Split};
 use ringbuf::{HeapProd, HeapRb};
+use sf2_player::audio::pcm::{PcmBlock, PcmFormat};
 use sf2_player::audio::{AudioShared, BlockRenderer, Command, RecordMode, RecordSource, record_rings};
 use sf2_player::midi::{MidiEvent, controller};
 use sf2_player::synth::{Adsr, BuiltinSynth, MAX_VOICES, RustySynthEngine, SoundFontBank, SynthEngine, Timbre, Wave};
@@ -258,4 +259,27 @@ fn the_render_core_with_the_soundfont_engine_leaves_the_heap_alone() {
 	let spare = engine();
 	let calls = heap_calls_during(|| busy_callbacks(&mut core, spare));
 	assert_eq!(calls, (0, 0), "(allocations, releases) in the callback");
+}
+
+/// What the thread of an exclusive stream does once a period (spec v1.4, К-4): the render, then its
+/// conversion into the integer format of the device.
+#[test]
+fn a_block_on_its_way_to_an_integer_device_leaves_the_heap_alone() {
+	let engine = Box::new(BuiltinSynth::new(SAMPLE_RATE, Arc::new(Timbre::new(Wave::Saw, piano())))) as Box<dyn SynthEngine>;
+	let mut core = core_with(engine);
+	core.events.try_push(note_on(0, 60)).expect("room");
+	for (format, channels) in [(PcmFormat::I24, 2), (PcmFormat::I16, 2), (PcmFormat::I16, 1)] {
+		let mut block = PcmBlock::new(format, channels, BLOCK);
+		let mut device = vec![0u8; BLOCK * block.frame_bytes()];
+		let calls = heap_calls_during(|| {
+			for _ in 0..8 {
+				block.render(&mut core.renderer, &mut device);
+			}
+		});
+		assert_eq!(calls, (0, 0), "(allocations, releases) for {format:?} with {channels} channels");
+		assert!(
+			device.iter().any(|byte| *byte != 0),
+			"the note reached the device buffer as {format:?}"
+		);
+	}
 }
