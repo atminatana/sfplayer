@@ -120,3 +120,42 @@ fn a_session_whose_output_is_in_use_starts_on_another_one() {
 		session.notice
 	);
 }
+
+/// Buffer sizes asked for in the measurement; one frame asks for the shortest period of the device.
+const MEASURED_BUFFERS: [u32; 5] = [1, 128, 256, 512, 1024];
+const MEASURE_TIME: Duration = Duration::from_secs(2);
+
+/// The numbers of spec v1.4, К-6: for every exclusive output and several buffer sizes — the period the
+/// device agreed to, the latency its driver states, and how many wake-ups came late in two seconds.
+#[test]
+#[ignore = "takes every output device exclusively for some ten seconds: silences other programs meanwhile"]
+fn the_period_the_latency_and_the_late_wake_ups_of_every_output() {
+	let outputs = list_output_devices().expect("the outputs can be listed");
+	for info in outputs.iter().filter(|output| output.driver == Driver::WasapiExclusive) {
+		for buffer_frames in MEASURED_BUFFERS {
+			let shared = Arc::new(AudioShared::new(0.0));
+			let params = StreamParams {
+				buffer_frames,
+				sample_rate: None,
+			};
+			let device = output_device_by_index(info.index).expect("the output is still there");
+			let (stream, _links) = match open_output_stream(&device, params, &shared) {
+				Ok(opened) => opened,
+				Err(error) => {
+					println!("{} | asked {buffer_frames} | NOT OPENED: {error}", info.label());
+					continue;
+				}
+			};
+			std::thread::sleep(MEASURE_TIME);
+			let frames = stream.buffer_frames.expect("an exclusive stream knows its period");
+			let period_ms = f64::from(frames) * 1000.0 / f64::from(stream.sample_rate);
+			let stated_ms = stream.latency.expect("an exclusive stream states its latency").as_secs_f64() * 1000.0;
+			println!(
+				"{} | {} Hz | asked {buffer_frames} | period {frames} frames = {period_ms:.2} ms | stated latency {stated_ms:.2} ms | late wake-ups {}",
+				stream.label,
+				stream.sample_rate,
+				shared.xruns(),
+			);
+		}
+	}
+}

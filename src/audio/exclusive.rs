@@ -51,6 +51,8 @@ pub struct Opened {
 	pub channels: u16,
 	/// Frames the device asks for at a time.
 	pub period_frames: u32,
+	/// The latency of the stream as the driver states it: from a block handed over to its sound.
+	pub latency: Duration,
 }
 
 /// A running exclusive stream; dropping it stops playback and gives the device back to the system.
@@ -199,6 +201,7 @@ impl Device {
 				Err(error) => return Err(describe(&error)),
 			};
 			let period_frames = client.GetBufferSize().map_err(|e| describe(&e))?;
+			let latency_hns = client.GetStreamLatency().map_err(|e| describe(&e))?;
 			let event = Event::new().map_err(|e| describe(&e))?;
 			client.SetEventHandle(event.0).map_err(|e| describe(&e))?;
 			let render: IAudioRenderClient = client.GetService().map_err(|e| describe(&e))?;
@@ -211,6 +214,7 @@ impl Device {
 					format,
 					channels,
 					period_frames,
+					latency: Duration::from_nanos(latency_hns.max(0) as u64 * 100),
 				},
 			})
 		}
@@ -223,6 +227,7 @@ impl Device {
 			format,
 			channels,
 			period_frames,
+			..
 		} = self.opened;
 		let mut block = PcmBlock::new(format, usize::from(channels), period_frames as usize);
 		let period_bytes = period_frames as usize * block.frame_bytes();

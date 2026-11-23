@@ -4,6 +4,7 @@
 
 use std::any::Any;
 use std::sync::Arc;
+use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{BufferSize, ErrorKind, Stream, StreamConfig};
@@ -43,6 +44,9 @@ pub struct AudioStream {
 	pub sample_rate: u32,
 	/// Frames of one callback as the driver reports them; `None` when it does not say.
 	pub buffer_frames: Option<u32>,
+	/// From a block handed to the driver to its sound, as the driver states it; `None` when it does
+	/// not say (a cpal stream).
+	pub latency: Option<Duration>,
 }
 
 /// The other thread's ends of the rings attached to a stream.
@@ -164,6 +168,7 @@ fn open_cpal_stream(
 			label,
 			sample_rate,
 			buffer_frames: callback_frames,
+			latency: None,
 		},
 		links,
 	))
@@ -201,6 +206,7 @@ fn open_exclusive_stream(
 		channels = opened.channels,
 		requested = buffer_frames,
 		period_frames = opened.period_frames,
+		latency_ms = opened.latency.as_secs_f32() * 1000.0,
 		"audio stream started"
 	);
 	Ok((
@@ -209,6 +215,7 @@ fn open_exclusive_stream(
 			label,
 			sample_rate,
 			buffer_frames: Some(opened.period_frames),
+			latency: Some(opened.latency),
 		},
 		links,
 	))
