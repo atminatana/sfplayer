@@ -4,6 +4,7 @@
 mod device;
 pub mod meter;
 pub mod mixer;
+pub mod pcm;
 mod render;
 mod shared;
 mod stream;

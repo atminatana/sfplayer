@@ -50,3 +50,16 @@
 Прогон после шага: 414 unit + 3 i18n + 4 no_alloc + 2 readme = 423 passed, 0 failed.
 
 **Ограничения:** настоящий размер коллбэка в окне автотестом не проверяется — нужен поток на устройстве.
+
+## Шаг 2.1 (2026-11-23) — перевод f32 → PCM
+
+| Тест | Файл | Что проверяет |
+| --- | --- | --- |
+| `silence_is_zero_and_full_scale_is_the_largest_value_of_the_format` | `src/audio/pcm.rs` | тишина — ноль; `1.0` и `-1.0` — наибольшее и наименьшее значения 16 и 24 бит |
+| `a_sample_is_rounded_to_the_nearest_step` | там же | половина и четверть шкалы; меньше половины шага — тишина, больше — один шаг |
+| `what_is_beyond_full_scale_saturates_and_not_a_number_is_silence` | там же | значения за ±1 и бесконечности насыщаются, не-число — ноль |
+| `a_24_bit_sample_takes_three_bytes_low_byte_first` | там же | порядок байтов 24-битного сэмпла и его отрицания |
+| `only_as_many_samples_are_written_as_the_output_has_room_for` | там же | лишние сэмплы не пишутся, неполный хвост выходного буфера не трогается |
+| `the_formats_are_asked_for_best_first` | там же | порядок опроса: 24 бита, затем 16; размер сэмпла в байтах |
+
+Прогон после шага: 420 unit + 3 i18n + 4 no_alloc + 2 readme = 429 passed, 0 failed.
