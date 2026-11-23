@@ -26,6 +26,22 @@ The program opens its own window, so it needs a graphical environment: it does n
 
 SF2 banks are not shipped with the program. Free General MIDI banks: GeneralUser GS, FluidR3, TimGM6mb.
 
+### ASIO (Windows, optional)
+
+The default build plays through WASAPI, in shared or exclusive mode (see "Latency"). ASIO is a separate build with the `asio` feature on your own machine; the release archives do not include it:
+
+```
+cargo build --release --features asio
+```
+
+Beyond the table above the build needs:
+
+- LLVM with libclang (`winget install LLVM.LLVM`); set `LIBCLANG_PATH` to its `bin` directory. If another `clang` comes first on `PATH` (for example llvm-mingw), also set `CLANG_PATH` to `C:\Program Files\LLVM\bin\clang.exe`, otherwise `bindgen` fails inside `mmintrin.h`.
+- Visual Studio Build Tools with the C++ workload (the build script runs `vcvarsall.bat`).
+- The Steinberg ASIO SDK: the build downloads it into `%TEMP%\asio_sdk` on first use, or point `CPAL_ASIO_DIR` at an unpacked copy. The SDK comes with its own licence (`Steinberg ASIO Licensing Agreement.pdf` inside it) that applies to a binary built with it, which is why ASIO stays out of the release archives.
+
+In such a build ASIO drivers are listed in `--list-devices` and in the "Audio output" list after the WASAPI outputs as `[ASIO]: <driver>`; pick one like any other output: `--audio-out "[ASIO]"` or `output = "[ASIO]: Realtek ASIO"` in the config. Without the `asio` feature, or when no ASIO driver is installed, there are no such rows. An ASIO driver is exclusive: other programs cannot play through it while sf2_player holds it. The stream runs in the sample format of the driver, the buffer size of the driver wins when it rejects `buffer_frames` (Realtek ASIO states 1024 frames only), and the `xrun` counter stays 0 because cpal does not report underruns for ASIO.
+
 ## Running
 
 ```
@@ -225,7 +241,7 @@ Target: at most 15 ms from key to sound with a 256-frame buffer at 48 kHz. On Wi
 
 If the chosen output does not open, the program is not left without sound: it tries the same device through `[WASAPI]`, then the default device, then the first other output of the list. The message line names the output that did not open and the reason, and the "Audio output" field shows the one that plays. The choice in the config is not changed — the next start tries the chosen output again. If no output opens, the "Audio output" row shows the error and the program runs without sound.
 
-ASIO is not supported. How to measure the latency: connect the sound card output to its input (or record both signals with an external recorder), capture the moment the MIDI note is pressed and the first non-zero output sample at the same time; the difference is the latency. Check also that there is no extra audio processing in the system. On Linux, use the ALSA `hw:` device directly whenever possible.
+The third driver, `[ASIO]`, is there only in a build with the `asio` feature (see "Installation"). How to measure the latency: connect the sound card output to its input (or record both signals with an external recorder), capture the moment the MIDI note is pressed and the first non-zero output sample at the same time; the difference is the latency. Check also that there is no extra audio processing in the system. On Linux, use the ALSA `hw:` device directly whenever possible.
 
 ## Limitations
 

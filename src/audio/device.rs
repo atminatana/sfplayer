@@ -2,7 +2,7 @@
 //! is named `[Driver]: Device`; chosen by index or name substring, falling back to the default.
 
 use cpal::traits::{DeviceTrait, HostTrait};
-use cpal::{Device, SupportedBufferSize};
+use cpal::{Device, SupportedBufferSize, SupportedStreamConfig};
 
 use super::AudioError;
 use crate::cli::DeviceSelector;
@@ -14,6 +14,8 @@ const HOST_DRIVER_NAME: &str = "WASAPI";
 const HOST_DRIVER_NAME: &str = "CoreAudio";
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 const HOST_DRIVER_NAME: &str = "ALSA";
+/// Rates tried in this order when a device does not report its own (F-04 names both).
+const PREFERRED_SAMPLE_RATES: [u32; 2] = [48_000, 44_100];
 
 /// The way sound reaches a device (ADR 0019). The order of the variants is the order of the list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,7 +79,7 @@ impl OutputDevice {
 }
 
 /// Every output of every driver, in the order all indices refer to (D-02, D-04): the devices of the
-/// host driver, then — on Windows — the same devices taken exclusively.
+/// host driver, then — on Windows — the same devices taken exclusively, then the ASIO drivers.
 fn enumerate_outputs() -> Result<Vec<OutputDevice>, AudioError> {
 	let devices = cpal::default_host().output_devices().map_err(AudioError::Devices)?;
 	let mut outputs: Vec<OutputDevice> = devices
@@ -100,7 +102,61 @@ fn enumerate_outputs() -> Result<Vec<OutputDevice>, AudioError> {
 			.collect();
 		outputs.extend(exclusive);
 	}
+	outputs.extend(asio_outputs());
 	Ok(outputs)
+}
+
+/// The drivers of the ASIO host (spec v1.4, A-01…A-03). A host that cannot be asked gives no rows
+/// and a line in the log: the rest of the list stays (D-05).
+#[cfg(all(windows, feature = "asio"))]
+fn asio_outputs() -> Vec<OutputDevice> {
+	let devices = match cpal::host_from_id(cpal::HostId::Asio).and_then(|host| host.output_devices()) {
+		Ok(devices) => devices,
+		Err(error) => {
+			tracing::warn!(%error, "cannot list ASIO drivers, the list goes without them");
+			return Vec::new();
+		}
+	};
+	devices
+		.enumerate()
+		.map(|(position, device)| OutputDevice {
+			driver: Driver::Asio,
+			name: device_name(&device).unwrap_or_else(|| format!("driver {position}")),
+			device,
+		})
+		.collect()
+}
+
+/// Without the `asio` feature, and off Windows, there is no ASIO host to ask.
+#[cfg(not(all(windows, feature = "asio")))]
+fn asio_outputs() -> Vec<OutputDevice> {
+	Vec::new()
+}
+
+/// The rate a stream on `device` runs at when the user did not choose one: the device's own, or —
+/// some ASIO drivers (Realtek) report 0 until a stream is active — the best common rate it accepts.
+pub fn device_sample_rate(device: &Device, config: &SupportedStreamConfig) -> Option<u32> {
+	let supported: Vec<u32> = match config.sample_rate() {
+		0 => device
+			.supported_output_configs()
+			.map(|configs| configs.map(|range| range.max_sample_rate()).collect())
+			.unwrap_or_default(),
+		_ => Vec::new(),
+	};
+	pick_sample_rate(config.sample_rate(), &supported)
+}
+
+/// `reported` when the device knows it; otherwise the first preferred rate in `supported`, else the
+/// highest supported one; `None` when nothing usable is known.
+fn pick_sample_rate(reported: u32, supported: &[u32]) -> Option<u32> {
+	if reported > 0 {
+		return Some(reported);
+	}
+	PREFERRED_SAMPLE_RATES
+		.iter()
+		.copied()
+		.find(|rate| supported.contains(rate))
+		.or_else(|| supported.iter().copied().filter(|rate| *rate > 0).max())
 }
 
 /// The default mark belongs to the default device of the host driver alone (D-02).
@@ -132,7 +188,7 @@ pub fn list_output_devices() -> Result<Vec<AudioDeviceInfo>, AudioError> {
 			driver: output.driver,
 			is_default: is_default_output(output.driver, &output.name, default_name.as_deref()),
 			name: output.name,
-			default_sample_rate: config.sample_rate(),
+			default_sample_rate: device_sample_rate(&output.device, &config).unwrap_or(0),
 			buffer_range,
 		});
 	}
@@ -330,6 +386,20 @@ mod tests {
 		assert!(fallback_indices(&[], &output_label(Driver::Host, SPEAKERS)).is_empty());
 		let alone = &outputs()[..1];
 		assert!(fallback_indices(alone, &output_label(Driver::Host, HEADPHONES)).is_empty());
+	}
+
+	#[test]
+	fn an_unreported_sample_rate_falls_back_to_a_preferred_supported_one() {
+		assert_eq!(pick_sample_rate(96_000, &[44_100]), Some(96_000), "a reported rate wins");
+		assert_eq!(pick_sample_rate(0, &[44_100, 48_000, 96_000]), Some(48_000));
+		assert_eq!(pick_sample_rate(0, &[22_050, 44_100]), Some(44_100));
+		assert_eq!(
+			pick_sample_rate(0, &[22_050, 96_000]),
+			Some(96_000),
+			"the highest supported one when no preferred one is"
+		);
+		assert_eq!(pick_sample_rate(0, &[]), None);
+		assert_eq!(pick_sample_rate(0, &[0]), None, "zero is never a usable rate");
 	}
 
 	#[test]

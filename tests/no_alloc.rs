@@ -125,7 +125,7 @@ fn core_with(engine: Box<dyn SynthEngine>) -> Core {
 		.ok()
 		.expect("room in the ring");
 	// The first callback installs the engine; from then on the core must leave the heap alone.
-	renderer.fill(&mut [0.0; BLOCK * 2], 2);
+	renderer.fill(&mut [0.0f32; BLOCK * 2], 2);
 	Core {
 		renderer,
 		events,

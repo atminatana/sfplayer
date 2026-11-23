@@ -1,17 +1,17 @@
-//! Opening the output stream (spec F-04; v1.4, E-01): through cpal — stereo f32, the requested buffer
-//! size with fallback to the device default — or, for an output taken exclusively, through the
-//! program's own WASAPI stream.
+//! Opening the output stream (spec F-04; v1.4, E-01): through cpal — stereo in the sample format of
+//! the device, the requested buffer size with fallback to the device default — or, for an output
+//! taken exclusively, through the program's own WASAPI stream.
 
 use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cpal::{BufferSize, ErrorKind, Stream, StreamConfig};
+use cpal::{BufferSize, Device, ErrorKind, FromSample, I24, SampleFormat, SizedSample, Stream, StreamConfig};
 use ringbuf::traits::Split;
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 
-use super::device::{Driver, OutputDevice};
+use super::device::{Driver, OutputDevice, device_sample_rate};
 use super::render::{Command, RecordSource, record_rings};
 use super::{AudioError, AudioShared, BlockRenderer};
 use crate::midi::MidiEvent;
@@ -103,9 +103,21 @@ pub fn open_output_stream(
 		device: label.clone(),
 		source,
 	})?;
-	let sample_rate = params.sample_rate.unwrap_or_else(|| default_config.sample_rate());
+	// A zero rate would size the rings to nothing and stall the stream: it is an error, not a default.
+	let sample_rate = params
+		.sample_rate
+		.or_else(|| device_sample_rate(&output.device, &default_config))
+		.filter(|rate| *rate > 0)
+		.ok_or_else(|| AudioError::DeviceConfig {
+			device: label.clone(),
+			source: cpal::Error::with_message(ErrorKind::UnsupportedConfig, "the device reports no usable sample rate"),
+		})?;
 	match output.driver {
-		Driver::Host | Driver::Asio => open_cpal_stream(output, label, sample_rate, params.buffer_frames, shared),
+		Driver::Host | Driver::Asio => {
+			// Shared WASAPI and ALSA take f32; an ASIO driver speaks its own format and cpal does not convert.
+			let sample_format = default_config.sample_format();
+			open_cpal_stream(output, label, sample_rate, sample_format, params.buffer_frames, shared)
+		}
 		Driver::WasapiExclusive => open_exclusive_stream(output, label, sample_rate, params.buffer_frames, shared),
 	}
 }
@@ -115,12 +127,12 @@ fn open_cpal_stream(
 	output: &OutputDevice,
 	label: String,
 	sample_rate: u32,
+	sample_format: SampleFormat,
 	buffer_frames: u32,
 	shared: &Arc<AudioShared>,
 ) -> Result<(AudioStream, AudioLinks), AudioError> {
 	let attempt = |buffer_size: BufferSize| -> Result<(Stream, AudioLinks), AudioError> {
-		let (mut renderer, links) = core_with_links(shared, sample_rate);
-		let data_callback = move |output: &mut [f32], _: &cpal::OutputCallbackInfo| renderer.fill(output, OUTPUT_CHANNELS as usize);
+		let (renderer, links) = core_with_links(shared, sample_rate);
 		let xrun_counter = Arc::clone(shared);
 		let error_callback = move |error: cpal::Error| {
 			if error.kind() == ErrorKind::Xrun {
@@ -134,13 +146,22 @@ fn open_cpal_stream(
 			sample_rate,
 			buffer_size,
 		};
-		let stream = output
-			.device
-			.build_output_stream(config, data_callback, error_callback, None)
-			.map_err(|source| AudioError::BuildStream {
-				device: label.clone(),
-				source,
-			})?;
+		let device = &output.device;
+		let stream = match sample_format {
+			SampleFormat::F32 => build_stream::<f32>(device, config, renderer, error_callback),
+			SampleFormat::I16 => build_stream::<i16>(device, config, renderer, error_callback),
+			SampleFormat::I32 => build_stream::<i32>(device, config, renderer, error_callback),
+			SampleFormat::I24 => build_stream::<I24>(device, config, renderer, error_callback),
+			SampleFormat::F64 => build_stream::<f64>(device, config, renderer, error_callback),
+			other => Err(cpal::Error::with_message(
+				ErrorKind::UnsupportedConfig,
+				format!("sample format {other} is not supported"),
+			)),
+		}
+		.map_err(|source| AudioError::BuildStream {
+			device: label.clone(),
+			source,
+		})?;
 		Ok((stream, links))
 	};
 
@@ -161,7 +182,7 @@ fn open_cpal_stream(
 	// What was asked for is not what a callback gets: a shared WASAPI stream runs at the period of
 	// the device whatever the request (spec v1.4 §2).
 	let callback_frames = stream.buffer_size().ok();
-	tracing::info!(device = %label, sample_rate, requested = ?buffer_size, ?callback_frames, "audio stream started");
+	tracing::info!(device = %label, sample_rate, %sample_format, requested = ?buffer_size, ?callback_frames, "audio stream started");
 	Ok((
 		AudioStream {
 			_playing: Box::new(stream),
@@ -172,6 +193,22 @@ fn open_cpal_stream(
 		},
 		links,
 	))
+}
+
+/// Builds the cpal stream for the sample type of the device; the callback converts from the f32
+/// render (ADR 0019).
+fn build_stream<T: SizedSample + FromSample<f32>>(
+	device: &Device,
+	config: StreamConfig,
+	mut renderer: BlockRenderer,
+	error_callback: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<Stream, cpal::Error> {
+	device.build_output_stream(
+		config,
+		move |output: &mut [T], _: &cpal::OutputCallbackInfo| renderer.fill(output, OUTPUT_CHANNELS as usize),
+		error_callback,
+		None,
+	)
 }
 
 /// The device is taken for this program alone: its own period, its own integer format (E-01, E-02).
