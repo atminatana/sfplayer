@@ -36,7 +36,8 @@ pub struct AudioStream {
 	/// The output as the list names it: `[Driver]: Device`.
 	pub label: String,
 	pub sample_rate: u32,
-	pub buffer_size: BufferSize,
+	/// Frames of one callback as the driver reports them; `None` when it does not say.
+	pub buffer_frames: Option<u32>,
 }
 
 /// The other thread's ends of the rings attached to a stream.
@@ -131,13 +132,16 @@ pub fn open_output_stream(
 		device: device_name.clone(),
 		source,
 	})?;
-	tracing::info!(device = %device_name, sample_rate, ?buffer_size, "audio stream started");
+	// What was asked for is not what a callback gets: a shared WASAPI stream runs at the period of
+	// the device whatever the request (spec v1.4 §2).
+	let buffer_frames = stream.buffer_size().ok();
+	tracing::info!(device = %device_name, sample_rate, requested = ?buffer_size, ?buffer_frames, "audio stream started");
 	Ok((
 		AudioStream {
 			_stream: stream,
 			label: device_name,
 			sample_rate,
-			buffer_size,
+			buffer_frames,
 		},
 		links,
 	))

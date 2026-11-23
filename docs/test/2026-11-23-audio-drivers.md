@@ -34,3 +34,19 @@
 Прогон после шага: 409 unit + 3 i18n + 4 no_alloc + 2 readme = 418 passed, 0 failed.
 
 **Ограничения:** перечисление настоящих устройств (`enumerate_outputs`, `list_output_devices`) автотестом не покрыто — нужно устройство; проверено живым `--list-devices` (отчёт о выполнении, шаг 1.1).
+
+## Шаг 1.2 (2026-11-23) — строка «Выход»
+
+| Тест | Файл | Что проверяет |
+| --- | --- | --- |
+| `a_name_longer_than_the_field_loses_its_end_in_the_field_and_in_the_list` | `src/ui/controls/tests.rs` | имя длиннее поля обрезано с `…` в поле и в строке раскрытого списка; отметка поля на месте; выбранное значение найдено в списке по полному имени |
+| `the_output_field_has_room_for_an_exclusive_output_and_what_follows_it` | `src/ui/main_screen/tests.rs` | на сетке 96×36 поле вмещает `[WASAPI Exclusive]: ` и имя в 27 знаков, за ним — частота, размер коллбэка и `OK` |
+| `an_output_name_longer_than_the_field_loses_its_end` | там же | имя длиннее поля обрезано с `…`, остальная строка на месте |
+| `the_output_row_names_the_rate_alone_when_the_driver_does_not_tell_the_size_of_a_callback` | там же | без размера коллбэка после частоты сразу `OK` |
+| `an_error_of_the_output_stays_inside_the_frame` | там же | длинная ошибка обрезана перед отступом рамки, строка не длиннее сетки |
+
+Изменены ожидания существующих тестов `main_screen/tests.rs`: выход в образце — `[WASAPI]: Speakers`, подпись — `48000 Hz / 256  OK` (было `Speakers`, `48000 Hz / 256 кадров  OK`): это новый вид строки по ТЗ D-01, D-06.
+
+Прогон после шага: 414 unit + 3 i18n + 4 no_alloc + 2 readme = 423 passed, 0 failed.
+
+**Ограничения:** настоящий размер коллбэка в окне автотестом не проверяется — нужен поток на устройстве.

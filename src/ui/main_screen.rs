@@ -26,8 +26,8 @@ use self::output::{audio_file, output};
 use self::sources::sources;
 use super::app::{App, ButtonId};
 use super::controls::{Controls, Look};
-use super::paint::Pen;
 pub use super::paint::{BACKGROUND, DISABLED, ERROR, GOOD, HINT, LABEL, MESSAGE, METER_TRACK, RULE, TEXT, VALUE};
+use super::paint::{Pen, fitted};
 use super::piano;
 use super::view::View;
 use crate::config::EngineKind;
@@ -46,8 +46,11 @@ const FRAME_INSET_Y: u16 = 1;
 const LABEL_X: u16 = FRAME + FRAME_INSET_X;
 const SUB_LABEL_X: u16 = LABEL_X + 2;
 const VALUE_X: u16 = LABEL_X + 18;
-/// Cells of the field of a device dropdown: the name of the device and the marker at its end.
+/// Cells of the field of the MIDI input dropdown: the name of the port and the marker at its end.
 const DEVICE_CELLS: u16 = 40;
+/// Cells of the field of the audio output dropdown: `[WASAPI Exclusive]: `, 28 cells of the name of
+/// the device and the marker (spec v1.4, D-06). The rate and the size of a callback follow it.
+const AUDIO_OUT_CELLS: u16 = 50;
 /// Cells of the field of the format dropdown.
 const FORMAT_CELLS: u16 = 8;
 /// Column of the octave / velocity read-out in the keyboard row.
@@ -178,15 +181,6 @@ fn label(buf: &mut ScreenBuffer, y: u16, text: &str) {
 
 fn sub_label(buf: &mut ScreenBuffer, y: u16, text: &str) {
 	Pen::at(buf, SUB_LABEL_X, y).text(text, LABEL);
-}
-
-/// `text` cut to `room` cells; what is cut off is marked with `…`.
-fn fitted(text: &str, room: usize) -> String {
-	if text.chars().count() <= room {
-		return text.to_owned();
-	}
-	let kept: String = text.chars().take(room.saturating_sub(1)).collect();
-	format!("{kept}…")
 }
 
 /// The bottom border (spec v1.2 §3): counters of constant width at its left end, then the optional

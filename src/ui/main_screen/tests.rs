@@ -29,7 +29,7 @@ fn view() -> View {
 	View {
 		midi: MidiStatus::Connected("Arturia KeyStep 37".into()),
 		audio: Some(AudioView {
-			device: "Speakers".into(),
+			device: "[WASAPI]: Speakers".into(),
 			sample_rate: 48_000,
 			buffer: Some(256),
 		}),
@@ -157,7 +157,7 @@ fn lower_rows() -> Vec<String> {
 	vec![
 		rule_row("ВЫХОД"),
 		String::new(),
-		"  Аудио выход       Speakers                               ▾  48000 Hz / 256 кадров  OK".to_owned(),
+		"  Аудио выход       [WASAPI]: Speakers                               ▾  48000 Hz / 256  OK".to_owned(),
 		"  L                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS".to_owned(),
 		"  R                 ░░░░░░░░░░░░░░░░░░░░░░░░░░      −∞ dBFS".to_owned(),
 		"  Мастер            [−] ████████████████░░░░  80% [+]".to_owned(),
@@ -301,7 +301,7 @@ fn english_screen_uses_the_dictionary_for_every_label() {
 		" Preset            [Preset]  000:000 Grand Piano",
 		" Effects           [Effects]  rev 40  cho off",
 		"─ OUTPUT ──",
-		" Audio output      Speakers                               ▾  48000 Hz / 256 frames  OK",
+		" Audio output      [WASAPI]: Speakers                               ▾  48000 Hz / 256  OK",
 		" Master            [−] ",
 		"─ RECORDING ──",
 		"  Folder for files: [D:/Music/sf2_player]",
@@ -326,12 +326,8 @@ fn healthy_settings_are_marked_green_and_labels_are_grey() {
 		GOOD,
 		"OK after the bank"
 	);
-	let (row, col) = find(&buf, "кадров  OK");
-	assert_eq!(
-		buf.cell(col + "кадров  ".chars().count(), row).fg,
-		GOOD,
-		"OK after the audio device"
-	);
+	let (row, col) = find(&buf, "256  OK");
+	assert_eq!(buf.cell(col + "256  ".chars().count(), row).fg, GOOD, "OK after the audio device");
 	assert_eq!(colour_of(&buf, "48000 Hz"), HINT);
 	assert_eq!(colour_of(&buf, "Клавиатура"), LABEL);
 	assert_eq!(colour_of(&buf, "ИСТОЧНИКИ MIDI"), LABEL);
@@ -394,10 +390,10 @@ fn a_broken_setting_is_red_in_its_own_line_and_recovers() {
 fn an_error_replaces_the_green_mark_of_its_line() {
 	let mut broken = view();
 	broken.notice = Some(Notice::AudioError("stream failed".into()));
-	assert!(!is_shown(&rendered_ru(&broken), "кадров  OK"));
+	assert!(!is_shown(&rendered_ru(&broken), "256  OK"));
 	broken.notice = Some(Notice::Sf2Error("not a RIFF file".into()));
 	assert!(!is_shown(&rendered_ru(&broken), "GeneralUser GS.sf2  OK"));
-	assert!(is_shown(&rendered_ru(&broken), "кадров  OK"), "the audio line is not affected");
+	assert!(is_shown(&rendered_ru(&broken), "256  OK"), "the audio line is not affected");
 }
 
 #[test]
@@ -1428,4 +1424,53 @@ fn a_small_take_is_sized_in_kilobytes_and_a_large_one_in_megabytes() {
 		size: Size::of(1024 * 1024),
 	};
 	assert!(is_shown(&rendered_ru(&saved), "сохранено: D:/rec/take.flac · 1.0 МБ"));
+}
+
+/// The audio output row as the screen shows it.
+fn output_row(view: &View) -> String {
+	let buf = rendered_ru(view);
+	let (row, _) = find(&buf, "Аудио выход");
+	lines_of(&buf)[row].clone()
+}
+
+fn with_output(device: &str) -> View {
+	let mut view = view();
+	view.audio.as_mut().expect("the view has an output").device = device.into();
+	view
+}
+
+#[test]
+fn the_output_field_has_room_for_an_exclusive_output_and_what_follows_it() {
+	let row = output_row(&with_output("[WASAPI Exclusive]: Динамики (Realtek(R) Audio)"));
+	assert!(
+		row.contains("[WASAPI Exclusive]: Динамики (Realtek(R) Audio)  ▾  48000 Hz / 256  OK"),
+		"{row:?}"
+	);
+}
+
+#[test]
+fn an_output_name_longer_than_the_field_loses_its_end() {
+	let row = output_row(&with_output("[WASAPI Exclusive]: Головной телефон (QCY H3 Hands-Free AG Audio)"));
+	assert!(
+		row.contains("[WASAPI Exclusive]: Головной телефон (QCY H3 Ha… ▾  48000 Hz / 256  OK"),
+		"{row:?}"
+	);
+}
+
+#[test]
+fn the_output_row_names_the_rate_alone_when_the_driver_does_not_tell_the_size_of_a_callback() {
+	let mut silent = view();
+	silent.audio.as_mut().expect("the view has an output").buffer = None;
+	assert!(output_row(&silent).contains("▾  48000 Hz  OK"));
+}
+
+#[test]
+fn an_error_of_the_output_stays_inside_the_frame() {
+	let mut broken = view();
+	broken.notice = Some(Notice::AudioError(
+		"cannot open audio stream on [WASAPI Exclusive]: Speakers: the device is in use".into(),
+	));
+	let row = output_row(&broken);
+	assert_eq!(row.chars().count(), usize::from(MIN_COLS), "{row:?}");
+	assert!(row.ends_with("…  │"), "the error is cut before the inset of the frame: {row:?}");
 }

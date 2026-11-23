@@ -9,7 +9,7 @@ use gterm_widgets::{BufferExt, Rect, Style, Widget};
 use rust_i18n::t;
 
 use super::{
-	DEVICE_CELLS, ERROR, FORMAT_CELLS, GOOD, HINT, LABEL, LABEL_X, MASTER_CELLS, MESSAGE, METER_CELLS, METER_TRACK, METER_ZONES, MINUS,
+	AUDIO_OUT_CELLS, ERROR, FORMAT_CELLS, GOOD, HINT, LABEL, LABEL_X, MASTER_CELLS, MESSAGE, METER_CELLS, METER_TRACK, METER_ZONES, MINUS,
 	PLUS, RECORD_BLINK_HALF_PERIOD_MS, RECORD_DOT, SECTION_HEAD_ROWS, TEXT, VALUE, VALUE_X, content_end, fitted, label, put, rule, section,
 };
 use crate::config::RecordFormat;
@@ -39,21 +39,21 @@ pub(super) fn output(buf: &mut ScreenBuffer, y: u16, app: &App, locale: &str, vi
 	// The device is chosen in place: the field shows the one in use, or says that there is none.
 	let device = view.audio.as_ref().map(|audio| audio.device.as_str());
 	let no_device = t!("header.no_device", locale = locale);
-	let field = controls.place_dropdown(Dropdown::AudioOut, VALUE_X, device_y, DEVICE_CELLS, device, &no_device);
+	let field = controls.place_dropdown(Dropdown::AudioOut, VALUE_X, device_y, AUDIO_OUT_CELLS, device, &no_device);
 	let mut pen = Pen::at(buf, VALUE_X + field + 2, device_y);
 	// An error takes the room of the rate and the buffer: while it is there, it is what matters.
 	match (view.line_error(NoticeTarget::Audio), &view.audio) {
 		(Some(error), _) => {
-			pen.text(error, ERROR);
+			let room = usize::from(content_end(pen.clip_width()).saturating_sub(pen.x));
+			pen.text(&fitted(error, room), ERROR);
 		}
 		(None, Some(audio)) => {
-			let buffer = match audio.buffer {
-				Some(frames) => t!("header.buffer", locale = locale, frames = frames),
-				None => t!("header.buffer_default", locale = locale),
+			// The size of a callback follows the rate when the driver tells it.
+			let stream = match audio.buffer {
+				Some(frames) => format!("{} Hz / {frames}", audio.sample_rate),
+				None => format!("{} Hz", audio.sample_rate),
 			};
-			pen.text(&format!("{} Hz / {buffer}", audio.sample_rate), HINT)
-				.gap(2)
-				.text(&t!("header.audio_ok", locale = locale), GOOD);
+			pen.text(&stream, HINT).gap(2).text(&t!("header.audio_ok", locale = locale), GOOD);
 		}
 		(None, None) => {}
 	}

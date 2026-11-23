@@ -16,10 +16,13 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use super::app::{ButtonId, Dropdown};
 use super::chord::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use super::paint::{BACKGROUND, DISABLED, ERROR, SELECTED, TEXT, VALUE};
+use super::paint::{BACKGROUND, DISABLED, ERROR, SELECTED, TEXT, VALUE, fitted};
 
 /// Rows of an open dropdown list, without its frame; fewer when there is less to choose from.
 const LIST_ROWS: u16 = 8;
+/// Cells of a dropdown field its text does not get: the gap and the marker at its end. The frame of
+/// the open list takes as many.
+const FIELD_EDGE_CELLS: u16 = 2;
 
 /// How a button looks (spec v1.2 §3). Under the keyboard focus any of them is underlined; while the
 /// mouse holds it down, it is inverted on light.
@@ -149,6 +152,16 @@ impl DropList {
 		let current = self.field.as_ref()?.current.as_ref()?;
 		self.items.iter().position(|item| item == current)
 	}
+
+	/// A text as the field and the list have room for it: one longer than the field loses its end.
+	fn shown(&self, text: &str) -> String {
+		fitted(text, usize::from(self.state.node.area.width.saturating_sub(FIELD_EDGE_CELLS)))
+	}
+
+	/// The rows of the list as they are shown.
+	fn shown_rows(&self) -> Vec<String> {
+		self.items.iter().map(|item| self.shown(item)).collect()
+	}
 }
 
 /// The dropdown as the library draws it: the closed field, and the list that takes its style.
@@ -268,18 +281,21 @@ impl Controls {
 				.render(placed.area, buf, &mut self.buttons[placed.id as usize]);
 		}
 		for list in &mut self.dropdowns {
-			let DropList { state, items, field } = list;
-			let Some(field) = field else {
+			let shown_rows = list.shown_rows();
+			let Some(field) = &list.field else {
 				continue;
 			};
-			let rows: Vec<&str> = items.iter().map(String::as_str).collect();
+			let rows: Vec<&str> = shown_rows.iter().map(String::as_str).collect();
 			// No device is a problem of the setting: its line says so in red.
 			let (shown, text) = match &field.current {
 				Some(current) if field.is_locked => (current.as_str(), DISABLED),
 				Some(current) => (current.as_str(), TEXT),
 				None => (field.absent.as_str(), ERROR),
 			};
-			field_widget(&rows, text).placeholder(shown).render(field.area, buf, state);
+			let shown = list.shown(shown);
+			field_widget(&rows, text)
+				.placeholder(&shown)
+				.render(field.area, buf, &mut list.state);
 		}
 	}
 
@@ -455,9 +471,10 @@ impl Controls {
 			ring, buttons, dropdowns, ..
 		} = self;
 		let [midi, audio, format] = dropdowns;
-		let midi_rows: Vec<&str> = midi.items.iter().map(String::as_str).collect();
-		let audio_rows: Vec<&str> = audio.items.iter().map(String::as_str).collect();
-		let format_rows: Vec<&str> = format.items.iter().map(String::as_str).collect();
+		let [midi_shown, audio_shown, format_shown] = [midi.shown_rows(), audio.shown_rows(), format.shown_rows()];
+		let midi_rows: Vec<&str> = midi_shown.iter().map(String::as_str).collect();
+		let audio_rows: Vec<&str> = audio_shown.iter().map(String::as_str).collect();
+		let format_rows: Vec<&str> = format_shown.iter().map(String::as_str).collect();
 		let mut nodes: Vec<Ui<'_, Hit>> = buttons
 			.iter_mut()
 			.zip(ButtonId::ALL)

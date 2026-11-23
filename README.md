@@ -37,7 +37,7 @@ sf2_player [--sf2 PATH] [--midi-in NAME|INDEX] [--audio-out NAME|INDEX]
 - `--list-devices` prints MIDI inputs and audio outputs with their indices and exits. An audio output is named `[Driver]: Device`, for example `[WASAPI]: Speakers`; `--audio-out` and `audio.output` take a part of that name or the index, so a plain device name still works.
 - Devices whose configuration cannot be read (an unsupported ALSA hint, a busy device) are skipped with a warning in the log instead of breaking the whole list.
 - Devices are selected by index or by a case-insensitive substring of the name; if a device is not found, the system default is used (the first port for MIDI) and a warning appears in the message line. If a device is found but cannot be opened (busy, unsupported configuration), the program runs without sound, the audio output line shows the cause in red, and another device is chosen with F3.
-- The default buffer is 256 frames; if the device does not accept it, the device default is used.
+- The default buffer is 256 frames; if the device does not accept it, the device default is used. The output row shows the rate and the number of frames a callback really gets: WASAPI in shared mode runs at the period of the device (480 frames at 48 kHz) whatever buffer is asked for.
 - Command-line values take precedence over the config file.
 - `--backend auto|gl|gles|soft` chooses how the window is drawn; by default — the `TERM_BACKEND` environment variable, otherwise automatically: OpenGL 3.3, then OpenGL ES 3.0, then software rendering.
 

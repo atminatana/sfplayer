@@ -4,7 +4,6 @@
 
 use std::time::Duration;
 
-use cpal::BufferSize;
 use rust_i18n::t;
 
 use super::dialog::preset_label;
@@ -130,7 +129,7 @@ pub struct FileView {
 pub struct AudioView {
 	pub device: String,
 	pub sample_rate: u32,
-	/// Buffer size in frames; `None` when the device picked its own default.
+	/// Frames of one callback; `None` when the driver does not say.
 	pub buffer: Option<u32>,
 }
 
@@ -147,10 +146,7 @@ impl View {
 		let audio = session.audio().map(|stream| AudioView {
 			device: stream.label.clone(),
 			sample_rate: stream.sample_rate,
-			buffer: match stream.buffer_size {
-				BufferSize::Fixed(frames) => Some(frames),
-				BufferSize::Default => None,
-			},
+			buffer: stream.buffer_frames,
 		});
 		let bank = session.bank.as_ref().map(|loaded| BankView {
 			file_name: loaded

@@ -604,3 +604,28 @@ fn a_locked_dropdown_shows_its_value_dark_and_neither_opens_nor_takes_the_focus(
 	let (press, _) = click(&mut controls, 1, 0);
 	assert_eq!(press, Touch::Opened(Dropdown::Format));
 }
+
+#[test]
+fn a_name_longer_than_the_field_loses_its_end_in_the_field_and_in_the_list() {
+	const LONG: &str = "[WASAPI Exclusive]: Speakers";
+	const CUT: &str = "[WASAPI Exclusive…";
+	let (mut controls, mut buf) = devices(Some("loopMIDI"), Some(LONG));
+	assert_eq!(
+		text_at(&buf, 0, 2, 18),
+		CUT,
+		"the field is 20 cells, two of them are not for the text"
+	);
+	assert_eq!(buf.cell(19, 2).ch, CLOSED, "the mark keeps its cell");
+
+	assert!(controls.open(Dropdown::AudioOut));
+	controls.set_items(Dropdown::AudioOut, vec!["HDMI".to_owned(), LONG.to_owned()]);
+	device_frame(&mut controls, &mut buf, Some("loopMIDI"), Some(LONG));
+	assert_eq!(text_at(&buf, 0, 2, 18), CUT);
+	let (_, list) = controls.layer(GRID).expect("the list is open");
+	assert!(lines_of(&list)[2].contains(CUT), "{:?}", lines_of(&list));
+	assert_eq!(
+		colours_of(&list, CUT),
+		(BACKGROUND, TEXT),
+		"the output in use is found in the list by its whole name"
+	);
+}

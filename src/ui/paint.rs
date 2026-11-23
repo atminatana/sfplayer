@@ -23,6 +23,15 @@ pub const METER_TRACK: Color = LABEL;
 /// The highlighted row of a list, the cursor cell of a field: light background, dark text.
 pub const SELECTED: Style = Style::new().fg(BACKGROUND).bg(TEXT);
 
+/// `text` cut to `room` cells; what is cut off is marked with `…`.
+pub(super) fn fitted(text: &str, room: usize) -> String {
+	if text.chars().count() <= room {
+		return text.to_owned();
+	}
+	let kept: String = text.chars().take(room.saturating_sub(1)).collect();
+	format!("{kept}…")
+}
+
 /// Writes consecutive pieces of one row, advancing to the right; nothing lands outside its clip area.
 pub(super) struct Pen<'a> {
 	buf: &'a mut ScreenBuffer,

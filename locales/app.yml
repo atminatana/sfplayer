@@ -12,12 +12,6 @@ header.audio_ok:
 header.sf2_missing:
   en: "not set, press F4"
   ru: "не указан, нажмите F4"
-header.buffer:
-  en: "%{frames} frames"
-  ru: "%{frames} кадров"
-header.buffer_default:
-  en: "default buffer"
-  ru: "буфер по умолчанию"
 
 status.voices:
   en: "voices %{voices}"
