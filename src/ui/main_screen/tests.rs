@@ -1474,3 +1474,20 @@ fn an_error_of_the_output_stays_inside_the_frame() {
 	assert_eq!(row.chars().count(), usize::from(MIN_COLS), "{row:?}");
 	assert!(row.ends_with("…  │"), "the error is cut before the inset of the frame: {row:?}");
 }
+
+#[test]
+fn a_fallback_of_the_output_is_told_in_the_message_line_and_the_row_shows_what_plays() {
+	let mut fell_back = view();
+	fell_back.notice = Some(Notice::AudioFellBack(
+		"cannot open [WASAPI Exclusive]: Speakers: the device is in use by another program".into(),
+	));
+	let buf = rendered_ru(&fell_back);
+	assert!(
+		is_shown(&buf, "Звук идёт через другой выход: cannot open [WASAPI Exclusive]: Speakers"),
+		"{}",
+		lines_of(&buf).join("\n")
+	);
+	assert_eq!(colour_of(&buf, "Звук идёт через другой выход"), MESSAGE);
+	assert!(output_row(&fell_back).contains("[WASAPI]: Speakers"), "the output that plays");
+	assert!(output_row(&fell_back).contains("256  OK"), "the row of the output has no error");
+}

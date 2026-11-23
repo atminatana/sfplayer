@@ -32,6 +32,9 @@ notice.no_audio_device:
 notice.audio_fallback:
   en: "Audio output not found, using the default device"
   ru: "Аудиовыход не найден, используется устройство по умолчанию"
+notice.audio_fell_back:
+  en: "Playing through another output: %{error}"
+  ru: "Звук идёт через другой выход: %{error}"
 notice.midi_fallback:
   en: "MIDI input not found, using the first available port"
   ru: "MIDI-вход не найден, используется первый доступный порт"

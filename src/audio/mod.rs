@@ -12,8 +12,8 @@ mod shared;
 mod stream;
 
 pub use device::{
-	AudioDeviceInfo, Driver, OutputDevice, SelectedDevice, default_output_device, list_output_devices, output_device_by_index,
-	output_label, select_output_device,
+	AudioDeviceInfo, Driver, OutputDevice, SelectedDevice, default_output_device, fallback_indices, list_output_devices,
+	output_device_by_index, output_label, select_output_device,
 };
 pub use meter::Levels;
 pub use mixer::Mixer;

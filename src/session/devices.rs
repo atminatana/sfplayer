@@ -7,43 +7,68 @@ use std::sync::atomic::Ordering;
 use ringbuf::traits::Producer;
 
 use super::{MidiSink, Notice, Session};
-use crate::audio::{self, AudioLinks, OutputDevice};
+use crate::audio::{self, AudioError, AudioLinks, OutputDevice};
 use crate::cli::DeviceSelector;
 use crate::midi::player::Player;
 use crate::midi::{self, MidiStatus};
 
 impl Session {
-	pub(super) fn open_audio(&mut self, device: &OutputDevice) {
-		match audio::open_output_stream(device, self.params, &self.shared) {
-			Ok((
-				stream,
-				AudioLinks {
-					events,
-					file_events,
-					commands,
-					retired,
-					recording,
-				},
-			)) => {
-				self.audio = Some(stream);
-				self.commands = Some(commands);
-				self.retired = Some(retired);
-				self.record_rx = Some(recording);
-				self.spare_events = Some(events);
-				// A file that is playing goes on into the ring of the new stream.
-				match &self.player {
-					Some(player) => player.set_output(file_events),
-					None => {
-						let player = Player::spawn(file_events);
-						if let Some(song) = &self.song {
-							player.load(Arc::clone(song));
-						}
-						self.player = Some(player);
-					}
+	/// Opens a stream on `device` and takes the far ends of its rings.
+	fn try_open_audio(&mut self, device: &OutputDevice) -> Result<(), AudioError> {
+		let (
+			stream,
+			AudioLinks {
+				events,
+				file_events,
+				commands,
+				retired,
+				recording,
+			},
+		) = audio::open_output_stream(device, self.params, &self.shared)?;
+		self.audio = Some(stream);
+		self.commands = Some(commands);
+		self.retired = Some(retired);
+		self.record_rx = Some(recording);
+		self.spare_events = Some(events);
+		// A file that is playing goes on into the ring of the new stream.
+		match &self.player {
+			Some(player) => player.set_output(file_events),
+			None => {
+				let player = Player::spawn(file_events);
+				if let Some(song) = &self.song {
+					player.load(Arc::clone(song));
 				}
+				self.player = Some(player);
 			}
-			Err(error) => self.notice = Some(Notice::NoAudioDevice(error.to_string())),
 		}
+		Ok(())
+	}
+
+	/// Opens `device`; when it does not open — it is in use, exclusive mode is switched off, its
+	/// format is not taken — the outputs of the fallback chain are tried in turn (spec v1.4, E-06),
+	/// so that the program is left without sound only when nothing opens at all. The notice names
+	/// the output that did not open and why.
+	pub(super) fn open_audio(&mut self, device: &OutputDevice) {
+		let Err(error) = self.try_open_audio(device) else {
+			return;
+		};
+		let failed = device.label();
+		tracing::warn!(output = %failed, %error, "audio output did not open, trying the fallback chain");
+		// A list that cannot be read leaves nothing to fall back to, like an empty one.
+		let outputs = audio::list_output_devices().unwrap_or_else(|list_error| {
+			tracing::warn!(error = %list_error, "cannot list audio outputs for the fallback chain");
+			Vec::new()
+		});
+		for index in audio::fallback_indices(&outputs, &failed) {
+			match audio::output_device_by_index(index).and_then(|candidate| self.try_open_audio(&candidate)) {
+				Ok(()) => {
+					self.notice = Some(Notice::AudioFellBack(error.to_string()));
+					return;
+				}
+				Err(next) => tracing::warn!(index, error = %next, "fallback audio output did not open"),
+			}
+		}
+		self.notice = Some(Notice::NoAudioDevice(error.to_string()));
 	}
 
 	/// Switches to another output device (F-03): new stream and rings, engine re-created for the new rate,
@@ -68,9 +93,13 @@ impl Session {
 		let Some(stream) = &self.audio else {
 			return;
 		};
-		let label = stream.label.clone();
-		self.config.audio.output = Some(label.clone());
-		self.notice = Some(Notice::AudioReopened(label));
+		// The choice is remembered even when another output had to be opened in its place: the
+		// next start tries it again, and the notice of the fallback stays on the screen.
+		let chosen = device.label();
+		if stream.label == chosen {
+			self.notice = Some(Notice::AudioReopened(chosen.clone()));
+		}
+		self.config.audio.output = Some(chosen);
 		if let Err(error) = self.install_engine() {
 			self.notice = Some(Notice::Sf2Error(error.to_string()));
 		}

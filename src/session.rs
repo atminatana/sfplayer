@@ -32,6 +32,9 @@ use crate::synth::{SoundFontBank, SynthEngine, SynthError, Timbre};
 pub enum Notice {
 	NoAudioDevice(String),
 	AudioFallback,
+	/// The chosen output did not open and another one plays in its place (spec v1.4, E-06); carries
+	/// the error, which names the output.
+	AudioFellBack(String),
 	AudioReopened(String),
 	AudioError(String),
 	MidiFallback,

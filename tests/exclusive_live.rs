@@ -1,6 +1,7 @@
-//! Live check of the WASAPI Exclusive driver (spec v1.4, К-5): every output of the machine is opened
-//! exclusively and played for half a second with the built-in synthesizer holding a note at zero
-//! volume, so the whole path runs and nothing is heard.
+//! Live checks of the WASAPI Exclusive driver (spec v1.4, К-5, К-8): every output of the machine is
+//! opened exclusively and played for half a second with the built-in synthesizer holding a note at
+//! zero volume, so the whole path runs and nothing is heard; and a session whose output is taken by
+//! somebody else starts on another one.
 //!
 //! Not a part of the usual run: it needs devices, and while a device is taken no other program
 //! sounds through it. Run it with
@@ -13,7 +14,10 @@ use std::time::{Duration, Instant};
 
 use ringbuf::traits::Producer;
 use sf2_player::audio::{AudioShared, Command, Driver, StreamParams, list_output_devices, open_output_stream, output_device_by_index};
+use sf2_player::cli::DeviceSelector;
+use sf2_player::config::{Config, Settings};
 use sf2_player::midi::MidiEvent;
+use sf2_player::session::{Notice, Session};
 use sf2_player::synth::{Adsr, BuiltinSynth, Timbre, Wave};
 
 const BUFFER_FRAMES: u32 = 256;
@@ -77,4 +81,42 @@ fn every_output_opens_exclusively_or_says_why_not() {
 		}
 	}
 	assert!(opened > 0, "no output could be opened exclusively");
+}
+
+#[test]
+#[ignore = "takes an output device exclusively: needs two devices and silences other programs meanwhile"]
+fn a_session_whose_output_is_in_use_starts_on_another_one() {
+	let outputs = list_output_devices().expect("the outputs can be listed");
+	let busy = outputs
+		.iter()
+		.find(|output| output.driver == Driver::WasapiExclusive)
+		.expect("the list has an exclusive output");
+	let params = StreamParams {
+		buffer_frames: BUFFER_FRAMES,
+		sample_rate: None,
+	};
+	let device = output_device_by_index(busy.index).expect("the output is still there");
+	// Somebody else has the device: neither an exclusive nor a shared stream opens on it now.
+	let _holder = open_output_stream(&device, params, &Arc::new(AudioShared::new(0.0))).expect("the output opens exclusively");
+
+	let settings = Settings {
+		sf2: None,
+		midi_in: None,
+		audio_out: Some(DeviceSelector::Name(busy.label())),
+		buffer_frames: BUFFER_FRAMES,
+		sample_rate: None,
+	};
+	let mut config = Config::default();
+	config.mixer.master = 0;
+	let session = Session::start(&settings, config, std::env::temp_dir().join("sf2_player-exclusive-live.toml"));
+
+	let playing = session.audio().map(|stream| stream.label.clone());
+	println!("wanted {}, playing {playing:?}, notice {:?}", busy.label(), session.notice);
+	let playing = playing.expect("another output plays");
+	assert_ne!(playing, busy.label());
+	assert!(
+		matches!(&session.notice, Some(Notice::AudioFellBack(error)) if error.contains(&busy.label())),
+		"{:?}",
+		session.notice
+	);
 }

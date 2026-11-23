@@ -221,6 +221,7 @@ pub(super) fn notice_target(notice: &Notice) -> NoticeTarget {
 		Notice::Sf2Error(_) => NoticeTarget::Sf2,
 		Notice::RecordError(_) => NoticeTarget::Record,
 		Notice::AudioFallback
+		| Notice::AudioFellBack(_)
 		| Notice::AudioReopened(_)
 		| Notice::MidiFallback
 		| Notice::ConfigError(_)
@@ -286,6 +287,7 @@ pub(super) fn notice_text(notice: &Notice, locale: &str) -> String {
 	match notice {
 		Notice::NoAudioDevice(error) => t!("notice.no_audio_device", locale = locale, error = error).into_owned(),
 		Notice::AudioFallback => t!("notice.audio_fallback", locale = locale).into_owned(),
+		Notice::AudioFellBack(error) => t!("notice.audio_fell_back", locale = locale, error = error).into_owned(),
 		Notice::AudioReopened(device) => t!("notice.audio_reopened", locale = locale, device = device).into_owned(),
 		Notice::AudioError(error) => t!("notice.audio_error", locale = locale, error = error).into_owned(),
 		Notice::MidiFallback => t!("notice.midi_fallback", locale = locale).into_owned(),

@@ -79,3 +79,19 @@
 Прогон после шага: 423 unit + 3 i18n + 5 no_alloc + 2 readme = 433 passed, 0 failed, 1 ignored. Живой тест — 1 passed (числа — в отчёте о выполнении).
 
 **Ограничения:** звук на слух, занятое устройство, запрет монопольного режима и отключение устройства во время игры автотестами не проверяются.
+
+## Шаг 2.3 (2026-11-23) — цепочка отката
+
+| Тест | Файл | Что проверяет |
+| --- | --- | --- |
+| `an_exclusive_output_falls_back_to_its_device_in_the_host_driver_then_to_the_default_one` | `src/audio/device.rs` | монопольный выход: сначала то же устройство через драйвер ОС, затем устройство по умолчанию; совпавшие не повторяются |
+| `an_output_of_the_host_driver_falls_back_to_the_default_device_or_the_first_other_row` | там же | выход драйвера ОС: устройство по умолчанию; если отказало оно само — первая другая строка |
+| `an_output_with_no_device_of_its_name_in_the_host_driver_falls_back_to_the_default_one` | там же | выход ASIO и исчезнувшее устройство: устройство по умолчанию |
+| `with_no_default_device_the_first_other_row_is_tried` | там же | без устройства по умолчанию — первая другая строка |
+| `there_is_nothing_to_fall_back_to_in_an_empty_list_or_a_list_of_the_failed_output_alone` | там же | пустой список и список из одного отказавшего выхода — пробовать нечего |
+| `a_fallback_of_the_output_is_told_in_the_message_line_and_the_row_shows_what_plays` | `src/ui/main_screen/tests.rs` | уведомление об откате — в строке сообщений жёлтым; строка «Выход» показывает звучащий выход без ошибки |
+| `a_session_whose_output_is_in_use_starts_on_another_one` (вне обычного прогона) | `tests/exclusive_live.rs` | выход, занятый монопольно другим потоком: сессия стартует на другом выходе с уведомлением, в котором назван занятый |
+
+Прогон после шага: 429 unit + 3 i18n + 5 no_alloc + 2 readme = 439 passed, 0 failed, 2 ignored. Живой тест отката — 1 passed.
+
+**Ограничения:** сессия с настоящими устройствами в обычном прогоне не создаётся; откат в ней проверяется только живым тестом.

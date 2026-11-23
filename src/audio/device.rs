@@ -181,6 +181,30 @@ pub fn select_output_device(selector: Option<&DeviceSelector>) -> Result<Selecte
 	}
 }
 
+/// The outputs to try, in this order, when the one named `failed` did not open (spec v1.4, E-06):
+/// the same device through the host driver, the default device, the first other row of the list.
+/// Each is named by its index in the enumeration order; none is tried twice.
+pub fn fallback_indices(outputs: &[AudioDeviceInfo], failed: &str) -> Vec<usize> {
+	let is_other = |output: &&AudioDeviceInfo| output.label() != failed;
+	let same_device = outputs
+		.iter()
+		.find(|output| output.label() == failed && output.driver != Driver::Host)
+		.and_then(|taken| {
+			outputs
+				.iter()
+				.find(|output| output.driver == Driver::Host && output.name == taken.name)
+		});
+	let default = outputs.iter().find(|output| output.is_default).filter(is_other);
+	let first = outputs.iter().find(is_other);
+	let mut order = Vec::new();
+	for candidate in [same_device, default, first].into_iter().flatten() {
+		if !order.contains(&candidate.index) {
+			order.push(candidate.index);
+		}
+	}
+	order
+}
+
 /// The output at `index` in the enumeration order shown by `--list-devices` and the output list.
 pub fn output_device_by_index(index: usize) -> Result<OutputDevice, AudioError> {
 	enumerate_outputs()?.into_iter().nth(index).ok_or(AudioError::NoOutputDevice)
@@ -241,6 +265,71 @@ mod tests {
 	fn an_index_counts_the_outputs_of_every_driver() {
 		assert_eq!(found(&DeviceSelector::Index(2)), Some(2));
 		assert_eq!(found(&DeviceSelector::Index(5)), None);
+	}
+
+	/// The outputs `labels()` names, as the list reports them: the headphones are the default device.
+	fn outputs() -> Vec<AudioDeviceInfo> {
+		[
+			(Driver::Host, HEADPHONES),
+			(Driver::Host, SPEAKERS),
+			(Driver::WasapiExclusive, HEADPHONES),
+			(Driver::WasapiExclusive, SPEAKERS),
+			(Driver::Asio, "Realtek ASIO"),
+		]
+		.into_iter()
+		.enumerate()
+		.map(|(index, (driver, name))| AudioDeviceInfo {
+			index,
+			driver,
+			name: name.to_owned(),
+			is_default: is_default_output(driver, name, Some(HEADPHONES)),
+			default_sample_rate: 48_000,
+			buffer_range: None,
+		})
+		.collect()
+	}
+
+	fn fallback_for(driver: Driver, name: &str) -> Vec<usize> {
+		fallback_indices(&outputs(), &output_label(driver, name))
+	}
+
+	#[test]
+	fn an_exclusive_output_falls_back_to_its_device_in_the_host_driver_then_to_the_default_one() {
+		assert_eq!(fallback_for(Driver::WasapiExclusive, SPEAKERS), [1, 0]);
+		assert_eq!(
+			fallback_for(Driver::WasapiExclusive, HEADPHONES),
+			[0],
+			"the same device is the default one and the first row: tried once"
+		);
+	}
+
+	#[test]
+	fn an_output_of_the_host_driver_falls_back_to_the_default_device_or_the_first_other_row() {
+		assert_eq!(fallback_for(Driver::Host, SPEAKERS), [0]);
+		assert_eq!(fallback_for(Driver::Host, HEADPHONES), [1], "the default device itself failed");
+	}
+
+	#[test]
+	fn an_output_with_no_device_of_its_name_in_the_host_driver_falls_back_to_the_default_one() {
+		assert_eq!(fallback_for(Driver::Asio, "Realtek ASIO"), [0]);
+		assert_eq!(fallback_for(Driver::Host, "A device that is gone"), [0]);
+	}
+
+	#[test]
+	fn with_no_default_device_the_first_other_row_is_tried() {
+		let mut outputs = outputs();
+		for output in &mut outputs {
+			output.is_default = false;
+		}
+		assert_eq!(fallback_indices(&outputs, &output_label(Driver::Host, HEADPHONES)), [1]);
+		assert_eq!(fallback_indices(&outputs, &output_label(Driver::Asio, "Realtek ASIO")), [0]);
+	}
+
+	#[test]
+	fn there_is_nothing_to_fall_back_to_in_an_empty_list_or_a_list_of_the_failed_output_alone() {
+		assert!(fallback_indices(&[], &output_label(Driver::Host, SPEAKERS)).is_empty());
+		let alone = &outputs()[..1];
+		assert!(fallback_indices(alone, &output_label(Driver::Host, HEADPHONES)).is_empty());
 	}
 
 	#[test]
