@@ -17,7 +17,10 @@ use windows::Win32::Foundation::{CloseHandle, HANDLE, S_OK, WAIT_OBJECT_0, WAIT_
 use windows::Win32::Media::Audio::{
 	AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED, AUDCLNT_E_DEVICE_IN_USE, AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED, AUDCLNT_SHAREMODE_EXCLUSIVE,
 	AUDCLNT_STREAMFLAGS_EVENTCALLBACK, IAudioClient, IAudioRenderClient, IMMDeviceEnumerator, MMDeviceEnumerator, WAVE_FORMAT_PCM,
-	WAVEFORMATEX,
+	WAVEFORMATEX, WAVEFORMATEXTENSIBLE, WAVEFORMATEXTENSIBLE_0,
+};
+use windows::Win32::Media::KernelStreaming::{
+	KSDATAFORMAT_SUBTYPE_PCM, SPEAKER_FRONT_CENTER, SPEAKER_FRONT_LEFT, SPEAKER_FRONT_RIGHT, WAVE_FORMAT_EXTENSIBLE,
 };
 use windows::Win32::System::Com::{CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize};
 use windows::Win32::System::Threading::{
@@ -33,6 +36,8 @@ const HNS_PER_SECOND: u64 = 10_000_000;
 /// How long the thread waits for the device before it looks whether it was told to stop. The device
 /// wakes it once a period, far more often: this matters only when the device has gone silent.
 const STOP_CHECK_MS: u32 = 200;
+/// Bytes the extensible description adds to the plain one.
+const EXTENSION_BYTES: u16 = (size_of::<WAVEFORMATEXTENSIBLE>() - size_of::<WAVEFORMATEX>()) as u16;
 /// Channel counts a device is asked for, best first; the render core mixes its stereo down to one.
 const CHANNELS: [u16; 2] = [2, 1];
 
@@ -184,7 +189,7 @@ impl Device {
 					AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
 					period,
 					period,
-					&wave,
+					(&raw const wave).cast(),
 					None,
 				)
 			};
@@ -310,12 +315,12 @@ impl Device {
 ///
 /// # Safety
 /// COM must be initialized on this thread.
-unsafe fn accepted_format(client: &IAudioClient, sample_rate: u32) -> Option<(WAVEFORMATEX, PcmFormat, u16)> {
+unsafe fn accepted_format(client: &IAudioClient, sample_rate: u32) -> Option<(WAVEFORMATEXTENSIBLE, PcmFormat, u16)> {
 	for channels in CHANNELS {
 		for format in PcmFormat::PREFERRED {
 			let wave = wave_format(format, channels, sample_rate);
 			// SAFETY: a pointer to a live local; no closest match is asked for in exclusive mode.
-			if unsafe { client.IsFormatSupported(AUDCLNT_SHAREMODE_EXCLUSIVE, &wave, None) } == S_OK {
+			if unsafe { client.IsFormatSupported(AUDCLNT_SHAREMODE_EXCLUSIVE, (&raw const wave).cast(), None) } == S_OK {
 				return Some((wave, format, channels));
 			}
 		}
@@ -323,17 +328,33 @@ unsafe fn accepted_format(client: &IAudioClient, sample_rate: u32) -> Option<(WA
 	None
 }
 
-/// Plain integer PCM as WASAPI describes it.
-fn wave_format(format: PcmFormat, channels: u16, sample_rate: u32) -> WAVEFORMATEX {
-	let frame_bytes = channels * (format.bits() / 8);
-	WAVEFORMATEX {
-		wFormatTag: WAVE_FORMAT_PCM as u16,
-		nChannels: channels,
-		nSamplesPerSec: sample_rate,
-		nAvgBytesPerSec: sample_rate * u32::from(frame_bytes),
-		nBlockAlign: frame_bytes,
-		wBitsPerSample: format.bits(),
-		cbSize: 0,
+/// Integer PCM as WASAPI is told it. Sixteen bits go as the plain description every device knows.
+/// Anything wider goes with the extensible one, the only one that says where in a sample the sound
+/// is: asked plainly for 24 bits, a sound card codec agrees and then plays garbage, because it takes
+/// them in a 32-bit container and nowhere else.
+fn wave_format(format: PcmFormat, channels: u16, sample_rate: u32) -> WAVEFORMATEXTENSIBLE {
+	let frame_bytes = channels * (format.container_bits() / 8);
+	let is_plain = format.container_bits() <= 16;
+	WAVEFORMATEXTENSIBLE {
+		Format: WAVEFORMATEX {
+			wFormatTag: if is_plain { WAVE_FORMAT_PCM } else { WAVE_FORMAT_EXTENSIBLE } as u16,
+			nChannels: channels,
+			nSamplesPerSec: sample_rate,
+			nAvgBytesPerSec: sample_rate * u32::from(frame_bytes),
+			nBlockAlign: frame_bytes,
+			wBitsPerSample: format.container_bits(),
+			// What follows the plain part; a plain description has nothing after it.
+			cbSize: if is_plain { 0 } else { EXTENSION_BYTES },
+		},
+		Samples: WAVEFORMATEXTENSIBLE_0 {
+			wValidBitsPerSample: format.bits(),
+		},
+		dwChannelMask: if channels == 1 {
+			SPEAKER_FRONT_CENTER
+		} else {
+			SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+		},
+		SubFormat: KSDATAFORMAT_SUBTYPE_PCM,
 	}
 }
 
@@ -367,23 +388,48 @@ mod tests {
 	}
 
 	#[test]
-	fn a_wave_format_describes_plain_integer_pcm() {
-		let wave = wave_format(PcmFormat::I24, 2, 48_000);
-		let (tag, channels, rate, bytes_per_second, frame_bytes, bits) = (
-			wave.wFormatTag,
-			wave.nChannels,
-			wave.nSamplesPerSec,
-			wave.nAvgBytesPerSec,
-			wave.nBlockAlign,
-			wave.wBitsPerSample,
+	fn sixteen_bits_are_described_plainly_and_wider_samples_with_their_valid_bits() {
+		// The fields of these packed structures are read by value.
+		let wide = wave_format(PcmFormat::I24In32, 2, 48_000);
+		let plain = wide.Format;
+		let (tag, channels, rate, bytes_per_second, frame_bytes, bits, extension) = (
+			plain.wFormatTag,
+			plain.nChannels,
+			plain.nSamplesPerSec,
+			plain.nAvgBytesPerSec,
+			plain.nBlockAlign,
+			plain.wBitsPerSample,
+			plain.cbSize,
 		);
 		assert_eq!(
-			(tag, channels, rate, bytes_per_second, frame_bytes, bits),
-			(1, 2, 48_000, 288_000, 6, 24)
+			(tag, channels, rate, bytes_per_second, frame_bytes, bits, extension),
+			(0xFFFE, 2, 48_000, 384_000, 8, 32, 22)
 		);
+		// SAFETY: every variant of the union is a `u16`.
+		let valid_bits = unsafe { wide.Samples.wValidBitsPerSample };
+		let (mask, subformat) = (wide.dwChannelMask, wide.SubFormat);
+		assert_eq!((valid_bits, mask, subformat), (24, 0b11, KSDATAFORMAT_SUBTYPE_PCM));
+
+		let packed = wave_format(PcmFormat::I24, 2, 48_000).Format;
+		let (tag, frame_bytes, bits) = (packed.wFormatTag, packed.nBlockAlign, packed.wBitsPerSample);
+		assert_eq!(
+			(tag, frame_bytes, bits),
+			(0xFFFE, 6, 24),
+			"24 bits in three bytes are not plain either"
+		);
+
 		let mono = wave_format(PcmFormat::I16, 1, 16_000);
-		let (frame_bytes, bytes_per_second) = (mono.nBlockAlign, mono.nAvgBytesPerSec);
-		assert_eq!((frame_bytes, bytes_per_second), (2, 32_000));
+		let plain = mono.Format;
+		let (tag, frame_bytes, bytes_per_second, bits, extension) = (
+			plain.wFormatTag,
+			plain.nBlockAlign,
+			plain.nAvgBytesPerSec,
+			plain.wBitsPerSample,
+			plain.cbSize,
+		);
+		assert_eq!((tag, frame_bytes, bytes_per_second, bits, extension), (1, 2, 32_000, 16, 0));
+		let mask = mono.dwChannelMask;
+		assert_eq!(mask, 0b100, "one channel is the centre");
 	}
 
 	#[test]

@@ -29,6 +29,9 @@ const POLL: Duration = Duration::from_millis(5);
 #[test]
 #[ignore = "takes every output device exclusively: needs devices and silences other programs meanwhile"]
 fn every_output_opens_exclusively_or_says_why_not() {
+	// The log line of an opened stream names its sample format: with `--nocapture` it is printed here.
+	// Another test of this binary may have installed the subscriber already.
+	let _ = tracing_subscriber::fmt().with_ansi(false).try_init();
 	let outputs = list_output_devices().expect("the outputs can be listed");
 	let exclusive: Vec<_> = outputs.iter().filter(|output| output.driver == Driver::WasapiExclusive).collect();
 	assert!(!exclusive.is_empty(), "the list has no exclusive output: {outputs:?}");

@@ -248,7 +248,7 @@ The third driver, `[ASIO]`, is there only in a build with the `asio` feature (se
 - macOS is not supported: the gterm window library runs on Windows and Linux.
 - A MIDI take holds what was played, not the state of the synthesizer when it began: the preset and the effect levels chosen before the take are not in the file, and it plays with the preset chosen at playback. Time in the file is as fine as the audio buffer (about 5 ms with 256 frames at 48 kHz).
 - SF3 banks are not supported.
-- WASAPI exclusive mode opens a device in plain PCM only — 24 or 16 bits, stereo or mono. A device that takes nothing but multichannel sound or 24 bits in a 32-bit container does not open exclusively: the program says so and moves to another output.
+- WASAPI exclusive mode opens a device in integer PCM — 24 bits (in a 32-bit container or in three bytes) or 16 bits, stereo or mono. A device that takes nothing but multichannel sound does not open exclusively: the program says so and moves to another output.
 - If a device is unplugged while playing, the stream stops with no message on the screen (the log has the record); choose the output in the list again.
 - MIDI files of format 2 and files timed in SMPTE frames are not played; there is no seeking in a file.
 - The MIDI monitor and per-channel mixer strips of version 1.0 are not part of this screen; channel volume follows incoming CC 7 only.

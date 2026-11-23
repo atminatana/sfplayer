@@ -268,7 +268,12 @@ fn a_block_on_its_way_to_an_integer_device_leaves_the_heap_alone() {
 	let engine = Box::new(BuiltinSynth::new(SAMPLE_RATE, Arc::new(Timbre::new(Wave::Saw, piano())))) as Box<dyn SynthEngine>;
 	let mut core = core_with(engine);
 	core.events.try_push(note_on(0, 60)).expect("room");
-	for (format, channels) in [(PcmFormat::I24, 2), (PcmFormat::I16, 2), (PcmFormat::I16, 1)] {
+	for (format, channels) in [
+		(PcmFormat::I24In32, 2),
+		(PcmFormat::I24, 2),
+		(PcmFormat::I16, 2),
+		(PcmFormat::I16, 1),
+	] {
 		let mut block = PcmBlock::new(format, channels, BLOCK);
 		let mut device = vec![0u8; BLOCK * block.frame_bytes()];
 		let calls = heap_calls_during(|| {

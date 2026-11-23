@@ -1,12 +1,14 @@
 //! The f32 render as the integer PCM a device taken exclusively asks for (spec v1.4, E-01).
-//! Plain rounding, no dither (assumption Д-5 until the owner decides ОР-4); no allocation, so it may
-//! run on the audio thread.
+//! Plain rounding, no dither (the owner's decision, spec v1.4 §8); no allocation, so it may run on
+//! the audio thread.
 
 use super::BlockRenderer;
 
 /// Integer formats an exclusive stream can be opened in, best first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PcmFormat {
+	/// 24 bits in the upper three bytes of four: what the codecs of sound cards take.
+	I24In32,
 	/// 24 bits in three bytes.
 	I24,
 	I16,
@@ -14,23 +16,33 @@ pub enum PcmFormat {
 
 impl PcmFormat {
 	/// The order a device is asked in (E-01).
-	pub const PREFERRED: [Self; 2] = [Self::I24, Self::I16];
+	pub const PREFERRED: [Self; 3] = [Self::I24In32, Self::I24, Self::I16];
 
+	/// Bits of a sample that carry sound.
 	pub fn bits(self) -> u16 {
 		match self {
+			Self::I24In32 | Self::I24 => 24,
+			Self::I16 => 16,
+		}
+	}
+
+	/// Bits a sample takes in the stream; the sound is in the upper ones.
+	pub fn container_bits(self) -> u16 {
+		match self {
+			Self::I24In32 => 32,
 			Self::I24 => 24,
 			Self::I16 => 16,
 		}
 	}
 
 	pub fn bytes_per_sample(self) -> usize {
-		usize::from(self.bits() / 8)
+		usize::from(self.container_bits() / 8)
 	}
 
 	/// The value of full scale: `1.0` maps one step short of it, `-1.0` exactly onto its negative.
 	fn full_scale(self) -> f32 {
 		match self {
-			Self::I24 => 8_388_608.0,
+			Self::I24In32 | Self::I24 => 8_388_608.0,
 			Self::I16 => 32_768.0,
 		}
 	}
@@ -42,8 +54,10 @@ pub fn write_pcm(format: PcmFormat, samples: &[f32], out: &mut [u8]) {
 	let scale = format.full_scale();
 	// A float-to-integer cast saturates and maps NaN to zero; the 24-bit range is narrower than i32.
 	let limit = scale as i32;
+	// In a container wider than the sample the sound sits in the upper bits.
+	let shift = format.container_bits() - format.bits();
 	for (sample, bytes) in samples.iter().zip(out.chunks_exact_mut(format.bytes_per_sample())) {
-		let value = ((sample * scale).round() as i32).clamp(-limit, limit - 1);
+		let value = ((sample * scale).round() as i32).clamp(-limit, limit - 1) << shift;
 		bytes.copy_from_slice(&value.to_le_bytes()[..bytes.len()]);
 	}
 }
@@ -135,6 +149,22 @@ mod tests {
 	}
 
 	#[test]
+	fn a_24_bit_sample_in_a_32_bit_container_sits_in_its_upper_three_bytes() {
+		let mut out = [0xAA_u8; 16];
+		let value = 66_051.0 / 8_388_608.0;
+		write_pcm(PcmFormat::I24In32, &[value, -value, 1.0, -1.0], &mut out);
+		assert_eq!(
+			out,
+			[
+				0x00, 0x03, 0x02, 0x01, // 0x010203 with an empty low byte
+				0x00, 0xFD, 0xFD, 0xFE, // its negative
+				0x00, 0xFF, 0xFF, 0x7F, // full scale
+				0x00, 0x00, 0x00, 0x80, // negative full scale
+			]
+		);
+	}
+
+	#[test]
 	fn only_as_many_samples_are_written_as_the_output_has_room_for() {
 		let mut out = [0xAA_u8; 5];
 		write_pcm(PcmFormat::I16, &[1.0, 1.0, 1.0], &mut out);
@@ -143,7 +173,9 @@ mod tests {
 
 	#[test]
 	fn the_formats_are_asked_for_best_first() {
-		assert_eq!(PcmFormat::PREFERRED, [PcmFormat::I24, PcmFormat::I16]);
-		assert_eq!((PcmFormat::I24.bytes_per_sample(), PcmFormat::I16.bytes_per_sample()), (3, 2));
+		assert_eq!(PcmFormat::PREFERRED, [PcmFormat::I24In32, PcmFormat::I24, PcmFormat::I16]);
+		let bytes = PcmFormat::PREFERRED.map(PcmFormat::bytes_per_sample);
+		assert_eq!(bytes, [4, 3, 2]);
+		assert_eq!(PcmFormat::PREFERRED.map(PcmFormat::bits), [24, 24, 16], "the bits that carry sound");
 	}
 }
